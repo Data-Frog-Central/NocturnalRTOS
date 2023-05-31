@@ -4,7 +4,7 @@
 #
 ################################################################################
 
-AUDDRIVER_VERSION = 07dd083c35cdf45cbc1ef9557c5d75227b9776c6
+AUDDRIVER_VERSION = 073b00bbac176c03c6d6842f1320ee149aa2e680
 AUDDRIVER_SITE_METHOD = git
 AUDDRIVER_SITE = ssh://git@hichiptech.gitlab.com:33888/hcllav/avdriver.git
 AUDDRIVER_DEPENDENCIES = kernel

@@ -178,7 +178,7 @@ hcrtos {
 		//clock-names = "biu", "ciu";
 		interrupts = <10>;
 		
-		pinmux-active = <PINPAD_T00 25 PINPAD_T01 25 PINPAD_T02 25 PINPAD_T03 25 PINPAD_T04 25 PINPAD_T05 25>;
+		pinmux-active = <PINPAD_T00 249 PINPAD_T01 249 PINPAD_T02 249 PINPAD_T03 249 PINPAD_T04 249 PINPAD_T05 249>;
 		
 		status = "okay";
 		
