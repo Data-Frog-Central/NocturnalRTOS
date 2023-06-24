@@ -265,6 +265,8 @@ static int st7789v2_display_init(void)
 
 	//lcd_reset();
     lcd_gpio_set_output(st7789v2dev.lcd_reset_num,1);
+    lcd_gpio_set_output(st7789v2dev.lcd_rd_num,1);
+    lcd_gpio_set_output(st7789v2dev.lcd_cs_num,0);
 
     printf("%s %d\n", __FUNCTION__,__LINE__);
 
@@ -559,8 +561,7 @@ static void gpio_set_data(int pin, bool state)
 static void lcd_gpio_spi_config_write(unsigned char RS, unsigned short cmd)
 {
     gpio_set_rs(RS);
-    gpio_set_cs(0);
-
+    //gpio_set_cs(0);
 #ifdef GPIO_FAST_WRITE
     lcd_write_data(cmd);
 #else
@@ -573,7 +574,7 @@ static void lcd_gpio_spi_config_write(unsigned char RS, unsigned short cmd)
 #endif
     gpio_set_wr(0);
     gpio_set_wr(1);
-    gpio_set_cs(1);
+    //gpio_set_cs(1);
     gpio_set_rs(1);
 }
 

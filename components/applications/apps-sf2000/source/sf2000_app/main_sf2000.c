@@ -112,6 +112,21 @@ void list_dir(char* dir_name)
     }
 }
 
+void force_stock_registers()
+{
+    *(volatile unsigned *)0xb8808084 = 0x00137002;
+    *(volatile unsigned *)0xb880807c = 0x00010000;
+    *(volatile unsigned *)0xb8808080 = 0x00030702;
+    //*(volatile unsigned *)0xb8800078 = 0x3700;
+    *(volatile unsigned *)0xb880801c = 0x7ff07ff;
+    *(volatile unsigned *)0xb880804c = 0x7ff07ff;
+    *(volatile unsigned *)0xb8808028 = 0x07ff07ff;
+    *(volatile unsigned *)0xb8808058 = 0x07ff07ff;
+    *(volatile unsigned *)0xb880802c = 0x013007ff;
+    *(volatile unsigned *)0xb880805c = 0x013007ff;
+
+}
+
 void setUpPins()
 {
     gpio_configure(PINPAD_R07, GPIO_DIR_OUTPUT); //Speaker Disable
@@ -155,6 +170,7 @@ void * main_sf2000(void *arg)
     api_sleep_ms(2000); //Wait 2 seconds for mmc to init
     printf("%s %d\n", __FUNCTION__,__LINE__);
     setUpPins();
+    force_stock_registers();
     printf("%s %d\n", __FUNCTION__,__LINE__);
     printf("Welcom to SF2000!\n");
     //list_dir("/");
