@@ -14,6 +14,48 @@
 #include "hcuapi/pinpad.h"
 #include <ffplayer.h>
 
+#include <kernel/delay.h>
+
+#define KEY_SHIFTER_CLK_PIN PINPAD_L24 // the clock pin is shared
+//#define KEY_SHIFTER_PL1_PIN PINPAD_L25 // X60
+#define KEY_SHIFTER_PL1_PIN PINPAD_L23 // SF2000
+#define KEY_SHIFTER_PL2_PIN PINPAD_L26 // currently unimplemented
+
+static const char * const key_names[] = {
+	"L", "Y", "X", "R", "A", "B", "Select", "Start", "Up", "Down", "Left", "Right"
+};
+
+static void keypad_test_loop(void)
+{
+	int i, prev[12], state[12];
+
+	for (i = 0; i < 12; i++) prev[i] = 1;
+
+	gpio_configure(KEY_SHIFTER_CLK_PIN, GPIO_DIR_OUTPUT);
+	gpio_set_output(KEY_SHIFTER_CLK_PIN, 1); // shifts on 1->0 transition
+	while (1) {
+		// probably latches the state while the pin is actively driven
+		gpio_configure(KEY_SHIFTER_PL1_PIN, GPIO_DIR_OUTPUT);
+		gpio_set_output(KEY_SHIFTER_PL1_PIN, 0);
+		usleep(4);
+		gpio_configure(KEY_SHIFTER_PL1_PIN, GPIO_DIR_INPUT);
+		for (i = 0; i < 12; i++) {
+			state[i] = gpio_get_input(KEY_SHIFTER_PL1_PIN);
+			gpio_set_output(KEY_SHIFTER_CLK_PIN, 0);
+			usleep(2);
+			gpio_set_output(KEY_SHIFTER_CLK_PIN, 1);
+		}
+
+		for (i = 0; i < 12; i++) if (prev[i] != state[i]) {
+			printf("%s %s\n", key_names[i], state[i] ? "released" : "pressed");
+			prev[i] = state[i];
+		}
+
+		// original software has 4 but scans every 4th iteration
+		// a software key debounce, or the MCU can't handle faster rate?
+		msleep(16);
+	}
+}
 
 static void exit_console(int signo)
 {
@@ -158,6 +200,7 @@ void * main_sf2000(void *arg)
     printf("%s %d\n", __FUNCTION__,__LINE__);
     printf("Welcom to SF2000!\n");
     //list_dir("/");
+    keypad_test_loop();
     printf("%s %d\n", __FUNCTION__,__LINE__);
     app_ffplay_init();
 
