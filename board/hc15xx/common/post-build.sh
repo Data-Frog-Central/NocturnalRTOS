@@ -129,6 +129,8 @@ volume=$(PATH=$PYPATH ${FDTINFO} --dtb ${DTB} --node /hcrtos/i2so --prop volume)
 ${GENPERSISTENTMEM} -v ${firmware_version} -p ${BR2_EXTERNAL_PRODUCT_NAME} -V ${volume} -t ${tvtype} -o ${IMAGES_DIR}/persistentmem.bin
 message "Generating persistentmem.bin done"
 
+cp ${IMAGES_DIR}/${app}.bin ${IMAGES_DIR}/sf2000.bin
+
 #sfbin=${IMAGES_DIR}/sfburn.bin
 #message "Generating ${sfbin} ....."
 #sfbin=${IMAGES_DIR}/sfburn.bin

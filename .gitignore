@@ -20,5 +20,6 @@ local.mk
 .stamp_*
 *.asd
 
+output
 output/
 bl/
