@@ -200,7 +200,6 @@ void * main_sf2000(void *arg)
     printf("%s %d\n", __FUNCTION__,__LINE__);
     printf("Welcom to SF2000!\n");
     //list_dir("/");
-    keypad_test_loop();
     printf("%s %d\n", __FUNCTION__,__LINE__);
     app_ffplay_init();
 
@@ -210,7 +209,8 @@ void * main_sf2000(void *arg)
     api_video_init();
     api_audio_init();
     printf("%s %d\n", __FUNCTION__,__LINE__);
-    playVideo();
+    //playVideo();
+    keypad_test_loop();
     printf("After Logo!\n");
 
     //api_lvgl_init(OSD_MAX_WIDTH, OSD_MAX_HEIGHT);
