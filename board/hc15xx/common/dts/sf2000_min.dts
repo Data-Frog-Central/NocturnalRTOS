@@ -338,7 +338,7 @@ hcrtos {
 	};
 
     fileuart {
-        devpath = "/de/fileuart";
+        devpath = "/dev/fileuart";
         status = "okay";
     };
 
