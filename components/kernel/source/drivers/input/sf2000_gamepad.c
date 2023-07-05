@@ -129,9 +129,8 @@ static void sf2000_gamepad_kthread(void *pvParameters)
 
 					// TODO: I don't think that for our needs it is necessary to call
 					// "input_event(...EV_MSC..." or "input_sync" like other input drivers do
-					// because EV_SYN is used to synchronize multiple events into one (like mouse X and Y pos)
-					// and EV_MSC i think is mostly used for repeating events (like when pressing and holding a key)
-
+					// because EV_SYN is used to sync multi events into one - like mouse (X,Y) pos
+					// and EV_MSC is mostly used for repeating events - like when holding a key
 					if (state[i]) {		// button released
 						input_report_key(priv->input, key_codes[i], 0);
 						//input_sync(priv->input);
