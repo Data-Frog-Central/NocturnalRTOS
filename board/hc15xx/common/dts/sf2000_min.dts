@@ -337,17 +337,17 @@ hcrtos {
 		status = "okay";
 	};
 
-    fileuart { // TODO: FileUart creates a file, bot does not log to it.
-        devpath = "/dev/fileuart";
-        status = "disabled";
+    fileuart {
+        devpath = "/hcrtos/fileuart";
+        status = "okay";
     };
 
 	stdio {
-		serial0 = "/hcrtos/uart@1";
+		serial0 = "/hcrtos/fileuart";
 	};
 
 	boot-stdio {
-		serial0 = "/hcrtos/uart@1";
+		serial0 = "/hcrtos/fileuart";
 	};
 
 	bluetooth {
