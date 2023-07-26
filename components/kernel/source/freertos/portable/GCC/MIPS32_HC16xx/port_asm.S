@@ -36,7 +36,8 @@ _osGeneralExceptHdl:
 	beqz    k1, not_exception
 	nop
 	nop
-	.word   0x1000ffff
+	# why not b $
+	#.word   0x1000ffff
 	nop
 	li      a0, 0
 	jal     show_stack
