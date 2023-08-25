@@ -82,3 +82,6 @@
 [submodule "unity"]
 	path = components/unity/source
 	url = https://gitlab.hichiptech.com:62443/sw/hcrtos_sdk/unity.git
+[submodule "apps-miniboot"]
+	path = components/applications/apps-miniboot/source
+	url = https://gitlab.hichiptech.com:62443/sw/hcrtos_sdk/apps-miniboot.git
