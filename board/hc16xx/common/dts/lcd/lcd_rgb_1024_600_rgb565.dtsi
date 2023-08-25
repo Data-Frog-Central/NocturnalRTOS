@@ -12,17 +12,21 @@
 	lvds_ch1-type = "rgb565";
 
 	/*
-		* rgb ggb bgb
-		* rrb rgb rbb
-		* rgr rgg rgb
+		* rgb gbr bgr 
+		* rbg grb brg
 	*/
-	rgb_src_sel = "rgb";
+	rgb-src-sel = "rgb";
 
 
 	/*
 	* 0: E_SRC_SEL_FXDE = 0
-	* 1: E_SRC_SEL_4KDE
-	* 2: E_SRC_SEL_HDMI_RX
+	* 1: E_SRC_SEL_4KDE = 1
+	* 2: E_SRC_SEL_HDMI_RX = 2
+	* 3: E_SRC_SEL_FXDE_ = 3
+	* 4: E_SRC_2_SEL_FXDE_LOW_TO_HIGH = 4 //need clsoe pq
+	* 5: E_SRC_2_SEL_DE4K_LOW_TO_HIGH = 5 //need clsoe pq
+	* 6: E_SRC_2_SEL_HDMI_RX_LOW_TO_HIGH = 6 //need clsoe pq
+	* 7: E_SRC_2_SEL_PQ_LOW_TO_HIGH = 7
 	*/
 	src-sel = <CONFIG_DE4K_OUTPUT_SUPPORT>;
 	// status = "okay";

@@ -3,7 +3,7 @@
 # libntfs
 #
 ################################################################################
-LIBNTFS_VERSION = 57ddb26f8a2deeb53934319cdaf3f34fc13ff9fb
+LIBNTFS_VERSION = c6eac432c75602760cda66524fa34ff1610b82cd
 LIBNTFS_SITE_METHOD = git
 LIBNTFS_SITE = ssh://git@hichiptech.gitlab.com:33888/hclib/libntfs.git
 LIBNTFS_DEPENDENCIES = kernel pthread

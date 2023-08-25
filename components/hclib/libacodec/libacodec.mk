@@ -4,7 +4,7 @@
 #
 ################################################################################
 
-LIBACODEC_VERSION = bc4c6c353fee90b9d5fafa13f51162146243c57c
+LIBACODEC_VERSION = c49e79aab3ab290cbea1143f40ede1fd77f54b38
 LIBACODEC_SITE_METHOD = git
 LIBACODEC_SITE = ssh://git@hichiptech.gitlab.com:33888/hclib/libacodec.git
 LIBACODEC_DEPENDENCIES = kernel

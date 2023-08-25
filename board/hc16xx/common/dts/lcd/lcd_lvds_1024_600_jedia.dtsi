@@ -83,7 +83,7 @@
 				*/
 				output-clock = <3>;
 
-				h-total-len = <1324>;
+				h-total-len = <1306>;
 				v-total-len = <625>;
 
 				h-active-len = <1024>;
@@ -91,7 +91,7 @@
 
 				h_front-len = <140>;
 				h-sync-len = <20>;
-				h-back-len = <140>;
+				h-back-len = <122>;
 
 				v-front-len = <12>;
 				v-sync-len = <3>;

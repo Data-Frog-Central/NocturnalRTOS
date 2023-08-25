@@ -58,7 +58,7 @@ BR2_TARGET_LDFLAGS="-g -EL -Os --static"
 # System configuration
 #
 BR2_EXTERNAL_PRODUCT_NAME="HC16C3000V10"
-BR2_EXTERNAL_BOARD_DDRINIT_FILE="${TOPDIR}/board/hc16xx/common/ddrinit/hc16xx_sip_ddr3_128M_1066MHz.abs"
+BR2_EXTERNAL_BOARD_DDRINIT_FILE="${TOPDIR}/board/hc16xx/common/ddrinit/hc16xx_sip_ddr3_128M_1066MHz_ODToff_Refresh3d9us.abs"
 BR2_EXTERNAL_BOOTMEDIA_FILE="${TOPDIR}/board/hc16xx/common/logo.m2v"
 BR2_EXTERNAL_HRXKEY=""
 BR2_EXTERNAL_BOOT_TYPE_SPINOR=y

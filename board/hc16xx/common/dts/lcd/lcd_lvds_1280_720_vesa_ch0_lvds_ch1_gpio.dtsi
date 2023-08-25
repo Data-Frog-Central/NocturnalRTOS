@@ -82,15 +82,15 @@
 				*/
 				output-clock = <4>;
 
-				h-total-len = <1332>;
+				h-total-len = <1482>;
 				v-total-len = <742>;
 
 				h-active-len = <1280>;
 				v-active-len = <720>;
 
-				h-front-len = <26>;
-				h-sync-len = <2>;
-				h-back-len = <24>;
+				h-front-len = <110>;
+				h-sync-len = <40>;
+				h-back-len = <52>;
 
 				v-front-len = <10>;
 				v-sync-len = <2>;

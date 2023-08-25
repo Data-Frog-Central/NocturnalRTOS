@@ -4,6 +4,7 @@ config CONFIG_APPS_NAME
 	string
 	default "avp" if BR2_PACKAGE_APPS_AVP
 	default "hcboot" if BR2_PACKAGE_APPS_BOOTLOADER
+	default "hcboot" if BR2_PACKAGE_APPS_MINIBOOT
 	default "hdmiswitch" if BR2_PACKAGE_APPS_HDMISWITCH
 	default "projector" if BR2_PACKAGE_APPS_PROJECTOR
 	default "hccast" if BR2_PACKAGE_APPS_HCCAST
@@ -36,6 +37,7 @@ comment "Select multi-applications will cause un-expected result!"
 
 source "apps-avp/Kconfig"
 source "apps-bootloader/Kconfig"
+source "apps-miniboot/Kconfig"
 source "apps-hdmiswitch/Kconfig"
 source "apps-projector/Kconfig"
 source "apps-hccast/Kconfig"

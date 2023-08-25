@@ -71,6 +71,7 @@ wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_IMAGEDEC) += -lviddrv_imagedec
 else
 wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_MPEG2DEC) += -lviddrv_mpeg2dec
 wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_IMAGEDEC) += -lviddrv_imagedec
+wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_H264DEC) += -lviddrv_h264dec
 endif
 wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_USBDRIVER) += -lusbdrv
 wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_USBDRIVER_HID) += -lusbdrv_hid
