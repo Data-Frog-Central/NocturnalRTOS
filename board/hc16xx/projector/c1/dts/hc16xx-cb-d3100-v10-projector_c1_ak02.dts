@@ -523,10 +523,6 @@ hcrtos {
 		};
 	};
 
-	#define PINPAD_LVDS_DP7			(PINPAD_MAX + 23)
-	#define PINPAD_LVDS_DN7			(PINPAD_MAX + 24)
-	#define PINPAD_LVDS_CP1			(PINPAD_MAX + 25)
-	#define PINPAD_LVDS_CN1			(PINPAD_MAX + 26)
 	vmotor{
 		padout-in-1 = <PINPAD_LVDS_DP7>;
 		padout-in-2 = <PINPAD_LVDS_DN7>;
@@ -536,10 +532,6 @@ hcrtos {
 		status = "okay";
 	};
 
-	#define PINPAD_LVDS_DP5			(PINPAD_MAX + 19)
-	#define PINPAD_LVDS_DN5			(PINPAD_MAX + 20)
-	#define PINPAD_LVDS_DP6			(PINPAD_MAX + 21)
-	#define PINPAD_LVDS_DN6			(PINPAD_MAX + 22)
 	lcd-sc5014a{
 		spi-gpio-sck	= <PINPAD_LVDS_DN6>;
 		spi-gpio-mosi	= <PINPAD_LVDS_DP5>;

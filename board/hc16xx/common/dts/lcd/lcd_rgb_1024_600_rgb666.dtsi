@@ -75,7 +75,7 @@
 				h-active-len = <1024>;
 				v-active-len = <600>;
 
-				h_front-len = <140>;
+				h-front-len = <140>;
 				h-sync-len = <20>;
 				h-back-len = <122>;
 

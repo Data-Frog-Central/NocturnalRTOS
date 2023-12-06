@@ -13,6 +13,12 @@ define LIBUSBMIRROR_INSTALL_HEADERS
 	$(INSTALL) $(@D)/inc/aumirror_api.h -m 0666 $(STAGING_DIR)/usr/include/um
 endef
 
+define LIBUSBMIRROR_POST_BUILD
+	$(TARGET_CROSS)strip -g -S -d $(@D)/libusbmirror.a
+endef
+
+LIBUSBMIRROR_POST_BUILD_HOOKS += LIBUSBMIRROR_POST_BUILD
+
 LIBUSBMIRROR_POST_INSTALL_TARGET_HOOKS += LIBUSBMIRROR_INSTALL_HEADERS
 
 $(eval $(cmake-package))

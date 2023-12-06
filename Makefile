@@ -16,13 +16,6 @@ RSYNC_VCS_EXCLUSIONS = \
 	--exclude .svn --exclude .git --exclude .hg --exclude .bzr \
 	--exclude CVS
 
-gitexist = $(shell if [ -d ".git" ]; then echo "exist"; else echo "notexist"; fi;)
-ifeq (gitexist, "exist")
-GIT_REMOTE := $(shell $(GIT) remote)
-GIT_USER_NAME := $(shell $(GIT) config user.name)
-GIT_USER_EMAIL := $(shell $(GIT) config user.email)
-endif
-
 hash = $(shell echo $(1) | $(XSUM) | awk '{print $$1}')
 
 # Strip quotes and then whitespaces

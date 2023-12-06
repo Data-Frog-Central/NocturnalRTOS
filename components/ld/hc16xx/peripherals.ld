@@ -52,6 +52,8 @@ PROVIDE ( ADCCTRL         = 0xb8818400 );
 PROVIDE ( POKCTRL         = 0xb8800450 );
 PROVIDE ( USB0            = 0xb8844000 );
 PROVIDE ( USB1            = 0xb8850000 );
+PROVIDE ( GPIOLVDSCTRL    = 0xb8800174 );
+PROVIDE ( STRAP_PIN_CTRL  = 0xb8800094 );
 
 PROVIDE ( GPIO_INTR             = (8 + (32*0) + 0));
 PROVIDE ( H264_INTR             = (8 + (32*0) + 1));

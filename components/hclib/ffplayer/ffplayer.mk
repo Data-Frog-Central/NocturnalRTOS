@@ -4,7 +4,7 @@
 #
 ################################################################################
 
-FFPLAYER_VERSION = 10d00b9acc91a897785030a42bcb60abe57c02b8
+FFPLAYER_VERSION = 4aff1db5395a7b616448d120bc3ed80028cc4bb1
 FFPLAYER_SITE_METHOD = git
 FFPLAYER_SITE = ssh://git@hichiptech.gitlab.com:33888/hcmedia/hcffplayer.git
 FFPLAYER_DEPENDENCIES = ffmpeg pthread

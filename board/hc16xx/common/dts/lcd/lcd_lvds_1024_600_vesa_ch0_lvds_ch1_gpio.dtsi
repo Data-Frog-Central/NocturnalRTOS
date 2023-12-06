@@ -22,12 +22,12 @@
     * 1: E_MAP_MODE_VESA_18BIT_OR_JEDIA
     */
     map-mode = <0>;
-    ch0-src_sel = <0>;
-    ch1-src_sel = <0>;
-    ch0-invert_clk_sel = <0>;
-    ch1-invert_clk_sel = <0>;
-    ch0-clk_gate = <0>;
-    ch1-clk_gate = <0>;
+    ch0-src-sel = <0>;
+    ch1-src-sel = <0>;
+    ch0-invert-clk-sel = <0>;
+    ch1-invert-clk-sel = <0>;
+    ch0-clk-gate = <0>;
+    ch1-clk-gate = <0>;
     hsync-polarity = <0>;
     vsync-polarity = <0>;
 	
@@ -90,7 +90,7 @@
 				h-active-len = <1024>;
 				v-active-len = <600>;
 
-				h_front-len = <140>;
+				h-front-len = <140>;
 				h-sync-len = <20>;
 				h-back-len = <122>;
 

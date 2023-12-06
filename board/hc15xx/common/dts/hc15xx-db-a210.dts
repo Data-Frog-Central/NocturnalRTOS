@@ -331,15 +331,15 @@ hcrtos {
 				part1-filename = "bootloader.bin";
 
 				part2-label = "eromfs";
-				part2-reg = <0x60000 0x20000>;
+				part2-reg = <0x60000 0x60000>;
 				part2-filename = "romfs.img";
 
 				part3-label = "firmware";
-				part3-reg = <0x80000 0x360000>;
+				part3-reg = <0xa0000 0x500000>;
 				part3-filename = "hcdemo.uImage";
 
 				part4-label = "persistentmem";
-				part4-reg = <0x3e0000 0x20000>;
+				part4-reg = <0x5a0000 0x20000>;
 				part4-filename = "persistentmem.bin";
 			};
 		};

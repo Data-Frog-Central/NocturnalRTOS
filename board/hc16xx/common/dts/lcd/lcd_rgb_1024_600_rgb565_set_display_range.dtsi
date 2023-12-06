@@ -81,7 +81,7 @@
 				h-display_len = <(H_ACTIVE_LEN-H_ACTIVE_END_OFFSET)>;
 				v-display_len = <(V_ACTIVE_LEN-V_ACTIVE_END_OFFSET)>;
 
-				h_front-len = <140>;
+				h-front-len = <140>;
 				h-sync-len = <20>;
 				h-back-len = <122>;
 

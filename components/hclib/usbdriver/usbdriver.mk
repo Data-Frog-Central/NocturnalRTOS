@@ -3,7 +3,7 @@
 # usbdriver
 #
 ################################################################################
-USBDRIVER_VERSION = d9ad0dbcfb907bdb722296adcfade60df512cc35 
+USBDRIVER_VERSION = a2e4170f4af55cb5c3a8211d45310dab9e1fee2d 
 USBDRIVER_SITE_METHOD = git
 USBDRIVER_SITE = ssh://git@hichiptech.gitlab.com:33888/hclib/libusb.git
 USBDRIVER_DEPENDENCIES = kernel

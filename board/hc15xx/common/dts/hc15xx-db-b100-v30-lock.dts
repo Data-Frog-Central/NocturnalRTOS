@@ -420,7 +420,7 @@ hcrtos {
 		pinmux-active = <PINPAD_L22 1>;
 		devpath = "/dev/pwm0";
 		polarity = <0>;
-		status = "disabled";
+		status = "okay";
 	};
 
 	gpio-i2c@0 {

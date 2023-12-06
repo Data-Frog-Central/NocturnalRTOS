@@ -3,7 +3,7 @@
 # lnxporting
 #
 ################################################################################
-LNXPORTING_VERSION = 9fd8ccb3e7d5f1025cfc5a78195b4548c13d438f
+LNXPORTING_VERSION = 096bf7615138e5c5516ab5d969b3549ee46d697e
 LNXPORTING_SITE_METHOD = git
 LNXPORTING_SITE = ssh://git@hichiptech.gitlab.com:33888/hclib/linux-porting.git
 LNXPORTING_DEPENDENCIES = kernel

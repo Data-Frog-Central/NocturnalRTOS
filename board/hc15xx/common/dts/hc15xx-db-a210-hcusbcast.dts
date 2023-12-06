@@ -302,11 +302,11 @@ hcrtos {
 				/* part0 is for entire norflash by default */
 
 				part1-label = "boot";
-				part1-reg = <0x0 0x19000>;
+				part1-reg = <0x0 0x20000>;
 				part1-filename = "bootloader.bin";
 
 				part2-label = "firmware";
-				part2-reg = <0x19000 0x1c7000>;
+				part2-reg = <0x20000 0x1c0000>;
 				part2-filename = "hcusbcast.uImage";
 
 				part3-label = "persistentmem";

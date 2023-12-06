@@ -501,8 +501,8 @@ hcrtos {
 		device_type = "hichip,hcrtos-setup-setbit";
 		backlight-pwmdev = "/dev/pwm3";
 		backlight-frequency = <50000>;
-		reg_bit = <0xb8800094 16 1>,<0xb8800174 20 1>,<0xb8800174 21 1>,<0xb8800184 24 1>;//disabled ejtag and set lvds gpio out
-		lcd-backlight-gpios-rtos = <PINPAD_L01 GPIO_ACTIVE_HIGH>;
+		reg_bit = <0xb8800094 16 1>, <0xb8800184 24 1>;//disabled ejtag and set lvds gpio out
+		lcd-backlight-gpios-rtos = <PINPAD_L01 GPIO_ACTIVE_HIGH PINPAD_LVDS_DN7 GPIO_ACTIVE_HIGH PINPAD_LVDS_DN6 GPIO_ACTIVE_HIGH>;
 		lcd-power-gpios-rtos = <PINPAD_T00 GPIO_ACTIVE_HIGH>;
 		status = "okay";
 	};

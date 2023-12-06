@@ -424,13 +424,13 @@ hcrtos {
 	key-adc@0 {
 		status = "okay";
 		adc_ref_voltage = <1890>; //range:0-2000mV
-        	key-num = <6>;          //demo---map2--projector
-        	key-map = <300 560 105>,// up 0.41 ->left
-			<600 880 106>,// down 0.75 ->right
-			<850 1110 116>,//left 1.02 -> power
-			<1120 1320 0x16d>,//right 1.23->setup
-			<1340 1560 0x160>,//OK 1.43->ok
-			<1600 1840 174>;//exit 1.74->exit
+			key-num = <6>;          //demo---map2--projector
+			key-map = <310 510 103>,// up
+			<650 850 108>,// down 0.75
+			<920 1120 105>,//left 1.02
+			<1121 1300 106>,//right 1.23
+			<1330 1530 0x160>,//OK 1.43
+			<1640 1840 174>;//exit 1.74
 	};
 
 	persistentmem {

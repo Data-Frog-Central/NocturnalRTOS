@@ -1,4 +1,4 @@
-LIBMIRACAST_VERSION = fe2e57c316eaad36a82ebca2b79cdf3edbd93ed8
+LIBMIRACAST_VERSION = cde6cb6a231e1338dd9868f2d13ae495583bfdb8
 LIBMIRACAST_SITE_METHOD = git
 LIBMIRACAST_SITE = ssh://git@hichiptech.gitlab.com:33888/hclib/libmiracast.git
 LIBMIRACAST_DEPENDENCIES = kernel newlib pthread libopenssl

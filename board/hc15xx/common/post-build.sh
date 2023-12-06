@@ -5,19 +5,30 @@ export BR2_CONFIG
 
 current_dir=$(dirname $0)
 PYPATH=/usr/bin:/usr/local/bin:$PATH
-FDTINFO=${TOPDIR}/build/scripts/fdt_get_property.py
+FDTINFO=${TOPDIR}/build/tools/fdt/getfdt
 BINMODIFY=${TOPDIR}/build/scripts/binmodify.py
 GENBOOTMEDIA=${TOPDIR}/build/scripts/genbootmedia
 GENSFBIN=${TOPDIR}/build/scripts/gensfbin.py
-HCPROGINI=${TOPDIR}/build/scripts/hcprogini.py
+HCPROGINI=${TOPDIR}/build/tools/fdt/gen_hcprogini
+GENFLASHBIN=${TOPDIR}/build/tools/fdt/gen_flashbin
+FIXUP_PART_FNAME=${TOPDIR}/build/tools/fdt/fixup_part_filename
+GET_PART_FNAME=${TOPDIR}/build/tools/fdt/get_part_filename
 GENPERSISTENTMEM=${TOPDIR}/build/tools/genpersistentmem/genpersistentmem
-DDRCONFIGMODIFY=${TOPDIR}/build/tools/ddrconfig-modify/ddrconfig-modify
+DDRCONFIGMODIFY=${TOPDIR}/build/tools/fdt/ddrconfig_modify
 DTB2DTS=${TOPDIR}/build/tools/dtb2dts.py
 DTS2DTB=${TOPDIR}/build/tools/dts2dtb.py
+MKYAFFS2IMAGE=${TOPDIR}/build/tools/mkyaffs2image
+HCFOTAGEN=${TOPDIR}/build/tools/fdt/HCFota_Generator
+DTBFIXUP=${IMAGES_DIR}/dtb.fixup.bin
 DTB=${IMAGES_DIR}/dtb.bin
 [ ! -f ${HOST_DIR}/bin/mkimage ] && cp -vf ${TOPDIR}/build/tools/mkimage ${HOST_DIR}/bin/mkimage
 [ ! -f ${HOST_DIR}/bin/hcprecomp2 ] && cp -vf ${TOPDIR}/build/tools/hcprecomp2 ${HOST_DIR}/bin/hcprecomp2
 make -C $(dirname ${GENPERSISTENTMEM})
+make -C $(dirname ${HCPROGINI})
+
+mkdir -p ${IMAGES_DIR}/for-factory
+mkdir -p ${IMAGES_DIR}/for-upgrade
+mkdir -p ${IMAGES_DIR}/for-debug
 
 message()
 {
@@ -25,17 +36,37 @@ message()
 }
 
 app=${CONFIG_APPS_NAME}
-
-if [ -f ${DTB} ] ; then
-	message "Update firmware filename to ${CONFIG_APPS_NAME}.uImage ....."
-	PATH=$PYPATH ${DTB2DTS} --dtb ${DTB} --dts ${DTB}.dts
-	fw_part=$(cat ${DTB}.dts | grep 'label = "firmware"' | head -n 1 | awk '{print $1}' | tr -cd "[0-9]")
-	sed -i "s/part${fw_part}-filename =.*/part${fw_part}-filename = \"${CONFIG_APPS_NAME}.uImage\";/" ${DTB}.dts
-	PATH=$PYPATH ${DTS2DTB} --dtb ${DTB} --dts ${DTB}.dts
-	message "Update firmware filename to ${CONFIG_APPS_NAME}.uImage done!"
+oldapp=$(${GET_PART_FNAME} -i ${DTB} -l "firmware")
+hcprogrammer_support_usb0=0
+hcprogrammer_support_usb1=0
+hcprogrammer_usb_irq_detect_timeout=0
+hcprogrammer_usb_sync_detect_timeout=0
+if [ "${BR2_EXTERNAL_HCPROGRAMMER_SUPPORT}" = "y" ] ; then
+	if [ "${BR2_EXTERNAL_HCPROGRAMMER_SUPPORT_USB0}" = "y" ] ; then
+		hcprogrammer_support_usb0=1
+	else
+		hcprogrammer_support_usb0=0
+	fi
+	if [ "${BR2_EXTERNAL_HCPROGRAMMER_SUPPORT_USB1}" = "y" ] ; then
+		hcprogrammer_support_usb1=1
+	else
+		hcprogrammer_support_usb1=0
+	fi
+	if [ "${BR2_EXTERNAL_HCPROGRAMMER_USB_IRQ_DETECT_TIMEOUT}" != "" ]; then
+		hcprogrammer_usb_irq_detect_timeout=${BR2_EXTERNAL_HCPROGRAMMER_USB_IRQ_DETECT_TIMEOUT}
+	fi
+	if [ "${BR2_EXTERNAL_HCPROGRAMMER_USB_SYNC_DETECT_TIMEOUT}" != "" ]; then
+		hcprogrammer_usb_sync_detect_timeout=${BR2_EXTERNAL_HCPROGRAMMER_USB_SYNC_DETECT_TIMEOUT}
+	fi
 fi
 
-if [ -f ${IMAGES_DIR}/${CONFIG_APPS_NAME}.out ] ; then
+if [ -f ${DTB} ] ; then
+	message "Update firmware filename to ${app}.uImage ....."
+	${FIXUP_PART_FNAME} -i ${DTB} -o ${DTBFIXUP} -l "firmware" -n ${app}.uImage
+	message "Update firmware filename to ${app}.uImage done!"
+fi
+
+if [ -f ${IMAGES_DIR}/${app}.out ] ; then
 	app_ep_noncache=$(readelf -h ${IMAGES_DIR}/${app}.out | grep Entry | awk '{print $NF}' | sed 's/0x8/0xa/')
 	app_ep=$(readelf -h ${IMAGES_DIR}/${app}.out | grep Entry | awk '{print $NF}')
 	app_load_noncache=$(nm -n ${IMAGES_DIR}/${app}.out | awk '/T _start/ {print "0x"$1}' | sed 's/0x8/0xa/')
@@ -66,6 +97,13 @@ EOF
 	fi
 fi
 
+if [ -f ${IMAGES_DIR}/boardtest.out ] && [ -f ${IMAGES_DIR}/boardtest.bin ]; then
+	boardtest_ep=$(readelf -h ${IMAGES_DIR}/boardtest.out | grep Entry | awk '{print $NF}')
+	boardtest_load=$(nm -n ${IMAGES_DIR}/boardtest.out | awk '/T _start/ {print "0x"$1}')
+	${HOST_DIR}/bin/mkimage -A mips -O u-boot -T standalone -C none -n boardtest -e ${boardtest_ep} -a ${boardtest_load} \
+		-d ${IMAGES_DIR}/boardtest.bin ${IMAGES_DIR}/boardtest.uImage
+fi
+
 if [ -f ${IMAGES_DIR}/hcboot.out ] && [ -f ${IMAGES_DIR}/hcboot.bin ] && [ -f "${BR2_EXTERNAL_BOARD_DDRINIT_FILE}" ]; then
 	message "Generating bootloader.bin ....."
 	fddrinit=$(basename ${BR2_EXTERNAL_BOARD_DDRINIT_FILE})
@@ -74,8 +112,13 @@ if [ -f ${IMAGES_DIR}/hcboot.out ] && [ -f ${IMAGES_DIR}/hcboot.bin ] && [ -f "$
 	${DDRCONFIGMODIFY} --input ${BR2_EXTERNAL_BOARD_DDRINIT_FILE} --output ${IMAGES_DIR}/${fddrinit} \
 		--size ${hcboot_sz} \
 		--entry ${hcboot_ep} \
-		--from 0xafc02000 \
-		--to ${hcboot_ep}
+		--from 0xafc03000 \
+		--to ${hcboot_ep} \
+		--dtb ${DTBFIXUP} \
+		--portA ${hcprogrammer_support_usb0} \
+		--portB ${hcprogrammer_support_usb1} \
+		--irq ${hcprogrammer_usb_irq_detect_timeout} \
+		--sync ${hcprogrammer_usb_sync_detect_timeout}
 
 	cat ${IMAGES_DIR}/${fddrinit} ${IMAGES_DIR}/hcboot.bin > ${IMAGES_DIR}/bootloader.bin
 	message "Generating bootloader.bin done!"
@@ -117,71 +160,106 @@ fi
 
 if [ -d ${IMAGES_DIR}/fs-partition1-root -a "`ls -A ${IMAGES_DIR}/fs-partition1-root`" != "" ] ; then
 	message "Generating romfs.img ....."
-	genromfs -f ${IMAGES_DIR}/romfs.img -d ${IMAGES_DIR}/fs-partition1-root/ -v "romfs"
+	genromfs -f ${IMAGES_DIR}/romfs.img -d ${IMAGES_DIR}/fs-partition1-root/ -V "romfs"
 	message "Generating romfs.img done!"
 fi
 
 firmware_version=$(date +%y%m%d%H%M)
 
 message "Generating persistentmem.bin ....."
-tvtype=$(PATH=$PYPATH ${FDTINFO} --dtb ${DTB} --node /hcrtos/de-engine --prop tvtype)
-volume=$(PATH=$PYPATH ${FDTINFO} --dtb ${DTB} --node /hcrtos/i2so --prop volume)
-${GENPERSISTENTMEM} -v ${firmware_version} -p ${BR2_EXTERNAL_PRODUCT_NAME} -V ${volume} -t ${tvtype} -o ${IMAGES_DIR}/persistentmem.bin
+tvtype=$(${FDTINFO} ${DTBFIXUP} /hcrtos/de-engine u32 tvtype)
+volume=$(${FDTINFO} ${DTBFIXUP} /hcrtos/i2so u32 volume)
+persistentmem_fs=$(${FDTINFO} ${DTBFIXUP} /hcrtos/persistentmem string fs-type)
+if [ "${persistentmem_fs}" == "yaffs2" ] || [ "${persistentmem_fs}" == "littlefs" ] ; then
+	${GENPERSISTENTMEM} -v ${firmware_version} -p ${BR2_EXTERNAL_PRODUCT_NAME} -V ${volume} -t ${tvtype} -f -o ${IMAGES_DIR}/fs-partition2-root/persistentmem-0.bin
+else
+	${GENPERSISTENTMEM} -v ${firmware_version} -p ${BR2_EXTERNAL_PRODUCT_NAME} -V ${volume} -t ${tvtype} -o ${IMAGES_DIR}/persistentmem.bin
+fi
+if [ "${persistentmem_fs}" == "yaffs2" ] ; then
+	yaffs2img=$(${GET_PART_FNAME} -i ${DTBFIXUP} -l "yaffs2")
+	${MKYAFFS2IMAGE} ${IMAGES_DIR}/fs-partition2-root ${IMAGES_DIR}/${yaffs2img} ${CONFIG_MTD_SPINAND_PAGESIZE} ${CONFIG_MTD_SPINAND_ERASESIZE}
+elif [ "${persistentmem_fs}" == "littlefs" ] ; then
+	echo "TO BE SUPPORTED TO GENERATE LITTLEFS"
+fi
 message "Generating persistentmem.bin done"
 
-sfbin=${IMAGES_DIR}/sfburn.bin
-message "Generating ${sfbin} ....."
-sfbin=${IMAGES_DIR}/sfburn.bin
-rm -f ${sfbin}
-PATH=$PYPATH ${GENSFBIN} --wkdir ${IMAGES_DIR} --output ${sfbin} --dtb ${DTB} --fill 0xff
+message "Generating hcprog.ini ....!"
+${HCPROGINI} --output ${IMAGES_DIR}/hcprog.ini \
+	--dtb ${DTBFIXUP} \
+	--chip H15XX \
+	--product ${BR2_EXTERNAL_PRODUCT_NAME} \
+	--draminit $(basename ${BR2_EXTERNAL_BOARD_DDRINIT_FILE}) \
+	--version ${firmware_version} \
+	--updater "hc15xx_jtag_updater.bin"
+message "Generating hcprog.ini done"
+
+message "Generating flash binary ....."
+${GENFLASHBIN} --wkdir ${IMAGES_DIR} --dtb ${DTBFIXUP} --outdir ${IMAGES_DIR}/for-factory
 [ $? != 0 ] && exit 1;
-message "Generating ${sfbin} done!"
+message "Generating flash binary done!"
 
-message "Generating sfburn.ini ....."
-md5=$(md5sum ${sfbin} | awk '{print $1}')
-rm -f ${sfbin}.*
-cp ${sfbin} ${sfbin}.${md5}
+if [ -f ${IMAGES_DIR}/hcprog.ini ];then
+	message "Generating ${BR2_EXTERNAL_HCFOTA_FILENAME} .....!"
+	rm -vf ${IMAGES_DIR}/for-{upgrade,debug}/$(basename ${BR2_EXTERNAL_HCFOTA_FILENAME} .bin)*
+	cp -vf ${TOPDIR}/build/tools/hc15xx_jtag_updater.bin ${IMAGES_DIR}
+	${HCFOTAGEN} --dtb ${DTBFIXUP} --ini ${IMAGES_DIR}/hcprog.ini -o ${IMAGES_DIR}/for-upgrade/${BR2_EXTERNAL_HCFOTA_FILENAME} -u \
+		-r "${BR2_EXTERNAL_BOARD_DDRINIT_FILE}" -p "${IMAGES_DIR}/hc15xx_jtag_updater.bin"
+	${HCFOTAGEN} --dtb ${DTBFIXUP} --ini ${IMAGES_DIR}/hcprog.ini -o ${IMAGES_DIR}/for-debug/${BR2_EXTERNAL_HCFOTA_FILENAME} \
+		-r "${BR2_EXTERNAL_BOARD_DDRINIT_FILE}" -p "${IMAGES_DIR}/hc15xx_jtag_updater.bin"
+	message "Generating ${BR2_EXTERNAL_HCFOTA_FILENAME} done!"
 
-sfbin_size=$(wc -c ${sfbin} | awk '{print $1}' | xargs -i printf "0x%08x" {})
-((sfbin_size_align=((sfbin_size + 0xffff) / 0x10000) * 0x10000))
+	message "Generating sfburn.ini ....."
+	updater_ep_noncache=$(readelf -h ${TOPDIR}/build/tools/hc15xx_jtag_updater.out | grep Entry | awk '{print $NF}' | sed 's/0x8/0xa/')
+	updater_load_noncache=$(nm -n ${TOPDIR}/build/tools/hc15xx_jtag_updater.out | awk '/T _start/ {print "0x"$1}' | sed 's/0x8/0xa/')
 
-cat << EOF > ${IMAGES_DIR}/sfburn.ini
+	md5=$(md5sum ${IMAGES_DIR}/for-upgrade/${BR2_EXTERNAL_HCFOTA_FILENAME} | awk '{print $1}' | cut -c1-5)
+	cp -f ${IMAGES_DIR}/for-upgrade/${BR2_EXTERNAL_HCFOTA_FILENAME} ${IMAGES_DIR}/for-upgrade/${BR2_EXTERNAL_HCFOTA_FILENAME}.${md5}
+	fota_size=$(wc -c ${IMAGES_DIR}/for-upgrade/${BR2_EXTERNAL_HCFOTA_FILENAME} | awk '{print $1}' | xargs -i printf "0x%08x" {})
+cat << EOF > ${IMAGES_DIR}/for-upgrade/sfburn.ini
 [Project]
 RunMode=0
 InitMode=0
-RunAddr=0xA0000200
+RunAddr=${updater_ep_noncache}
 FileNum=2
 [File0]
-File=$(basename ${sfbin}.${md5})
+File=${BR2_EXTERNAL_HCFOTA_FILENAME}.${md5}
 Type=1
-Addr=0xA0060000
+Addr=0xA1000000
 [File1]
-File=flashwr_unify.abs
-Type=1
-Addr=0xA0000200
+File=hc15xx_jtag_updater.out
+Type=5
+Addr=${updater_load_noncache}
 [AutoRun]
-AutoRun0=wm 0x800001F0 $(printf 0x%08x $sfbin_size_align)
-AutoRun1=wm 0x800001F4 0x00000000
-AutoRun2=wm 0x800001F8 0x80060000
+AutoRun0=wm 0x800001F0 $(printf 0x%08x $fota_size)
+AutoRun1=wm 0x800001F4 0x81000000
+AutoRun1=wm 0x800001F8 0
 AutoRun3=wm 0xb8818504 0x0
 EOF
-message "Generating sfburn.ini done!"
 
-message "Generating hcprog.ini ....!"
-PATH=$PYPATH ${HCPROGINI} --output ${IMAGES_DIR}/hcprog.ini \
-				--dtb ${DTB} \
-				--chip H15XX \
-				--product ${BR2_EXTERNAL_PRODUCT_NAME} \
-				--draminit $(basename ${BR2_EXTERNAL_BOARD_DDRINIT_FILE}) \
-				--version ${firmware_version}
-message "Generating hcprog.ini done"
-
-if [ -f ${IMAGES_DIR}/hcprog.ini ];then
-	message "Generating HCFOTA_*******_*******.bin .....!"
-	rm -f ${IMAGES_DIR}/HCFOTA*.bin
-	${TOPDIR}/build/tools/HCFota_Generator --i=${IMAGES_DIR}/hcprog.ini
-	cp ${IMAGES_DIR}/HCFOTA_*.bin  ${IMAGES_DIR}/HCFOTA.bin 
-	message "Generating HCFOTA_*******_*******.bin done!"
+	md5=$(md5sum ${IMAGES_DIR}/for-debug/${BR2_EXTERNAL_HCFOTA_FILENAME} | awk '{print $1}' | cut -c1-5)
+	cp -f ${IMAGES_DIR}/for-debug/${BR2_EXTERNAL_HCFOTA_FILENAME} ${IMAGES_DIR}/for-debug/${BR2_EXTERNAL_HCFOTA_FILENAME}.${md5}
+	fota_size=$(wc -c ${IMAGES_DIR}/for-debug/${BR2_EXTERNAL_HCFOTA_FILENAME} | awk '{print $1}' | xargs -i printf "0x%08x" {})
+cat << EOF > ${IMAGES_DIR}/for-debug/sfburn.ini
+[Project]
+RunMode=0
+InitMode=0
+RunAddr=${updater_ep_noncache}
+FileNum=2
+[File0]
+File=${BR2_EXTERNAL_HCFOTA_FILENAME}.${md5}
+Type=1
+Addr=0xA1000000
+[File1]
+File=hc15xx_jtag_updater.out
+Type=5
+Addr=${updater_load_noncache}
+[AutoRun]
+AutoRun0=wm 0x800001F0 $(printf 0x%08x $fota_size)
+AutoRun1=wm 0x800001F4 0x81000000
+AutoRun1=wm 0x800001F8 0
+AutoRun3=wm 0xb8818504 0x0
+EOF
+	message "Generating sfburn.ini done!"
 fi
 
 if [ "${BR2_PACKAGE_APPS_HCUSBCAST}" = "y" ];then
@@ -191,13 +269,14 @@ if [ "${BR2_PACKAGE_APPS_HCUSBCAST}" = "y" ];then
 	message "Generating IUM_${BR2_EXTERNAL_PRODUCT_NAME}_${firmware_version} done!"
 fi
 
-cp -vf ${TOPDIR}/build/tools/flashwr_unify.abs ${IMAGES_DIR}/
-cp -vf ${TOPDIR}/build/tools/spinandwr.out ${IMAGES_DIR}/
-cp -vf ${TOPDIR}/build/tools/HCProgram_bridge.exe ${IMAGES_DIR}/
+cp -vf ${TOPDIR}/build/tools/hc15xx_jtag_updater.out ${IMAGES_DIR}/for-upgrade
+cp -vf ${TOPDIR}/build/tools/hc15xx_jtag_updater.out ${IMAGES_DIR}/for-debug
+cp -vf ${TOPDIR}/build/tools/hc15xx_jtag_updater.bin ${IMAGES_DIR}
+cp -vf ${TOPDIR}/build/tools/HCProgrammer.exe ${IMAGES_DIR}/for-upgrade
+cp -vf ${TOPDIR}/build/tools/HCProgrammer.exe ${IMAGES_DIR}/for-debug
 cp -vf ${TOPDIR}/build/tools/HCFota_Generator.exe ${IMAGES_DIR}/
-cp -vf ${TOPDIR}/build/tools/updater.bin ${IMAGES_DIR}/
+cp -vf ${TOPDIR}/build/tools/HCFota_Generator.pdb ${IMAGES_DIR}/
+cp -vf ${TOPDIR}/build/tools/mfc140u.dll ${IMAGES_DIR}/
+cp -vf ${IMAGES_DIR}/${app}.uImage ${IMAGES_DIR}/${oldapp}
 
-
-GEN_UPG_DIR=$(dirname $0)
-chmod +x ${GEN_UPG_DIR}/gen_upgrade_pkt.sh
-source ${GEN_UPG_DIR}/gen_upgrade_pkt.sh ${IMAGES_DIR} ${BR2_CONFIG}
+source ${TOPDIR}/board/hc1xxx/common/gen_upgrade_pkt.sh ${IMAGES_DIR} ${BR2_CONFIG}

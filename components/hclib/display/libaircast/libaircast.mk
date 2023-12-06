@@ -1,4 +1,4 @@
-LIBAIRCAST_VERSION = 5113ab2e73e437e853609467ed10cf57e1514cc1
+LIBAIRCAST_VERSION = 112fa16358fee01ca2ab4cc0e19143628d586f31
 LIBAIRCAST_SITE_METHOD = git
 LIBAIRCAST_SITE = ssh://git@hichiptech.gitlab.com:33888/hclib/libaircast.git
 LIBAIRCAST_DEPENDENCIES = kernel newlib pthread
@@ -11,6 +11,12 @@ LIBAIRCAST_EXTRACT_CMDS = \
 	git -C $(@D) fetch && \
 	git -C $(@D) checkout master && \
 	git -C $(@D) checkout $(LIBAIRCAST_VERSION)
+
+define LIBAIRCAST_POST_BUILD
+	$(TARGET_CROSS)strip -g -S -d $(@D)/libaircast/libaircast.a
+endef
+
+LIBAIRCAST_POST_BUILD_HOOKS += LIBAIRCAST_POST_BUILD
 
 LIBAIRCAST_INSTALL_STAGING = YES
 
