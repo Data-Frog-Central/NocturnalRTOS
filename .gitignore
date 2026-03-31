@@ -20,6 +20,7 @@ local.mk
 *.code-workspace
 .stamp_*
 *.asd
+crc
 
 output/
 bl/
