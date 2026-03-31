@@ -132,4 +132,4 @@ static int init_rc_map_projector_c1(void)
 	return rc_map_register(&projector_c1_map);
 }
 
-module_driver(rc_map_projector_c1, init_rc_map_projector_c1, NULL, 0)
+module_system(rc_map_projector_c1, init_rc_map_projector_c1, NULL, 0)

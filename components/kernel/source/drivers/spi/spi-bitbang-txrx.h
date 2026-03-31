@@ -3,6 +3,7 @@ bitbang_txrx_be_cpha0(struct spi_device *spi,
                 unsigned nsecs, unsigned cpol, unsigned flags,
                 u32 word, u8 bits)
 {
+        taskENTER_CRITICAL();
         /* if (cpol == 0) this is SPI_MODE_0; else this is SPI_MODE_2 */
 
         u32 oldbit = (!(word & (1<<(bits-1)))) << 31;
@@ -27,6 +28,7 @@ bitbang_txrx_be_cpha0(struct spi_device *spi,
                         word |= getmiso(spi);
                 setsck(spi, cpol);
         }
+        taskEXIT_CRITICAL();
         return word;
 }
 
@@ -35,6 +37,7 @@ bitbang_txrx_be_cpha1(struct spi_device *spi,
                 unsigned nsecs, unsigned cpol, unsigned flags,
                 u32 word, u8 bits)
 {
+        taskENTER_CRITICAL();
         /* if (cpol == 0) this is SPI_MODE_1; else this is SPI_MODE_3 */
 
         u32 oldbit = (!(word & (1<<(bits-1)))) << 31;
@@ -59,5 +62,6 @@ bitbang_txrx_be_cpha1(struct spi_device *spi,
                 if ((flags & SPI_MASTER_NO_RX) == 0)
                         word |= getmiso(spi);
         }
+        taskEXIT_CRITICAL();
         return word;
 }

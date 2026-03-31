@@ -142,6 +142,10 @@ struct net_device {
 	int			watchdog_timeo;
 	unsigned short		type;
 	struct phy_device *phydev;
+
+	unsigned short		hard_header_len;
+
+
 };
 
 #define SET_NETDEV_DEV(net, pdev)
@@ -351,5 +355,16 @@ static inline bool netif_carrier_ok(const struct net_device *dev)
 }
  
 #define netif_wake_queue(dev) do{}while(0)
+
+static inline u32 netif_msg_init(int debug_value, int default_msg_enable_bits)
+{
+	/* use default */
+	if (debug_value < 0 || debug_value >= (int)(sizeof(u32) * 8))
+		return default_msg_enable_bits;
+	if (debug_value == 0)	/* no output */
+		return 0;
+	/* set low N bits */
+	return (1 << debug_value) - 1;
+}
 
 #endif

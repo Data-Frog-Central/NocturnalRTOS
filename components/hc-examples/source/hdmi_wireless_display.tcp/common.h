@@ -17,18 +17,20 @@ typedef struct udp_header{
 	uint32_t seg_id;
 	uint32_t seg_len;
 	uint32_t seg_nums;
+	uint32_t crc_val;
 } udp_header;
 
 #define UDP_SEG_LENGTH 1400
 #define UDP_MAX_PAYLOAD_LEN (UDP_SEG_LENGTH - sizeof(udp_header))
 
 
-typedef  struct data_header_t
+typedef struct data_header_t
 {
 	char magic[8];
 	int32_t size;
 	int32_t pts;
 	uint32_t sample_rate;
+	uint32_t crc_val;
 }__attribute__((packed)) data_header_t;
 
 #define DATA_HEADER_MAGIC "hdmi_rx"

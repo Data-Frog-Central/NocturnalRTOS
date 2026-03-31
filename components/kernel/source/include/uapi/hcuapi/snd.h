@@ -22,7 +22,8 @@
 #define SND_IOCTL_GET_VOLUME			_IOR (SND_IOCBASE, 12, uint8_t)
 #define SND_IOCTL_SRC_SEL			_IOW (SND_IOCBASE, 13, snd_pcm_source_t)
 #define SND_IOCTL_SRC_SEL_CLEAR			_IOW (SND_IOCBASE, 14, snd_pcm_source_t)
-#define SND_IOCTL_SET_MUTE			_IO  (SND_IOCBASE, 15)
+#define SND_IOCTL_SET_MUTE			_IO  (SND_IOCBASE, 15) //<! param: 0 un-mute; 1 mute
+								       //<! Driver will auto un-mute when playback is resumed
 #define SND_IOCTL_GET_HW_INFO			_IOR (SND_IOCBASE, 16, struct snd_hw_info)
 #define SND_IOCTL_SET_RECORD			_IO  (SND_IOCBASE, 17)
 #define SND_IOCTL_SET_FREE_RECORD		_IO  (SND_IOCBASE, 18)
@@ -30,9 +31,21 @@
 #define SND_IOCTL_SET_LR_BALANCE		_IOW (SND_IOCBASE, 20, struct snd_lr_balance)
 #define SND_IOCTL_SET_EQ6			_IOW (SND_IOCBASE, 21, struct snd_audio_eq6)
 #define SND_IOCTL_SET_FLUSH_TIME		_IO (SND_IOCBASE, 22)
+#define SND_IOCTL_SET_FORCE_MUTE		_IO (SND_IOCBASE, 23) //<! param: 0 disable force-mute; 1 enable force-mute.
+								      //<! Driver won't un-mute if force-mute is enabled.
+#define SND_IOCTL_SET_EQ_ONOFF			_IO (SND_IOCBASE, 24) //<! param: 0 disable eq; 1 enable eq.
+#define SND_IOCTL_SET_EQ_BAND			_IOW (SND_IOCBASE, 25, struct snd_eq_band_setting)
+
+#define SND_IOCTL_SET_PBE			_IO (SND_IOCBASE, 26) //<! param: strength 0 ~ 100; 0 means disable. Perceptual bass enhancement.
+#define SND_IOCTL_SET_PBE_PRECUT		_IO (SND_IOCBASE, 27) //<! param: -45 ~ 0; unit dB
+
+#define SND_IOCTL_SET_DRC_PARAM			_IOW (SND_IOCBASE, 31, struct snd_drc_setting)
+#define SND_IOCTL_GET_DRC_PARAM			_IOR (SND_IOCBASE, 31, struct snd_drc_setting)
 
 #define SND_EVENT_AUDIO_INFO			_IOW (SND_IOCBASE, 50, struct snd_pcm_params)
 #define SND_EVENT_UNDERRUN			_IO  (SND_IOCBASE, 51)
+
+#define SND_IOCTL_SET_CJC8988_INPUT		_IOW  (SND_IOCBASE, 100, struct snd_cjc8988_input)
 
 typedef unsigned long snd_pcm_uframes_t;
 
@@ -316,6 +329,22 @@ struct snd_lr_balance {
 struct snd_audio_eq6 {
 	int onoff;		/* 0: off; 1: on */
 	snd_eq6_mode_e mode;
+};
+
+struct snd_cjc8988_input {
+	char input_name[20];	/* the input name specified in DTS node of "/hcrtos/cjc8988" */
+};
+
+struct snd_eq_band_setting {
+	int band;
+	int cutoff; /* Hz */
+	int q;
+	int gain; /* +/- dB */
+};
+
+struct snd_drc_setting {
+	float peak_dBFS;
+	float gain_dBFS;
 };
 
 #endif	/* _HCUAPI_SND_H_ */

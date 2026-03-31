@@ -60,14 +60,28 @@ struct sk_buff_head {
 	spinlock_t lock;
 };
 
+#define SKBUF_FLAG_IS_CUSTOM 0x02U
+typedef void (*sk_buff_free_custom_fn)(struct sk_buff *skb);
+
 struct sk_buff {
 	struct sk_buff		*next;
 	struct sk_buff		*prev;
-
 	struct net_device	*dev;
+
+	/*
+	 * This is the control buffer. It is free to use for every
+	 * layer. Please put your private variables there. If you
+	 * want to keep them across layers you have to do a skb_clone()
+	 * first. This is owned by whoever has the skb queued ATM.
+	 */
+	char			cb[48] __aligned(8);
 
 	struct skb_shared_info	shared_info;
 	__be16			protocol;
+	__u8			flags;
+
+	sk_buff_free_custom_fn	custom_free_function;
+	void			*custom_free_opaque;
 
 	__u8			ip_summed:2;
 	__u8			ooo_okay:1;
@@ -310,7 +324,7 @@ static inline unsigned char *skb_pull_inline(struct sk_buff *skb, unsigned int l
  *	Return the number of bytes of free space at the head of an &sk_buff.
  */
 static inline unsigned int skb_headroom(const struct sk_buff *skb)
-{  
+{
 	return skb->data - skb->head;
 }
 static inline int skb_cloned(const struct sk_buff *skb)
@@ -350,5 +364,38 @@ struct sk_buff *skb_realloc_headroom(struct sk_buff *skb,
 
 int pskb_expand_head(struct sk_buff *skb, int nhead, int ntail, gfp_t gfp_mask);
 
+
+static inline unsigned int skb_headlen(const struct sk_buff *skb)
+{
+	return skb->len - skb->data_len;
+}
+
+#define skb_queue_walk(queue, skb) \
+		for (skb = (queue)->next;					\
+		     skb != (struct sk_buff *)(queue);				\
+		     skb = skb->next)
+
+static inline unsigned char *__skb_put(struct sk_buff *skb, unsigned int len)
+{
+	unsigned char *tmp = skb_tail_pointer(skb);
+	// SKB_LINEAR_ASSERT(skb);
+	skb->tail += len;
+	skb->len  += len;
+	return tmp;
+}
+
+static inline void __skb_trim(struct sk_buff *skb, unsigned int len)
+{
+	if (unlikely(skb_is_nonlinear(skb))) {
+		// WARN_ON(1);
+		return;
+	}
+	skb->len = len;
+	skb_set_tail_pointer(skb, len);
+}
+void skb_trim(struct sk_buff *skb, unsigned int len);
+
+struct sk_buff *skb_copy_expand(const struct sk_buff *skb, int newheadroom,
+				int newtailroom, gfp_t priority);
 
 #endif

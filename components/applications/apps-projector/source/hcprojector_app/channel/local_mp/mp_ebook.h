@@ -33,17 +33,17 @@ extern bool is_ebook_bgmusic;
 
 
 void ebook_open(void);
-void ebook_close(void);
+void ebook_close(bool force);
 void ebook_keyinput_event_cb(lv_event_t *event);
 void ebook_get_fullname(char *fullname, char *path, char *name);
 void readtyped(FILE *fp_read,int n);
 UINT32  fgetws_ex(char *string, int n, FILE *fp);
 void ebook_show_page_info(void);
 void change_ebook_txt_info(int keypad_value);
-void ebook_read_file(char *ebook_file_name);
+int ebook_read_file(char *ebook_file_name);
 bool get_ebook_fp_state(void);
 void win_ebook_close(void);
-
+void mp_ebook_clean_content(void);
 #ifdef __cplusplus
 } /*extern "C"*/
 #endif

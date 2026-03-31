@@ -100,7 +100,7 @@ int dlna_service_start_ex(struct dlna_svr_param* param);
 /**
  * It get the dlna lib build version string
  * 
- * @return The return value is tbuild version string.
+ * @return The return value is build version string.
  */
 char* dlna_get_version();
 

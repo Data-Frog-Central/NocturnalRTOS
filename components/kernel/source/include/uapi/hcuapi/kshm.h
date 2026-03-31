@@ -42,6 +42,7 @@ struct kshm_desc {
 
 struct kshm_cfg {
 	void *base;
+	int alloc_from_mmz;
 	size_t size;
 	int8_t dma_ch;
 	enum KSHM_DATA_DIRECTION data_direction;

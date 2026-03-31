@@ -6,31 +6,50 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
-#include <kernel/io.h>
-#include <kernel/types.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
-#include <freertos/semphr.h>
-#include <kernel/hwspinlock.h>
-#include <kernel/completion.h>
-#include <kernel/lib/console.h>
-
-#include <hcuapi/common.h>
-#include <hcuapi/kshm.h>
-#include <hcuapi/auddec.h>
-#include <hcuapi/viddec.h>
-#include <hcuapi/vidmp.h>
-#include <hcuapi/codec_id.h>
-#include <hcuapi/dis.h>
-#include <kernel/lib/fdt_api.h>
-#include <kernel/lib/libfdt/libfdt.h>
-#include <hcuapi/hdmi_tx.h>
 #include <hcuapi/persistentmem.h>
 #include <hcuapi/sysdata.h>
 #include <hcuapi/standby.h>
 #include <standby.h>
 #include <kernel/elog.h>
+#include <kernel/lib/console.h>
+#include <hcuapi/mipi.h>
 #include <hcuapi/lvds.h>
+
+static void boot_standby_pre_process(void)
+{
+	int fd = -1;
+	int temp = 0;
+
+	fd = open("/dev/backlight", O_RDWR);
+	if (fd > 0) {
+		temp = 0;
+		write(fd, &temp, 4);
+		close(fd);
+	}
+
+
+	fd = open("/dev/lvds", O_RDWR);
+	if (fd) {
+		ioctl(fd, LVDS_SET_PWM_BACKLIGHT, 0); //lvds set pwm default
+		ioctl(fd, LVDS_SET_GPIO_BACKLIGHT, 0); //lvds gpio backlight close
+		ioctl(fd, LVDS_SET_GPIO_POWER, 0); //lvds gpio power close
+		close(fd);
+	}
+
+	fd = open("/dev/mipi", O_RDWR);
+	if(fd){
+		ioctl(fd, MIPI_DSI_GPIO_ENABLE, 0); //mipi close gpio enable
+		close(fd);
+	}
+
+	fd = open("/dev/lcddev", O_RDWR); //lcddev close gpio enable
+	if (fd) {
+		temp = 0;
+		write(fd, &temp, 4);
+		close(fd);
+	}
+	printf("%s over\n",__func__);
+}
 
 int boot_enter_standby(int argc, char *argv[])
 {
@@ -51,8 +70,9 @@ int boot_enter_standby(int argc, char *argv[])
 
 	ioctl(fd_standby, STANDBY_GET_BOOTUP_MODE, &temp);
 	if (temp == STANDBY_BOOTUP_COLD_BOOT) {
-		printf("enter standby!\n");
+		boot_standby_pre_process();
 		usleep(1000 * 500);
+		printf("enter standby!\n");
 #if defined(CONFIG_WDT_AUTO_FEED)
 		close_watchdog();
 #endif

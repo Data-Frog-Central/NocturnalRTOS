@@ -312,7 +312,7 @@ void keystone_aa_sw_fix(int osd_width, int osd_height, int osd_stride, uint32_t 
 				sample_code_argb8888(top_width, bottom_width,0,osd_width,osd_height,osd_width,osd_argb8888);
 				keystone_reset_flag = 0;
 			}
-			else if(!keystone_reset_flag){// top == bottom, recover
+			else if(!keystone_reset_flag && top_width == bottom_width){// top == bottom, recover
 				recover_lr_edge( osd_width,  osd_height,  osd_stride, osd_argb8888);
 				keystone_reset_flag = 1;
 			}

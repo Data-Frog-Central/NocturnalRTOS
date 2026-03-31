@@ -229,4 +229,4 @@ static void ir_nec_decode_exit(void)
 	ir_raw_handler_unregister(&nec_handler);
 }
 
-module_driver(ir_nec_decode, ir_nec_decode_init, NULL, 0)
+module_system(ir_nec_decode, ir_nec_decode_init, NULL, 0)

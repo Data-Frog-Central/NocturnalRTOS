@@ -558,7 +558,12 @@ static int __spi_probe(const char *master, const char *node, uint8_t type)
 
 	spi->master = spi->controller;
 
+#ifdef CONFIG_SOC_HC15XX
 	spi->max_speed_hz = 50 * 1000 * 1000;
+#endif
+#ifdef CONFIG_SOC_HC16XX
+	spi->max_speed_hz = 100 * 1000 * 1000;
+#endif
 	spi->bits_per_word = 8;
 	fdt_get_property_u_32_index(np, "reg", 0, &cs);
 	spi->chip_select = cs;

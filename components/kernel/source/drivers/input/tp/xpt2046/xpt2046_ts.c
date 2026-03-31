@@ -36,10 +36,10 @@
 				| SPI_TX_QUAD | SPI_RX_DUAL | SPI_RX_QUAD)
 
 
-#define TS_POLL_DELAY	(10 * 1000000)	/* ns delay before the first sample */
-#define TS_POLL_PERIOD	(20 * 1000000)	/* ns delay between samples */
+#define TS_POLL_DELAY	(20 *1000)	/* ns delay before the first sample */
+#define TS_POLL_PERIOD	(40 *1000)	/* ns delay between samples */
 
-// #define DEBUG
+// #define DEBUG 1
 #if DEBUG
 	#define xpt2046printInfo(msg...)	printf(msg);
 	#define xpt2046printDebug(msg...)	printf(KERN_ERR msg);
@@ -386,7 +386,7 @@ static void xpt2046_rx(void *xpt)
 
 		xpt2046printInfo("%s:ignored=%d\n",__FUNCTION__,packet->tc.ignore);
 	
-		mod_timer(&ts->timer, jiffies + TS_POLL_PERIOD / 1000000);
+		mod_timer(&ts->timer, jiffies + usecs_to_jiffies(TS_POLL_PERIOD));
 		return;
 	}
 
@@ -458,7 +458,7 @@ static void xpt2046_rx(void *xpt)
 		xpt2046printInfo("%s:input_report_abs(%4d/%4d)\n",__FUNCTION__,cal_x, cal_y);
 	}
 out:
-	mod_timer(&ts->timer, jiffies + TS_POLL_PERIOD / 1000000);
+	mod_timer(&ts->timer, jiffies + usecs_to_jiffies(TS_POLL_PERIOD));
 }
 
 static void xpt2046_rx_val(void *xpt)
@@ -719,7 +719,7 @@ static void xpt2046_irq(uint32_t param)
 			// disable_irq_nosync(ts->spi->irq);
 			gpio_irq_disable(ts->spi->irq);
 			ts->pending = 1;
-			mod_timer(&ts->timer, jiffies + TS_POLL_DELAY / 1000000);
+			mod_timer(&ts->timer, jiffies + (usecs_to_jiffies(TS_POLL_DELAY)));
 		}
 	}
 	spin_unlock_irqrestore(&ts->lock, flags);

@@ -20,9 +20,9 @@ lv_obj_t *volume_scr = NULL;
 lv_group_t *volume_g = NULL;
 lv_obj_t *volume_bar;
 static lv_timer_t *volume_timer = NULL, *timer_mute = NULL;
-lv_group_t* pre_group=NULL;
-lv_obj_t* prev_obj = NULL;
-lv_obj_t *icon = NULL;
+static lv_group_t* pre_group=NULL;
+static lv_obj_t* prev_obj = NULL;
+static lv_obj_t *icon = NULL;
 int volume_num = 0;
 
 LV_IMG_DECLARE(volume_mute);
@@ -114,24 +114,28 @@ static void timer_handler(lv_timer_t* timer1){
 
     set_keystone_disable(false);    
     if(lv_obj_is_valid(prev_obj)){
+
+        //If backup key group is changed or curren key group is volume key group, 
+        //do not recover backup key group. So that avoid recover the deleted group.
+        if(lv_group_get_default() != volume_g && lv_group_get_default() != pre_group){
+            volume_timer = NULL;
+            return;
+        }
+
         lv_group_set_default(pre_group);
         lv_indev_set_group(indev_keypad, pre_group);
-        lv_group_focus_obj(prev_obj);       
+        lv_group_focus_obj(prev_obj); 
+        prev_obj = NULL; 
     }
 
-// #if PROJECTER_C2_VERSION
-//     if(projector_get_some_sys_param(P_CUR_CHANNEL) == SCREEN_CHANNEL_HDMI||projector_get_some_sys_param(P_CUR_CHANNEL) == SCREEN_CHANNEL_HDMI2)
-// #else
-//     if(projector_get_some_sys_param(P_CUR_CHANNEL) == SCREEN_CHANNEL_HDMI)
-// #endif
-    // last_scr = prev_scr;
-    // _ui_screen_change(lv_disp_get_scr_prev(lv_disp_get_default()), 0, 0);
    volume_timer = NULL;
 }
 
 static void timer_handler1(lv_timer_t* timer1){
     if(icon){
+        //printf("__%s, %d__\n", __func__, __LINE__);
         lv_obj_del(icon);
+        //printf("__%s, %d__\n", __func__, __LINE__);
         icon = NULL;       
     }
 
@@ -172,6 +176,7 @@ static void event_handler(lv_event_t* e){
                 lv_obj_t *sub = lv_obj_get_child(target->parent, 2);
                 lv_obj_t* label = lv_obj_get_child(sub, 0);
                 lv_label_set_text_fmt(label, "%d", volume_num/3);
+                if(volume_num == 99) volume_num = 100;
                 set_volume1(volume_num);
             }
 
@@ -191,30 +196,51 @@ static void event_handler(lv_event_t* e){
 
 void volume_screen_init(void ){
     volume_scr =lv_layer_top();
-    volume_g = lv_group_create();
     set_volume1(projector_get_some_sys_param(P_VOLUME));
 #ifdef CVBS_AUDIO_I2SI_I2SO
 	set_i2si_volume(projector_get_some_sys_param(P_VOLUME));
 #endif
 }
+void del_volume2(){
+    del_volume();
+    set_keystone_disable(false);
+    if(lv_obj_is_valid(prev_obj)){
+        lv_group_set_default(pre_group);
+        lv_indev_set_group(indev_keypad, pre_group);
+        lv_group_focus_obj(prev_obj);
+        prev_obj = NULL;
+    }
+}
 
 void del_volume(){
     if(volume_timer){
+        lv_timer_pause(volume_timer);
         lv_timer_del(volume_timer);
        volume_timer = NULL;
     }
     if(volume_bar){
-        lv_obj_del(volume_bar);
+        lv_group_remove_all_objs(volume_g);
+        lv_group_del(volume_g);
+        lv_obj_del_async(volume_bar);
+        printf("%s: %d\n", __func__, __LINE__);
         volume_bar = NULL;
+        volume_g = NULL;
         set_keystone_disable(false);
+        projector_set_some_sys_param(P_VOLUME, volume_num);
+        projector_sys_param_save();        
     }
+
 }
 
 void create_volume(){
+#ifdef LVGL_MBOX_STANDBY_SUPPORT
+	win_del_lvmbox_standby();
+#endif
     if(!volume_bar){
         set_keystone_disable(true);
         pre_group = lv_group_get_default();
         prev_obj = lv_group_get_focused(pre_group);
+        volume_g = lv_group_create();
         lv_group_set_default(volume_g);
         lv_indev_set_group(indev_keypad, volume_g);
         volume_bar = create_display_bar_widget(volume_scr, 70, 9);
@@ -249,6 +275,10 @@ void create_volume(){
 
 void create_mute_icon(){
     static bool is_mute = true;
+#ifdef LVGL_MBOX_STANDBY_SUPPORT
+	win_del_lvmbox_standby();
+#endif
+    del_volume2();
     if(is_mute){
         if(!icon){
             icon = lv_img_create(volume_scr);
@@ -258,7 +288,6 @@ void create_mute_icon(){
         if(timer_mute){
             lv_timer_pause(timer_mute);
         }
-
         is_mute = false;   
     }else{
         if(!icon){
@@ -277,5 +306,4 @@ void create_mute_icon(){
             lv_timer_reset(timer_mute);  
         }
     }
-    
 }

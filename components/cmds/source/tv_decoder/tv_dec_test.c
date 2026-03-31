@@ -27,6 +27,9 @@ static unsigned int mirror_mode = MIRROR_TYPE_NONE;
 static enum TVTYPE tv_sys = TV_NTSC;
 static bool tv_dec_started = false;
 static unsigned int stop_mode = 0;
+static bool tv_dec_traning = false;
+static uint8_t brightness = 50;
+static uint8_t dc_offset = 0x80;
 
 static void tv_dec_video_read_thread(void *args)
 {
@@ -76,7 +79,7 @@ static int tv_dec_start(int argc , char *argv[])
     vpath = TVDEC_VIDEO_TO_DE;
     rotate_mode = ROTATE_TYPE_0;
     mirror_mode = MIRROR_TYPE_NONE;
-
+    tv_dec_traning = 0;
 
     tv_dec_fd = open("/dev/tv_decoder" , O_WRONLY);
     if(tv_dec_fd < 0)
@@ -84,7 +87,7 @@ static int tv_dec_start(int argc , char *argv[])
         return -1;
     }
 
-    while((opt = getopt(argc , argv , "v:r:t:m:s:")) != EOF)
+    while((opt = getopt(argc , argv , "v:r:t:m:s:d:b:")) != EOF)
     {
         switch(opt)
         {
@@ -98,18 +101,16 @@ static int tv_dec_start(int argc , char *argv[])
                 mirror_mode = atoi(optarg);
                 break;
             case 't':
-                value = atoi(optarg);
-                if(value == 0)
-                {
-                    tv_sys = TV_PAL;
-                }
-                else
-                {
-                    tv_sys = TV_NTSC;
-                }
+                tv_dec_traning = atoi(optarg);
                 break;
             case 's':
                 stop_mode = atoi(optarg);
+                break;
+            case 'd':
+                dc_offset = atoi(optarg);
+                break;
+            case 'b':
+                brightness = atoi(optarg);
                 break;
             default:
                 break;
@@ -149,17 +150,35 @@ static int tv_dec_start(int argc , char *argv[])
 
     }
     printf("stop_mode = 0x%x\n" , stop_mode);
+    printf("dc_offset = %d\n" , dc_offset);
+    printf("brightness = %d\n" , brightness);
+
     ioctl(tv_dec_fd , TVDEC_SET_VIDEO_STOP_MODE , stop_mode);
-    ioctl(tv_dec_fd , TVDEC_START , tv_sys);
+    ioctl(tv_dec_fd , TVDEC_SET_DC_OFFSET , dc_offset);
+    ioctl(tv_dec_fd , TVDEC_SET_BRIGHTNESS , brightness);
+
+    
+    if (tv_dec_traning == false)
+    {
+        ioctl(tv_dec_fd , TVDEC_START , tv_sys);
+    }
+    else
+    {
+        ioctl(tv_dec_fd , TVDEC_SET_TRAINING_START , tv_sys);
+
+    }
     printf("tv_dec start ok\n");
     tv_dec_started = true;
     return 0;
 }
 
+
+
 static int tv_dec_stop(int argc , char *argv[])
 {
     int opt;
-    
+    opterr = 0;
+    optind = 0;
     
     if(tv_dec_fd >= 0)
     {
@@ -205,6 +224,68 @@ static int tv_dec_get_video_info(int argc , char *argv[])
         return -1;
     }
 }
+
+static int tv_dec_get_traning_result(int argc , char *argv[])
+{
+    struct tvdec_training_result training_result = { 0 };
+
+    if (tv_dec_fd >= 0)
+    {
+        ioctl(tv_dec_fd , TVDEC_GET_TRAINING_RESULT , &training_result);
+        printf("training_result.status =%d raining_result.dc_offset_val = 0x%x\n" ,
+               training_result.status ,
+               training_result.dc_offset_val);
+        return 0;
+    }
+    else
+    {
+        return -1;
+    }
+}
+
+
+
+
+
+static int tv_dec_set_brightness(int argc , char *argv[])
+{
+    int opt;
+    opterr = 0;
+    optind = 0;
+    int value = 0;
+    
+    while ((opt = getopt(argc , argv , "b:")) != EOF)
+    {
+        switch (opt)
+        {
+            case 'b':
+                value = atoi(optarg);
+                if (value<0 || value>100)
+                {
+                    printf("tv_dec_set_brightness parm err %d\n", value);
+                    return -1;
+                }
+                brightness = value;
+                printf("brightness = %d\n", brightness);
+                break;
+
+            default:
+                break;
+        }
+    }
+    if (tv_dec_fd >= 0)
+    {
+        ioctl(tv_dec_fd , TVDEC_SET_BRIGHTNESS , brightness);
+        return 0;
+    }
+    else
+    {
+        return -1;
+    }
+
+   
+}
+
 static int tv_dec_enter(int argc , char *argv[])
 {
     return 0;
@@ -213,3 +294,5 @@ CONSOLE_CMD(tv_dec , NULL , tv_dec_enter , CONSOLE_CMD_MODE_SELF , "enter tv dec
 CONSOLE_CMD(start , "tv_dec" , tv_dec_start , CONSOLE_CMD_MODE_SELF , "tv_dec_test")
 CONSOLE_CMD(stop , "tv_dec" , tv_dec_stop , CONSOLE_CMD_MODE_SELF , "stop tv_dec")
 CONSOLE_CMD(get_video_info , "tv_dec" , tv_dec_get_video_info , CONSOLE_CMD_MODE_SELF , "get_video_info")
+CONSOLE_CMD(get_traning_resule , "tv_dec" , tv_dec_get_traning_result , CONSOLE_CMD_MODE_SELF , "traning_result")
+CONSOLE_CMD(set_brighness , "tv_dec" , tv_dec_set_brightness , CONSOLE_CMD_MODE_SELF , "set_brighness")

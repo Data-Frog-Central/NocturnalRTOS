@@ -33,6 +33,286 @@
 #define S32TOS16(in) (int16_t)((int32_t)(in) >> 16)
 #define U32TOS16(in) (int16_t)((int32_t)((in) - 0x80000000) >> 16)
 
+void audsink_copy_to_s16lep(void *dst, void *src, snd_pcm_uframes_t frames, int ipitch,
+    uint8_t channels_in, snd_pcm_format_t format, snd_pcm_access_t access, int align)
+{
+	int16_t *out;
+	uint8_t ch;
+	int istep;
+	snd_pcm_uframes_t i;
+
+	if (access == SND_PCM_ACCESS_RW_INTERLEAVED) {
+		istep = channels_in;
+	} else {
+		istep = 1;
+	}
+
+	switch (format) {
+		case SND_PCM_FORMAT_S8:
+		{
+			char *in;
+			for (ch = 0; ch < channels_in; ch++) {
+				if (access == SND_PCM_ACCESS_RW_INTERLEAVED) {
+					in = (char *)src + ch;
+				} else {
+					in = (char *)src + ch * ipitch;
+				}
+
+				out = (int16_t *)dst + ch * frames;
+
+				for (i = 0; i < frames; i++) {
+					*out = S8TOS16(*in);
+					out++;
+					in += istep;
+				}
+			}
+			break;
+		}
+
+		case SND_PCM_FORMAT_U8:
+		{
+			unsigned char *in;
+			for (ch = 0; ch < channels_in; ch++) {
+				if (access == SND_PCM_ACCESS_RW_INTERLEAVED) {
+					in = (unsigned char *)src + ch;
+				} else {
+					in = (unsigned char *)src + ch * ipitch;
+				}
+
+				out = (int16_t *)dst + ch * frames;
+
+				for (i = 0; i < frames; i++) {
+					*out = U8TOS16(*in);
+					out++;
+					in += istep;
+				}
+			}
+			break;
+		}
+
+		case SND_PCM_FORMAT_S16:
+		{
+			int16_t *in;
+			for (ch = 0; ch < channels_in; ch++) {
+				if (access == SND_PCM_ACCESS_RW_INTERLEAVED) {
+					in = (int16_t *)src + ch;
+				} else {
+					in = (int16_t *)src + ch * ipitch;
+				}
+
+				out = (int16_t *)dst + ch * frames;
+
+				for (i = 0; i < frames; i++) {
+					*out = S16TOS16(*in);
+					out++;
+					in += istep;
+				}
+			}
+			break;
+		}
+
+		case SND_PCM_FORMAT_S16_BE:
+		{
+			int16_t *in;
+			for (ch = 0; ch < channels_in; ch++) {
+				if (access == SND_PCM_ACCESS_RW_INTERLEAVED) {
+					in = (int16_t *)src + ch;
+				} else {
+					in = (int16_t *)src + ch * ipitch;
+				}
+
+				out = (int16_t *)dst + ch * frames;
+
+				for (i = 0; i < frames; i++) {
+					*out = S16BETOS16(in);
+					out++;
+					in += istep;
+				}
+			}
+			break;
+		}
+
+		case SND_PCM_FORMAT_U16:
+		{
+			uint16_t *in;
+			for (ch = 0; ch < channels_in; ch++) {
+				if (access == SND_PCM_ACCESS_RW_INTERLEAVED) {
+					in = (uint16_t *)src + ch;
+				} else {
+					in = (uint16_t *)src + ch * ipitch;
+				}
+
+				out = (int16_t *)dst + ch * frames;
+
+				for (i = 0; i < frames; i++) {
+					*out = U16TOS16(*in);
+					out++;
+					in += istep;
+				}
+			}
+			break;
+		}
+
+		case SND_PCM_FORMAT_U16_BE:
+		{
+			uint16_t *in;
+			for (ch = 0; ch < channels_in; ch++) {
+				if (access == SND_PCM_ACCESS_RW_INTERLEAVED) {
+					in = (uint16_t *)src + ch;
+				} else {
+					in = (uint16_t *)src + ch * ipitch;
+				}
+
+				out = (int16_t *)dst + ch * frames;
+
+				for (i = 0; i < frames; i++) {
+					*out = U16BETOS16(in);
+					out++;
+					in += istep;
+				}
+			}
+			break;
+		}
+
+		case SND_PCM_FORMAT_S24:
+		{
+			int32_t *in;
+			for (ch = 0; ch < channels_in; ch++) {
+				if (access == SND_PCM_ACCESS_RW_INTERLEAVED) {
+					in = (int32_t *)src + ch;
+				} else {
+					in = (int32_t *)src + ch * ipitch;
+				}
+
+				out = (int16_t *)dst + ch * frames;
+
+				for (i = 0; i < frames; i++) {
+					if (SND_PCM_ALIGN_LEFT == align)
+						*out = S24LTOS16(*in);
+					else
+						*out = S24RTOS16(*in);
+					out++;
+					in += istep;
+				}
+			}
+			break;
+		}
+
+		case SND_PCM_FORMAT_U24:
+		{
+			uint32_t *in;
+			for (ch = 0; ch < channels_in; ch++) {
+				if (access == SND_PCM_ACCESS_RW_INTERLEAVED) {
+					in = (uint32_t *)src + ch;
+				} else {
+					in = (uint32_t *)src + ch * ipitch;
+				}
+
+				out = (int16_t *)dst + ch * frames;
+
+				for (i = 0; i < frames; i++) {
+					if (SND_PCM_ALIGN_LEFT == align)
+						*out = U24LTOS16(*in);
+					else
+						*out = U24RTOS16(*in);
+					out++;
+					in += istep;
+				}
+			}
+			break;
+		}
+
+		case SND_PCM_FORMAT_S32:
+		{
+			int32_t *in;
+			for (ch = 0; ch < channels_in; ch++) {
+				if (access == SND_PCM_ACCESS_RW_INTERLEAVED) {
+					in = (int32_t *)src + ch;
+				} else {
+					in = (int32_t *)src + ch * ipitch;
+				}
+
+				out = (int16_t *)dst + ch * frames;
+
+				for (i = 0; i < frames; i++) {
+					*out = S32TOS16(*in);
+					out++;
+					in += istep;
+				}
+			}
+			break;
+		}
+
+		case SND_PCM_FORMAT_S32_BE:
+		{
+			int32_t *in;
+			for (ch = 0; ch < channels_in; ch++) {
+				if (access == SND_PCM_ACCESS_RW_INTERLEAVED) {
+					in = (int32_t *)src + ch;
+				} else {
+					in = (int32_t *)src + ch * ipitch;
+				}
+
+				out = (int16_t *)dst + ch * frames;
+
+				for (i = 0; i < frames; i++) {
+					*out = S32BETOS16(in);
+					out++;
+					in += istep;
+				}
+			}
+			break;
+		}
+
+		case SND_PCM_FORMAT_U32:
+		{
+			uint32_t *in;
+			for (ch = 0; ch < channels_in; ch++) {
+				if (access == SND_PCM_ACCESS_RW_INTERLEAVED) {
+					in = (uint32_t *)src + ch;
+				} else {
+					in = (uint32_t *)src + ch * ipitch;
+				}
+
+				out = (int16_t *)dst + ch * frames;
+
+				for (i = 0; i < frames; i++) {
+					*out = U32TOS16(*in);
+					out++;
+					in += istep;
+				}
+			}
+			break;
+		}
+
+		case SND_PCM_FORMAT_U32_BE:
+		{
+			uint32_t *in;
+			for (ch = 0; ch < channels_in; ch++) {
+				if (access == SND_PCM_ACCESS_RW_INTERLEAVED) {
+					in = (uint32_t *)src + ch;
+				} else {
+					in = (uint32_t *)src + ch * ipitch;
+				}
+
+				out = (int16_t *)dst + ch * frames;
+
+				for (i = 0; i < frames; i++) {
+					*out = U32BETOS16(in);
+					out++;
+					in += istep;
+				}
+			}
+			break;
+		}
+
+		default:
+			printf("unsupport audio format!!!\n");
+			break;
+	}
+
+	return;
+}
 void audsink_copy_raw(void *dst, void *src, snd_pcm_uframes_t frames)
 {
 	memcpy(dst, src, frames);

@@ -82,6 +82,14 @@ struct audio_config
 	int buffering_start;
 	int buffering_end;
 	int enable_audsink;
+
+	/* adjust dma buffer size,unit:ms,range:150ms~2000ms */
+	int dma_buffer_time;
+	/* mix_priority set audio volume priority,value is [0,1,2],0: lowest priority,2: highest priority */
+	int mix_priority;
+	/* mix_maximum_weight:value is "0" or "1"; set "1" means one audio monopolize 100% volume */
+	int mix_maximum_weight;
+
 } __attribute__((aligned(8)));
 
 /*! @struct audio_decore_status

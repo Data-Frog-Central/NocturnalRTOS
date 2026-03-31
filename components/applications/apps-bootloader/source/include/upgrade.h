@@ -7,6 +7,7 @@
 int upgrade_detect(void);
 int upgrade_force(void);
 int upgrade_detect_key(void);
+int do_hcfota_upgrade(unsigned int ota_mode);
 #else
 static int upgrade_detect(void)
 {
@@ -17,6 +18,10 @@ static int upgrade_force(void)
 	return -1;
 }
 static int upgrade_detect_key(void)
+{
+	return -1;
+}
+int do_hcfota_upgrade(unsigned int ota_mode)
 {
 	return -1;
 }

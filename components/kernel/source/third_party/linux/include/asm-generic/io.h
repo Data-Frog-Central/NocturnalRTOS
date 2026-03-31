@@ -154,7 +154,7 @@ static inline void readsb(const volatile void __iomem *addr, void *buffer,
 			  unsigned int count)
 {
 	if (count) {
-		u8 *buf = buffer;
+		u8 *buf = (u8*) buffer;
 
 		do {
 			u8 x = __raw_readb(addr);
@@ -170,7 +170,7 @@ static inline void readsw(const volatile void __iomem *addr, void *buffer,
 			  unsigned int count)
 {
 	if (count) {
-		u16 *buf = buffer;
+		u16 *buf = (u16*)buffer;
 
 		do {
 			u16 x = __raw_readw(addr);
@@ -187,7 +187,7 @@ static inline void readsl(const volatile void __iomem *addr, void *buffer,
 			  unsigned int count)
 {
 	if (count) {
-		u32 *buf = buffer;
+		u32 *buf = (u32*)buffer;
 
 		do {
 			u32 x = __raw_readl(addr);
@@ -203,7 +203,7 @@ static inline void writesb(volatile void __iomem *addr, const void *buffer,
 			   unsigned int count)
 {
 	if (count) {
-		const u8 *buf = buffer;
+		const u8 *buf = (u8*)buffer;
 
 		do {
 			__raw_writeb(*buf++, addr);
@@ -218,7 +218,7 @@ static inline void writesw(volatile void __iomem *addr, const void *buffer,
 			   unsigned int count)
 {
 	if (count) {
-		const u16 *buf = buffer;
+		const u16 *buf = (u16*)buffer;
 
 		do {
 			__raw_writew(*buf++, addr);
@@ -233,7 +233,7 @@ static inline void writesl(volatile void __iomem *addr, const void *buffer,
 			   unsigned int count)
 {
 	if (count) {
-		const u32 *buf = buffer;
+		const u32 *buf = (u32*)buffer;
 
 		do {
 			__raw_writel(*buf++, addr);

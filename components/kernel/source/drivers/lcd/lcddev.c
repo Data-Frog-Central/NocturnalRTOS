@@ -235,6 +235,8 @@ static int lcd_ioctl_send_cmds(struct hc_lcd_master_dev *cmds)
 	}
 
 	lcddev->disdev->lcd_write_cmds(cmds->packet,cmds->count);
+
+	return LCD_RET_SUCCESS;
 }
 
 static int lcd_ioctl_send_data(struct hc_lcd_master_dev *data)
@@ -260,6 +262,7 @@ static int lcd_ioctl_send_data(struct hc_lcd_master_dev *data)
 	log_d("%s %d %d\n",__func__,__LINE__,data->packet[i]);
 	lcddev->disdev->lcd_write_data(data->packet,data->count);
 
+	return LCD_RET_SUCCESS;
 }
 
 static int lcd_ioctl_read_data(struct hc_lcd_spi_read *pack)
@@ -273,6 +276,7 @@ static int lcd_ioctl_read_data(struct hc_lcd_spi_read *pack)
 
 	while(pack->received_size--)
 		pack->received_data[i++] = lcddev->disdev->lcd_read_data(0);
+	return LCD_RET_SUCCESS;
 }
 #endif
 
@@ -381,9 +385,10 @@ static const struct file_operations lcd_fops = {
 	.close = lcd_close,
 	.read = lcd_read,
 	.write = lcd_write,
-	// .ioctl = lcd_ioctl,
+	.ioctl = lcd_ioctl,
 };
 
+#if 0
 static bool is_bootlogo_showing(void)
 {
 	u32 de;
@@ -396,6 +401,7 @@ static bool is_bootlogo_showing(void)
 	deshowing = (REG32_READ(de + 0x190) & BIT(21)) && (REG32_READ(de) & BIT(0));
 	return !!(deshowing);
 }
+#endif
 
 static int lcd_probe(const char *node)
 {
@@ -492,11 +498,11 @@ static int lcd_probe(const char *node)
 	}
 	lcddev->lcd_int_status = LCD_CURRENT_NOT_INIT;
 	//Determine whether the initialization is repeated
-	if(is_bootlogo_showing())
-	{
-		lcddev->lcd_int_status = LCD_CURRENT_IS_INIT;
-		goto lcd_register;
-	}
+	// if(is_bootlogo_showing())
+	// {
+	// 	lcddev->lcd_int_status = LCD_CURRENT_IS_INIT;
+	// 	goto lcd_register;
+	// }
 
 	if(lcddev->lcd_default_off == 1)
 	{
@@ -540,6 +546,7 @@ static int lcd_exit(void)
 	if(lcddev!=NULL)
 		free(lcddev);
 	unregister_driver(MODULE_NAME);
+	return 0;
 }
 
 module_driver(lcd, lcd_init, lcd_exit, 3)

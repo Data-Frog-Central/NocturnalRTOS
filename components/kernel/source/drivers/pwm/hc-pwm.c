@@ -16,14 +16,15 @@ struct hc_pwm_priv {
 	const struct	pwm_ops_s *ops;
 	int		id;
 	const char 	*path;
-	pwm_reg_t	*base;	
+	pwm_reg_t	*base;
+	int		polarity;
+	uint16_t 	pwm_clk_div;
 };
 
 static int hc_pwm_setup(struct pwm_lowerhalf_s *dev)
 {
 	return 0;	
 }
-
 
 #ifdef CONFIG_SOC_HC16XX
 static int hc_pwm_start(struct pwm_lowerhalf_s *dev,
@@ -33,31 +34,31 @@ static int hc_pwm_start(struct pwm_lowerhalf_s *dev,
 	pwm_reg_t *reg = (pwm_reg_t *)priv->base;
 	uint32_t period_ns, duty_ns;
 	bool polarity;
-	uint32_t h_val, l_val, div;
+	uint32_t h_val, l_val;
 
 	period_ns = info->period_ns;
 	duty_ns = info->duty_ns;
 	polarity = info->polarity;
-	
-	div = 1;
 
 	if (period_ns < 37)
 		return 0;
 
+#ifdef CONFIG_RANGE_AUTO_SET
+	priv->pwm_clk_div = 1;
 	while (1) {
-        	if ((div*37*65535) > period_ns)
-                break;
-		div++;
+		if ((priv->pwm_clk_div * 37 * 65535) > period_ns)
+			break;
+		priv->pwm_clk_div++;
 	}
-
-	reg->channel_ctrl[priv->id].channel_en = 0x00;
-	reg->clk_ctrl.pwm_clksel = div;
+	reg->clk_ctrl.pwm_clksel = priv->pwm_clk_div;
+#endif
 
 	if (duty_ns > period_ns)
-        duty_ns = period_ns;
+		duty_ns = period_ns;
 
-	h_val = duty_ns / div / 37;
-	l_val = (period_ns - duty_ns) / div / 37;
+	printf("priv->pwm_clk_div = %d\n", priv->pwm_clk_div);
+	h_val = duty_ns / priv->pwm_clk_div / 37;
+	l_val = (period_ns - duty_ns) / priv->pwm_clk_div / 37;
 
 	reg->channel_ctrl[priv->id].polarity = polarity;
 	reg->divder_ctrl[priv->id].low_level_counter = l_val;
@@ -87,36 +88,36 @@ static int hc_pwm_start(struct pwm_lowerhalf_s *dev,
 	pwm_reg_t *reg = (pwm_reg_t *)priv->base;
 	uint32_t period_ns, duty_ns;
 	bool polarity;
-	uint32_t h_val, l_val, div;
+	uint32_t h_val, l_val ;
 
 	period_ns = info->period_ns;
 	duty_ns = info->duty_ns;
 	polarity = info->polarity;
 	
-	div = 1;
 
 	if (period_ns < 37)
 		return 0;
 
+#ifdef CONFIG_RANGE_AUTO_SET
+	priv->pwm_clk_div = 1;
 	while (1) {
-        	if ((div*37*65535) > period_ns)
-                break;
-		div++;
+		if ((priv->pwm_clk_div * 37 * 65535) > period_ns)
+			break;
+		priv->pwm_clk_div++;
 	}
-
-	reg->divder_ctrl[priv->id].channel_en = 0x00;
-	reg->clk_ctrl.pwm_clksel = div;
-
+	reg->clk_ctrl.pwm_clksel = priv->pwm_clk_div;
+#endif
 	if (duty_ns > period_ns)
-        duty_ns = period_ns;
+		duty_ns = period_ns;
 
-	h_val = duty_ns / div / 37;
-	l_val = (period_ns - duty_ns) / div / 37;
+	h_val = duty_ns / priv->pwm_clk_div / 37;
+	l_val = (period_ns - duty_ns) / priv->pwm_clk_div / 37;
 
 	reg->divder_ctrl[priv->id].polarity = polarity;
 	reg->divder_ctrl[priv->id].low_level_counter = l_val;
 	reg->divder_ctrl[priv->id].high_level_counter = h_val;
 
+	/* use other channel must enable ch0 */
 	reg->divder_ctrl[0].channel_en = 0x01;
 	reg->divder_ctrl[priv->id].channel_en = 0x01;
 
@@ -139,14 +140,38 @@ static void hc_pwm_config(struct hc_pwm_priv *priv)
 {
 	pwm_reg_t *reg = (pwm_reg_t *)priv->base;
 
-	if (reg->clk_ctrl.pwm_enable == 0x01)
-		return ;
+#ifdef CONFIG_RANGE_206Hz_135KHz
+	priv->pwm_clk_div = 2;
+#elif defined(CONFIG_RANGE_103Hz_67KHz)
+	priv->pwm_clk_div = 4;
+#elif defined(CONFIG_RANGE_50Hz_33KHz)
+	priv->pwm_clk_div = 8;
+#else
+	priv->pwm_clk_div = 1;
+#endif
 
-	reg->clk_ctrl.pwm_enable	= 0x01;
-	reg->clk_ctrl.pwm_clken		= 0x01;
-	reg->clk_ctrl.pwm_clksel	= 10;
-	//reg->channel_ctrl[priv->id].polarity = priv->polarity;
-	
+#ifdef CONFIG_SOC_HC16XX
+	if ((reg->channel_ctrl[priv->id].channel_en == 0x01) &&
+	    (reg->clk_ctrl.pwm_enable == 0x01))
+		return;
+	reg->channel_ctrl[priv->id].polarity = priv->polarity;
+	reg->channel_ctrl[priv->id].channel_en = 0x01;
+
+#elif defined(CONFIG_SOC_HC15XX)
+	if ((reg->divder_ctrl[priv->id].channel_en == 0x01) &&
+	    (reg->clk_ctrl.pwm_enable == 0x01))
+		return;
+
+	reg->divder_ctrl[priv->id].polarity = priv->polarity;
+	reg->divder_ctrl[priv->id].channel_en = 0x01;
+#endif
+
+	if (reg->clk_ctrl.pwm_enable != 0x01) {
+		reg->clk_ctrl.pwm_enable = 0x01;
+		reg->clk_ctrl.pwm_clken = 0x01;
+		reg->clk_ctrl.pwm_clksel = priv->pwm_clk_div;
+	}
+
 	return;
 }
 
@@ -189,6 +214,7 @@ static struct pwm_lowerhalf_s *hc_pwminitialize(const char *node, int id)
 	priv->id = id;
 	priv->ops = &hc_pwm_ops;
 	priv->base = (pwm_reg_t *)&PWMCTRL;
+	priv->polarity = 0;
 
 	if (fdt_get_property_string_index(np, "devpath", 0, &priv->path)) {
 		pwmerr("ERROR: init fail\n");
@@ -200,6 +226,8 @@ static struct pwm_lowerhalf_s *hc_pwminitialize(const char *node, int id)
 		pinmux_select_setting(active_state);
 		free(active_state);
 	}
+
+	fdt_get_property_u_32_index(np, "polarity", 0, &priv->polarity);
 
 	hc_pwm_config(priv);
 		 

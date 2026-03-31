@@ -172,4 +172,9 @@ static inline void remove_wait_queue(wait_queue_head_t *q, wait_queue_t *wait)
 	destroy_poll_wait(wait);
 }
 
+static inline int waitqueue_active(wait_queue_head_t *q)
+{
+	return !list_empty(&q->task_list);
+}
+
 #endif

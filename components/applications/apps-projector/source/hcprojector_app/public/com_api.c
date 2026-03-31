@@ -150,9 +150,9 @@ static int partition_delnode_form_glist(char * string_to_find)
     }
     return ret;
 }
-static int partition_info_update(int usb_state,void* dev)
+int partition_info_update(int usb_state,void* dev)
 {
-    if(usb_state==USB_STAT_MOUNT||usb_state==SD_STAT_MOUNT){
+    if(usb_state==MSG_TYPE_USB_MOUNT||usb_state==MSG_TYPE_SD_MOUNT){
         char *dev_name = NULL;
         if (partition_glist_find((char*)dev))
             return 0;
@@ -160,7 +160,7 @@ static int partition_info_update(int usb_state,void* dev)
         partition_info->count++;
         dev_name = strdup((char*)dev);
         partition_info->dev_list=glist_append((glist*)partition_info->dev_list, dev_name);
-    }else if(usb_state==USB_STAT_UNMOUNT||usb_state==SD_STAT_UNMOUNT||usb_state==SD_STAT_UNMOUNT_FAIL||usb_state==USB_STAT_UNMOUNT_FAIL){
+    }else if(usb_state==MSG_TYPE_USB_UNMOUNT||usb_state==MSG_TYPE_SD_UNMOUNT||usb_state==MSG_TYPE_SD_UNMOUNT_FAIL||usb_state==MSG_TYPE_USB_UNMOUNT_FAIL){
         if (!partition_delnode_form_glist(dev)){
             partition_info->count--;
             if (partition_info->count < 0)
@@ -329,13 +329,43 @@ static int usb_wifi_notify_check(unsigned long action, void *dev)
 }
 #endif
 
-
+static int partition_info_msg_send(int type,uint32_t code)
+{
+    control_msg_t msg = {0};
+    memset(&msg, 0, sizeof(control_msg_t));
+    switch(type){
+        case USB_STAT_MOUNT:
+            msg.msg_type=MSG_TYPE_USB_MOUNT;
+            break;
+        case USB_STAT_UNMOUNT:
+            msg.msg_type=MSG_TYPE_USB_UNMOUNT;
+            break;
+        case USB_STAT_MOUNT_FAIL:
+            msg.msg_type=MSG_TYPE_USB_MOUNT_FAIL;
+            break;
+        case USB_STAT_UNMOUNT_FAIL:
+            msg.msg_type=MSG_TYPE_USB_UNMOUNT_FAIL;
+            break;
+        case SD_STAT_MOUNT:
+            msg.msg_type=MSG_TYPE_SD_MOUNT;
+            break;
+        case SD_STAT_UNMOUNT:
+            msg.msg_type=MSG_TYPE_SD_UNMOUNT;
+            break;
+        case SD_STAT_MOUNT_FAIL:
+            msg.msg_type=MSG_TYPE_SD_MOUNT_FAIL;
+            break;
+        case SD_STAT_UNMOUNT_FAIL:
+            msg.msg_type=MSG_TYPE_SD_UNMOUNT_FAIL;
+            break;
+    }
+    msg.msg_code=code;
+    api_control_send_msg(&msg);
+}
 
 static int usbd_notify(struct notifier_block *self,
                            unsigned long action, void* dev)
 {
-    control_msg_t msg = {0};
-    memset(&msg, 0, sizeof(control_msg_t));
     switch (action) {
     case USB_MSC_NOTIFY_MOUNT:
         if(strstr(dev,"sd")){
@@ -344,7 +374,7 @@ static int usbd_notify(struct notifier_block *self,
             m_usb_state = SD_STAT_MOUNT;
         }
         if (dev)
-		  printf("USB_STAT_MOUNT: %s\n", dev);
+		  printf("USB_STAT_MOUNT: %s\n", (char *)dev);
         break;
     case USB_MSC_NOTIFY_UMOUNT:
         if(strstr(dev,"sd")){
@@ -374,13 +404,11 @@ static int usbd_notify(struct notifier_block *self,
         return NOTIFY_OK;
         break;
     }
-    if(m_usb_state== USB_STAT_UNMOUNT)
-    {
-       msg.msg_type = MSG_TYPE_USB_UNMOUNT;
-       api_control_send_msg(&msg);
-    }
-    partition_info_update(m_usb_state,dev);
-    // partition_info_update(temp,dev);
+    char * stroage_devname=strdup(dev);
+    /*need to free its memory after rsv message */ 
+    partition_info_msg_send(m_usb_state,(uint32_t)stroage_devname);
+
+    // partition_info_update(m_usb_state,dev);
 
     return NOTIFY_OK;
 }
@@ -1099,6 +1127,28 @@ int api_logo_off2(int closevp, int fillblack)
     return 0;
 }
 
+//Suspend dis before entering standby
+int api_dis_suspend(void)
+{
+    int fd = -1;
+    struct dis_suspend_resume   suspend_resume = { 0 };
+
+    fd = open("/dev/dis" , O_WRONLY);
+    if(fd < 0)
+    {
+        printf("%s(), line:%d, open dis error!\n" , __func__ , __LINE__);
+        return -1;
+    }
+
+    suspend_resume.distype = DIS_TYPE_HD;
+
+    ioctl(fd , DIS_SET_SUSPEND , &suspend_resume);
+    close(fd);
+
+    return 0;
+}
+
+
 
 /**
  * @brief turn on/off the video frame output
@@ -1402,9 +1452,10 @@ void api_system_reboot(void)
 {
     printf("%s(): reboot now!!\n", __func__);
 #ifdef __linux__
-    system("reboot");
+    system("reboot -f");
 #else    
-    hw_watchdog_reset(10);
+    extern int reset(void);
+    reset();
 #endif
     while(1);
 }
@@ -1443,6 +1494,24 @@ screen_ctrl api_screen_get_ctrl(void *screen)
          //     entry_tmp->screen, screen, entry_tmp->control);
         if (entry_tmp->screen == screen){
             return entry_tmp->control;
+        }
+        glist_tmp = glist_tmp->next;
+    }
+
+    return NULL;
+}
+
+screen_entry_t* api_screen_get_ctrl_entry(void *screen){
+    screen_entry_t *entry_tmp;
+    glist *glist_tmp = NULL;
+
+    glist_tmp = m_screen_list;
+    while(glist_tmp){
+        entry_tmp = glist_tmp->data;
+         // printf("%s(), entry_tmp->screen:%x,%x, screen, ctrl:%x\n", __func__, \
+         //     entry_tmp->screen, screen, entry_tmp->control);
+        if (entry_tmp->screen == screen){
+            return entry_tmp;
         }
         glist_tmp = glist_tmp->next;
     }
@@ -1603,6 +1672,8 @@ bool api_hotkey_enable_get(uint32_t key)
     }
     return false;
 }
+
+#ifdef BLUETOOTH_SUPPORT
 static bt_connect_status_e bt_connet_status = BT_CONNECT_STATUS_DEFAULT;
 void api_set_bt_connet_status(bt_connect_status_e val)
 {
@@ -1613,6 +1684,96 @@ bt_connect_status_e api_get_bt_connet_status(void)
 {
     return bt_connet_status;
 }
+
+static bool bluetooth_channel_map_flag = 0;
+bool get_bluetooth_channel_map_flag(void)
+{
+	return bluetooth_channel_map_flag;
+}
+
+int bt_set_shield_wifi_channel(int wifi_channel)
+{
+	struct bluetooth_channel_map map;
+	switch(wifi_channel) 
+	{
+		case 1:
+			map.x = 1;
+			map.y = 23;
+			break;
+		case 2:
+			map.x = 6;
+			map.y = 28;
+			break;
+		case 3:
+			map.x = 11;
+			map.y = 33;
+			break;
+		case 4:
+			map.x = 16;
+			map.y = 38;
+			break;
+		case 5:
+			map.x = 21;
+			map.y = 43;
+			break;
+		case 6:
+			map.x = 26;
+			map.y = 48;
+			break;
+		case 7:
+			map.x = 31;
+			map.y = 53;
+			break;
+		case 8:
+			map.x = 36;
+			map.y = 58;
+			break;
+		case 9:
+			map.x = 41;
+			map.y = 63;
+			break;
+		case 10:
+			map.x = 46;
+			map.y = 68;
+			break;
+		case 11:
+			map.x = 51;
+			map.y = 73;
+			break;
+		case 12:
+			map.x = 56;
+			map.y = 78;
+			break;
+		case 13:
+			map.x = 61;
+			map.y = 83;
+			break;
+		case 14:
+			map.x = 61;
+			map.y = 83;
+			break;
+		case 255://close all
+			map.x = 0;
+			map.y = 83;
+			break;
+		default://open all
+			map.x = 128;
+			map.y = 128;
+			break;
+	}
+	bluetooth_ioctl(BLUETOOTH_SET_CLOSE_CHANNEL_MAP, &map);
+	bluetooth_channel_map_flag = 1;
+	if(api_get_bt_connet_status() != BT_CONNECT_STATUS_CONNECTED)
+	{
+		bluetooth_ioctl(BLUETOOTH_SET_RESET, NULL);
+		bluetooth_channel_map_flag = 0;
+	}
+    else
+    {
+        bt_need_reset_set(true);
+    }
+}
+#endif
 
 #define SOUND_DEV   "/dev/sndC0i2so"
 #define DEFAULT_VOL 50
@@ -1654,7 +1815,6 @@ int api_media_mute(bool mute)
         close(snd_fd_i2so);
     }
 #ifdef CVBS_AUDIO_I2SI_I2SO
-	if(cvbs_is_playing()){
 	    int snd_fd_i2si=-1;
 	    snd_fd_i2si = open("/dev/sndC0i2si", O_WRONLY);
 	    if(snd_fd_i2si<0){
@@ -1664,7 +1824,6 @@ int api_media_mute(bool mute)
 	        api_mute_ctrl(mute,snd_fd_i2si);
 	        close(snd_fd_i2si);
 	    }
-}
 #endif 
     return API_SUCCESS;
 
@@ -1850,13 +2009,44 @@ void api_set_display_area(dis_tv_mode_e ratio)//void set_aspect_ratio(dis_tv_mod
     dz.distype = DIS_TYPE_HD;
     int h = get_display_h();//projector_get_some_sys_param(P_SYS_SCALE_MAIN_LAYER_H);
     int v = get_display_v();//projector_get_some_sys_param(P_SYS_SCALE_MAIN_LAYER_V);
-    if(h*3 == v*4 && (ratio == DIS_TV_16_9 || ratio == DIS_TV_AUTO)){
-        v = v*3/4;
-    }else if(h*9 == v*16 && ratio == DIS_TV_4_3){
+
+    printf("h1: %d, v1: %d\n", h, v);
+    #ifdef SYS_ZOOM_SUPPORT
+    int zoom_mode = projector_get_some_sys_param(P_SYS_ZOOM_DIS_MODE);
+    zoom_mode = zoom_mode == DIS_TV_AUTO ? DIS_TV_16_9 : zoom_mode;
+    #else
+    int zoom_mode = DIS_TV_16_9;
+    #endif
+    if(zoom_mode == DIS_TV_4_3){
+        if(ratio == DIS_TV_16_9 || ratio == DIS_TV_AUTO){
+            if(h > v){
+                v = v*3/4;
+            }else{
+                h = h*3/4;//竖屏
+            }            
+        }else if(ratio == DIS_TV_4_3){
+            if(h < v){
+                h = h*3/4;//竖屏
+                v = v*4/3;
+            }
+        }
+    }else if(zoom_mode == DIS_TV_16_9 && ratio == DIS_TV_4_3){
         h = h*3/4;
     }
-    dz.dst_area.x =  get_display_x()+(get_display_h()-h)/2;
-    dz.dst_area.y =  get_display_y()+(get_display_v()-v)/2;
+    
+    int x = get_display_x()+(get_display_h()-h)/2;
+    int y = get_display_y()+(get_display_v()-v)/2;
+    if(v > h){
+        int temp = v;
+        v = h;
+        h = temp;
+        temp = y;
+        y = x;
+        x = temp;
+    }
+    printf("h2: %d, v2: %d, x: %d, y: %d\n", h, v, x, y);
+    dz.dst_area.x =  x;//get_display_x()+(get_display_h()-h)/2;
+    dz.dst_area.y =  y;//get_display_y()+(get_display_v()-v)/2;
     dz.dst_area.w =  h;
     dz.dst_area.h =  v;
     dz.src_area.x = 0;
@@ -2628,3 +2818,30 @@ int api_ramdisk_close()
 }
 
 #endif
+static bool is_device_info=true;
+bool api_storage_devinfo_state_get(void)
+{
+    return is_device_info;
+}
+void api_storage_devinfo_state_set(bool state)
+{
+    is_device_info=state;
+}
+int api_storage_devinfo_check(char* device,char* filename)
+{
+    int fs_ret=0;
+    struct stat file_stat={0};
+    control_msg_t ctl_msg={0};
+    int ret=0;
+    fs_ret=stat(filename,&file_stat);
+    if(fs_ret==-1){
+        ctl_msg.msg_type=MSG_TYPE_USB_UNMOUNT;
+        char *devname=strdup(device);
+        ctl_msg.msg_code=(uint32_t)devname;
+        api_storage_devinfo_state_set(false);
+        api_control_send_msg(&ctl_msg);
+        printf(">>!%s ,%d\n",__func__,__LINE__);
+        ret=-1;
+    }
+    return ret;
+}

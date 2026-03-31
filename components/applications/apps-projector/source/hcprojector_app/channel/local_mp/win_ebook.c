@@ -103,7 +103,10 @@ static bool check_utf8=false;
 bool is_ebook_bgmusic= false;
 lv_timer_t * bar_timer=NULL;
 
-
+void mp_ebook_clean_content(void)
+{
+	lv_label_set_text(ui_ebook_label," ");
+}
 UINT32 ComAscStr2Uni(UINT8* Ascii_str,UINT16* Uni_str)
 {
    UINT32 i=0;
@@ -394,11 +397,11 @@ void ebook_keyinput_event_cb(lv_event_t *event)
 		uint32_t vkey = key_convert2_vkey(keypad_value);
 		switch (keypad_value){
 			case LV_KEY_UP :            	
-				if (m_play_bar_show==0)
+				if(lv_obj_has_flag(ui_play_bar,LV_OBJ_FLAG_HIDDEN))
 			   		ctrl_bar_enter(ctrlbarbtn[0]);
 				break;
 			case LV_KEY_DOWN :
-				if(m_play_bar_show==0)
+				if(lv_obj_has_flag(ui_play_bar,LV_OBJ_FLAG_HIDDEN))
 					ctrl_bar_enter(ctrlbarbtn[1]);
 				break;
 			case LV_KEY_RIGHT :
@@ -588,6 +591,8 @@ void change_ebook_txt_info(int keypad_value)
 {
 	UINT32 lseek_num_tmp=0;
 	int i;
+	if(fp_ebook == NULL)
+		return;
 	if(keypad_value == LV_KEY_DOWN)
 	{
 		if(cur_page == page_all)
@@ -689,7 +694,7 @@ void change_ebook_txt_info(int keypad_value)
 }
 
 
-void ebook_read_file(char *ebook_file_name)
+int ebook_read_file(char *ebook_file_name)
 {
 	struct stat  e_sa;
 	// char ebook_file_name[MAX_FILE_NAME]={0};
@@ -707,16 +712,23 @@ void ebook_read_file(char *ebook_file_name)
 	/*2、open file */
 	// file_node = file_mgr_get_file_node(m_cur_file_list, filelist_index);
 	// ebook_get_fullname(ebook_file_name,m_cur_file_list->dir_path,file_node->name);
-	fp_ebook = fopen(ebook_file_name,"rb");
+	fp_ebook = fopen(ebook_file_name,"r");
 	if(fp_ebook == NULL)
 	{
 		printf("%s,%d,open %s file failed\n",__func__,__LINE__,ebook_file_name);
-		return;
+		return -1;
 	}
 	if(stat(ebook_file_name,&e_sa) == -1)
 	{
 		printf("stat failed\n");
-		return;
+		fclose(fp_ebook);
+		fp_ebook = NULL;
+		return -1;
+	}
+	if(e_sa.st_size > EBOOK_FILE_SIZE_MAX)
+	{
+		mp_ebook_clean_content();
+		return -2;
 	}
 	if(get_buff_mul == NULL ||str_mul == NULL)
 	{
@@ -957,9 +969,26 @@ void ebook_read_file(char *ebook_file_name)
 	file_ebook_seek_size = file_ebook_size;
 	file_ebook_seek_size +=	page_size;
 	ebook_show_page_info();
+	return 0;
 }
+
+extern SCREEN_TYPE_E last_scr;
+extern SCREEN_TYPE_E cur_scr;
+
 void ebook_open(void)
 {
+
+    if(last_scr==SCREEN_SETUP||last_scr==SCREEN_CHANNEL)
+    {
+        //change screen from setup or channel, do not need
+        //create object again
+        if (ebook_group)
+            set_key_group(ebook_group);
+        show_play_bar(true);
+        return;
+    }
+
+
 	ebook_group= lv_group_create();
 	ebook_group->auto_focus_dis = 1;
     set_key_group(ebook_group);
@@ -968,15 +997,41 @@ void ebook_open(void)
 	file_node_t *file_node = file_mgr_get_file_node(m_cur_file_list, m_cur_file_list->item_index);
 	ebook_get_fullname(ebook_file_name,m_cur_file_list->dir_path,file_node->name);
 	lv_label_set_text(ui_playname,file_node->name);
-	ebook_read_file(ebook_file_name);	//start to read file
-	playlist_init();
-	bar_timer=lv_timer_create(bar_show_timer_cb, 5000, NULL);
+	int ret = ebook_read_file(ebook_file_name);	//start to read file
+	if(ret < 0)
+	{
+		win_msgbox_msg_open(STR_FILE_FAIL, 2000, NULL, NULL);
+	}
+	else
+	{
+		//ebook_read_file_task(ebook_file_name);
+		playlist_init();
+		//show_play_bar(true);
+		bar_timer=lv_timer_create(bar_show_timer_cb, 5000, NULL);
+		app_set_screen_submp(SCREEN_SUBMP3);
+	}
 }
 
-void ebook_close(void)
+void ebook_close(bool force)
 {
+	lv_obj_t *obj = lv_scr_act();
+	//printf("obj: %p, ui_ebook_txt: %p!\n", obj, ui_ebook_txt);
+
+	if (!force){
+	    //change screen to setup or channel, do not need
+	    //delete objects. playing background.
+	    if(cur_scr==SCREEN_CHANNEL||cur_scr==SCREEN_SETUP)//perss EPG /MENU
+	    {
+	    	return;
+	    }
+	}
+
+    if (!ebook_group)
+    	return;
+
 	lv_group_remove_all_objs(ebook_group);
     lv_group_del(ebook_group);
+    ebook_group = NULL;
 
 	lv_timer_pause(bar_timer);
     lv_timer_del(bar_timer);
@@ -989,6 +1044,7 @@ void ebook_close(void)
 	}
     win_ebook_close();
 	lv_obj_remove_event_cb(ui_ebook_label,ebook_keyinput_event_cb);
-	lv_obj_clean(lv_scr_act());//del all child obj 
+	//lv_obj_clean(lv_scr_act());//del all child obj 
+	lv_obj_clean(ui_ebook_txt);
 }
 

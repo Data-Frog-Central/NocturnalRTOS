@@ -326,7 +326,6 @@ config BR2_EXTERNAL_FW_COMPRESS_GZIP
 
 config BR2_EXTERNAL_FW_COMPRESS_LZMA
        bool "lzma"
-       select CONFIG_LIB_LZMA
 
 config BR2_EXTERNAL_FW_COMPRESS_LZO1X
        bool "lzo1x"
@@ -337,6 +336,12 @@ config BR2_EXTERNAL_FW_COMPRESS_NONE
        bool "none"
 
 endchoice
+
+config BR2_EXTERNAL_HCFOTA_FILENAME
+	string "HCFOTA file name"
+	default "HCFOTA.bin"
+	help
+	  The name of HCFOTA binary file
 
 config BR2_ROOTFS_POST_BUILD_SCRIPT
 	string "Custom scripts to run before creating filesystem images"
@@ -388,6 +393,31 @@ config BR2_ROOTFS_POST_SCRIPT_ARGS
 	  first argument to each post-build or post-image script is the
 	  target directory / images directory. The arguments in this
 	  option will be passed *after* those.
+
+menuconfig BR2_EXTERNAL_HCPROGRAMMER_SUPPORT
+	bool "hcprogrammer support in pre-boot"
+	default y
+
+if BR2_EXTERNAL_HCPROGRAMMER_SUPPORT
+
+config BR2_EXTERNAL_HCPROGRAMMER_SUPPORT_USB0
+	bool "hcprogrammer support USB0"
+	default y
+
+config BR2_EXTERNAL_HCPROGRAMMER_SUPPORT_USB1
+	bool "hcprogrammer support USB1"
+	default y
+
+config BR2_EXTERNAL_HCPROGRAMMER_USB_IRQ_DETECT_TIMEOUT
+	int "USB irq detect timeout (milliseconds)"
+	depends on (BR2_EXTERNAL_HCPROGRAMMER_SUPPORT_USB0 || BR2_EXTERNAL_HCPROGRAMMER_SUPPORT_USB1)
+	default 300
+
+config BR2_EXTERNAL_HCPROGRAMMER_USB_SYNC_DETECT_TIMEOUT
+	int "USB sync detect timeout (milliseconds)"
+	depends on (BR2_EXTERNAL_HCPROGRAMMER_SUPPORT_USB0 || BR2_EXTERNAL_HCPROGRAMMER_SUPPORT_USB1)
+	default 1000
+endif
 
 endmenu
 

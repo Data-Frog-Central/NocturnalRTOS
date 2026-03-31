@@ -29,17 +29,19 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <hcuapi/snd.h>
 #ifdef USBMIRROR_SUPPORT
 #include <hccast/hccast_um.h>
 #endif
 
+#include "network_api.h"
 #include "com_api.h"
 #include "osd_com.h"
 #include "setup.h"
 #include "cast_api.h"
 //#include "data_mgr.h"
 #include "factory_setting.h"
-#include "cast_log.h"
+#include "app_log.h"
 
 #define CAST_SERVICE_NAME               "HCcast"
 #define CAST_AIRCAST_SERVICE_NAME       "HCcast"
@@ -203,6 +205,32 @@ void cast_api_set_dis_zoom(av_area_t *src_rect,
         close(dis_fd);
     }
 }
+void cast_api_set_volume(int vol)
+{
+    int snd_fd = open("/dev/sndC0i2so", O_WRONLY);
+    if (snd_fd < 0)
+    {
+        printf("Open /dev/sndC0i2so fail.\n");
+        return;
+    }
+    ioctl(snd_fd, SND_IOCTL_SET_VOLUME, &vol);
+    close(snd_fd);
+}
+
+int cast_api_get_volume(void)
+{
+    int snd_fd = open("/dev/sndC0i2so", O_WRONLY);
+    uint8_t vol = 0;
+    if (snd_fd < 0)
+    {
+        return 0;
+    }
+    ioctl(snd_fd, SND_IOCTL_GET_VOLUME, &vol);
+    //printf("get vol: %d\n", vol);
+    close(snd_fd);
+
+    return vol;
+}
 
 
 int cast_get_service_name(cast_type_t cast_type, char *service_name, int length)
@@ -270,7 +298,7 @@ static void ium_event_process_cb(int event, void *param1, void *param2)
         printf("%s(), line:%d. HCCAST_IUM_EVT_MIRROR_START\n", __func__, __LINE__);
         //hccast_scene_switch(HCCAST_SCENE_IUMIRROR);
         ctl_msg.msg_type = MSG_TYPE_CAST_IUSB_START;
-        api_osd_off_time(5000);
+        //api_osd_off_time(2000);
         api_logo_off();
         break;
     case HCCAST_IUM_EVT_MIRROR_STOP:
@@ -320,6 +348,13 @@ static void ium_event_process_cb(int event, void *param1, void *param2)
         cast_um_set_dis_zoom(param1);
         break;
     }
+    case HCCAST_IUM_EVT_NO_DATA:
+    {
+        printf("%s(), HCCAST_IUM_EVT_NO_DATA\n", __func__);
+        ctl_msg.msg_type = MSG_TYPE_CAST_IUSB_NO_DATA;
+        break;
+    }
+
     default:
         break;
     }
@@ -350,7 +385,7 @@ static void aum_event_process_cb(int event, void *param1, void *param2)
         printf("%s(), line:%d. HCCAST_AUM_EVT_MIRROR_START\n", __func__, __LINE__);
         //hccast_scene_switch(HCCAST_SCENE_AUMIRROR);
         ctl_msg.msg_type = MSG_TYPE_CAST_AUSB_START;
-        api_osd_off_time(5000);
+        //api_osd_off_time(2000);
         api_logo_off();
         break;
     case HCCAST_AUM_EVT_MIRROR_STOP:
@@ -438,10 +473,14 @@ int cast_usb_mirror_deinit(void)
         return API_SUCCESS;
 }
 
+static volatile bool m_um_start = false;
 int cast_usb_mirror_start(void)
 {
     int ret;
     hccast_aum_param_t aum_param = {0};
+
+    if (m_um_start)
+        return API_SUCCESS;
     
     ret = hccast_ium_start(m_ium_uuid, ium_event_process_cb);
     if (ret){
@@ -460,13 +499,19 @@ int cast_usb_mirror_start(void)
         return API_FAILURE;
     }
 
+    m_um_start = true;
     return API_SUCCESS;
 }
 
 int cast_usb_mirror_stop(void)
 {
+    if (!m_um_start)
+        return API_SUCCESS;
+
     hccast_aum_stop();
     hccast_ium_stop();
+
+    m_um_start = false;
     return API_SUCCESS;
 }
 
@@ -594,6 +639,9 @@ int hccast_dlna_callback_func(hccast_dlna_event_e event, void* in, void* out)
         case HCCAST_DLNA_HOSTAP_MODE_SKIP_URL:
             ctl_msg.msg_type = MSG_TYPE_DLNA_HOSTAP_SKIP_URL;
             break;
+        case HCCAST_DLNA_GET_SAVE_AUDIO_VOL:
+            *(int*)in = projector_get_some_sys_param(P_VOLUME);
+            break;
         default:
             break;
     }
@@ -665,12 +713,17 @@ int hccast_mira_callback_func(hccast_mira_event_e event, void* in, void* out)
         case HCCAST_MIRA_GET_CUR_WIFI_INFO:
         {
             log(DEMO, DEBUG, "[%s]HCCAST_MIRA_GET_CUR_WIFI_INFO\n",__func__);
-            char cur_ssid[64] = {0};
             hccast_wifi_ap_info_t *cur_ap;
-            hccast_wifi_mgr_get_connect_ssid(cur_ssid, sizeof(cur_ssid));
+            char* cur_ssid = app_get_connecting_ssid();
             cur_ap = sysdata_get_wifi_info(cur_ssid);
             if(cur_ap)
-                memcpy(in,cur_ap,sizeof(hccast_wifi_ap_info_t));
+            {
+                memcpy(in, cur_ap, sizeof(hccast_wifi_ap_info_t));
+            }
+            else
+            {
+                snprintf(((hccast_wifi_ap_info_t*)in)->ssid, WIFI_MAX_SSID_LEN, "%s", cur_ssid);
+            }
             break;
         }
         case HCCAST_MIRA_CONNECT:
@@ -729,16 +782,28 @@ int hccast_mira_callback_func(hccast_mira_event_e event, void* in, void* out)
             ctl_msg.msg_type = MSG_TYPE_CAST_MIRACAST_STOP;
             break;
         }
-	case HCCAST_MIRA_GET_MIRROR_ROTATION:
-	{
+        case HCCAST_MIRA_RESET:
+        {
+            printf("[%s] HCCAST_MIRA_RESET\n", __func__);
+            ctl_msg.msg_type = MSG_TYPE_CAST_MIRACAST_RESET;
+            ctl_msg.msg_code = *(uint32_t*) in;
+            bool *valid = (bool*) out;
+            if (valid)
+            {
+                *valid = true;
+            }
+            break;
+        }
+        case HCCAST_MIRA_GET_MIRROR_ROTATION:
+        {
             *(int*)in = projector_get_some_sys_param(P_MIRROR_ROTATION);
-		break;
-	}
-        case HCCAST_MIRA_GET_MIRROR_VSCREEN_AUTO_ROTATION:
-	{
+            break;
+        }
+            case HCCAST_MIRA_GET_MIRROR_VSCREEN_AUTO_ROTATION:
+        {
             *(int*)in = projector_get_some_sys_param(P_MIRROR_VSCREEN_AUTO_ROTATION);
-		break;
-	}
+            break;
+        }
         case HCCAST_MIRA_GET_FLIP_MODE:
         {
             int flip_mode;
@@ -798,6 +863,8 @@ int hccast_mira_callback_func(hccast_mira_event_e event, void* in, void* out)
 int hccast_air_callback_event(hccast_air_event_e event, void* in, void* out)
 {
     control_msg_t ctl_msg = {0};
+    int menu_status = 1;//0 -- win_cast_play ui menu not open, 1 -- open.
+    static bool vol_update = 0;
 
     switch (event)
     {
@@ -831,10 +898,16 @@ int hccast_air_callback_event(hccast_air_event_e event, void* in, void* out)
         case HCCAST_AIR_MIRROR_START:
             printf("[%s]HCCAST_AIR_MIRROR_START\n",__func__);
             ctl_msg.msg_type = MSG_TYPE_CAST_AIRMIRROR_START;
+            vol_update = 0;
             break;
         case HCCAST_AIR_MIRROR_STOP:
             printf("[%s]HCCAST_AIR_MIRROR_STOP\n",__func__);
             ctl_msg.msg_type = MSG_TYPE_CAST_AIRMIRROR_STOP;
+            if (vol_update)
+            {
+                projector_sys_param_save();
+                vol_update = 0;
+            }
             break;
         case HCCAST_AIR_AUDIO_START:
             printf("[%s]HCCAST_AIR_AUDIO_START\n",__func__);
@@ -892,6 +965,20 @@ int hccast_air_callback_event(hccast_air_event_e event, void* in, void* out)
         case HCCAST_AIR_URL_ENABLE_SET_DEFAULT_VOL:
             *(int*)in = 0;
             break;
+        case HCCAST_AIR_SET_AUDIO_VOL:
+            printf("%s set vol:%d\n", __func__, (int)in);
+            cast_api_set_volume((int)in);
+            projector_set_some_sys_param(P_VOLUME, (int)in);
+            if (hccast_get_current_scene() == HCCAST_SCENE_AIRCAST_MIRROR)
+            {
+                vol_update = 1;
+            }
+            else
+            {
+                projector_sys_param_save();
+            }
+            
+            break;			
         default:
             break;
     }
@@ -915,9 +1002,22 @@ int hccast_air_callback_event(hccast_air_event_e event, void* in, void* out)
     {
         printf("[%s] wait cast play start tick: %d\n",__func__,(int)time(NULL));
         if (air_ui_wait_ready)
-            air_ui_wait_ready(20000);
-
+        {
+            menu_status = air_ui_wait_ready(20000);
+        }    
+        
         printf("[%s] wait cast play end tick: %d\n",__func__,(int)time(NULL));
+
+        if(menu_status == 0)
+        {
+            if(in)
+            {
+                *(int *)in = 0;//in: 0 -- mean not open mirror video, 1 -- mean open mirror video.
+            }
+            printf("[%s] win cast play menu not open: %d\n",__func__,menu_status);
+            return 0;
+        }
+        
 #if CASTING_CLOSE_FB_SUPPORT	
         api_osd_show_onoff(false);
 #endif

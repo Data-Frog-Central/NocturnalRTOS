@@ -2067,8 +2067,14 @@ int ff_index_search_timestamp(const AVIndexEntry *entries, int nb_entries,
                !(entries[m].flags & AVINDEX_KEYFRAME))
             m += (flags & AVSEEK_FLAG_BACKWARD) ? -1 : 1;
 
-    if (m == nb_entries)
+    if (m < 0 && (flags & AVSEEK_FLAG_BACKWARD)) {
+        //we must ensure seek is ok, or the mosaic will be caused.
+        m = 0;
+    }
+
+    if (m == nb_entries) {
         return -1;
+    }
     return m;
 }
 
@@ -3054,6 +3060,72 @@ static int has_codec_parameters(AVStream *st, const char **errmsg_ptr)
     return 1;
 }
 
+static inline void ff_avio_w8(char *s, uint8_t b)
+{
+    *s = b;
+}
+
+void ff_trans_char_enc_to_utf8(character_encoding type, char *src, char *dst, int size)
+{
+    uint32_t ch = 1;
+    uint8_t tmp;
+    int i = 0;
+
+    if(type == CHAR_ENC_UTF_16_LE) {
+        while ((size > 1) && ch) {
+            GET_UTF16(ch, ((size -= 2) >= 0 ? AV_RL16(src) : 0), break;)
+            src +=2;
+            PUT_UTF8(ch, tmp, ff_avio_w8((dst + i), tmp);)
+            i++;
+        }
+    } else if (type == CHAR_ENC_UTF_16_BE) {
+        while ((size > 1) && ch) {
+            GET_UTF16(ch, ((size -= 2) >= 0 ? AV_RB16(src) : 0), break;)
+            src +=2;
+            PUT_UTF8(ch, tmp, ff_avio_w8((dst + i), tmp);)
+            i++;
+        }
+    }
+}
+
+int ff_trans_utf16_to_utf8(AVIOContext *src_pb, AVIOContext **dst_pb)
+{
+    character_encoding type = 0;
+    int size = 0;
+    int ret  = 0;
+    uint32_t ch = 1;
+    uint8_t tmp;
+
+    unsigned int (*get)(AVIOContext*) = avio_rb16;
+    while(!avio_feof(src_pb)) {
+        if (avio_rb16(src_pb) == 0xfffe) {
+            type = CHAR_ENC_UTF_16_LE;
+            get = avio_rl16;
+        } else if (avio_rb16(src_pb) == 0xfeff) {
+            type = CHAR_ENC_UTF_16_BE;
+        }
+        if(type == CHAR_ENC_UTF_16_LE || type == CHAR_ENC_UTF_16_BE) {
+            size = avio_size(src_pb);
+            if (ret = avio_open_dyn_buf_len(dst_pb,size) < 0) {
+                printf("Error opening memory stream\n");
+                return 0;
+            }
+            while ((size > 1) && ch) {
+                GET_UTF16(ch, ((size -= 2) >= 0 ? get(src_pb) : 0), break;)
+                PUT_UTF8(ch, tmp, avio_w8(*dst_pb, tmp);)
+            }
+            avio_seek(*dst_pb, 0, SEEK_SET);
+            return 1;
+        } else {
+            avio_seek(src_pb, 0, SEEK_SET);
+            return 0;
+        }
+    }
+    avio_seek(src_pb, 0, SEEK_SET);
+    return 0;
+}
+
+
 #if 0
 /* returns 1 or 0 if or if not decoded data was returned, or a negative error */
 static int try_decode_frame(AVFormatContext *s, AVStream *st,
@@ -3671,9 +3743,9 @@ int avformat_find_stream_info(AVFormatContext *ic, AVDictionary **options)
         max_analyze_duration        = 5*AV_TIME_BASE;
         max_subtitle_analyze_duration = 15*AV_TIME_BASE;
         if (!strcmp(ic->iformat->name, "flv"))
-            max_stream_analyze_duration = 15*AV_TIME_BASE;
+            max_stream_analyze_duration = 10*AV_TIME_BASE;
         if (!strcmp(ic->iformat->name, "mpeg") || !strcmp(ic->iformat->name, "mpegts"))
-            max_stream_analyze_duration = 7*AV_TIME_BASE;
+            max_stream_analyze_duration = 4*AV_TIME_BASE;
     }
 
     if (ic->pb)
@@ -3964,11 +4036,37 @@ FF_ENABLE_DEPRECATION_WARNINGS
                     st->internal->info->codec_info_duration += pkt->duration;
                 st->internal->info->codec_info_duration_fields += st->parser && st->need_parsing && avctx->ticks_per_frame ==2 ? st->parser->repeat_pict + 1 : 2;
             }
-
-            if((av_strstart(ic->url, "http", NULL) || av_strstart(ic->url, "rtmp", NULL) || av_strstart(ic->url, "nothing", NULL) ||
-                av_strstart(ic->url, "rtsp", NULL) || av_strstart(ic->url, "mms", NULL)) &&
-                st->codec_info_nb_frames >= 10) {
-                av_log(ic, AV_LOG_VERBOSE, "no need to get detail info, break find_stream_info\n");
+            int find_codec_id = 0;
+            AVStream *st_check = NULL;
+            int find_first_dts = 0;
+            int valid_stream = 0;
+            int mpeg_stream = 0;
+            for (i = 0; i < ic->nb_streams; i++) {
+                st_check = ic->streams[i];
+                if (st_check->codecpar->codec_id != AV_CODEC_ID_NONE){
+                    find_codec_id ++;
+                    if (st_check->codecpar->codec_id < AV_CODEC_ID_FIRST_SUBTITLE)
+                        valid_stream++;
+                }
+                if (st_check->first_dts != AV_NOPTS_VALUE || st_check->start_time != AV_NOPTS_VALUE) {
+                    find_first_dts++;
+                }
+            }
+            if (!strcmp(ic->iformat->name,"mpeg") || !strcmp(ic->iformat->name,"mpegts")) {
+                mpeg_stream = 1;
+            }
+            if (mpeg_stream) {
+                if ((st->codec_info_nb_frames >= 80 && find_first_dts == valid_stream) ||
+                    (st->codec_info_nb_frames >= 120 && find_first_dts) || st->codec_info_nb_frames >= 150){
+                    av_log(ic, AV_LOG_VERBOSE, "codec_info_nb_frames >= 80, break find_stream_info\n");
+                    break;
+                }
+            } else if (st->codec_info_nb_frames >= 50){
+                break;
+            }
+            if (!strcmp(ic->iformat->name,"wav") || (!orig_nb_streams && mpeg_stream)) {
+            } else if (find_first_dts == valid_stream && find_codec_id == ic->nb_streams){
+                av_log(ic, AV_LOG_VERBOSE, "get dts and codec_id, break find_stream_info\n");
                 break;
             }
         }
@@ -4270,6 +4368,7 @@ int av_find_best_stream(AVFormatContext *ic, enum AVMediaType type,
     int i, nb_streams = ic->nb_streams;
     int ret = AVERROR_STREAM_NOT_FOUND;
     int best_count = -1, best_multiframe = -1, best_disposition = -1;
+    int best_samplerate = -1;
     int count, multiframe, disposition;
     int64_t best_bitrate = -1;
     int64_t bitrate;
@@ -4326,6 +4425,15 @@ int av_find_best_stream(AVFormatContext *ic, enum AVMediaType type,
                 continue;
             }
         } else {
+            if (type == AVMEDIA_TYPE_AUDIO && par->channels > 2) {
+                if (best_samplerate != -1) {
+                    if (par->sample_rate > 48000 && par->sample_rate > best_samplerate) {
+                        continue;
+                    } else if (par->sample_rate <= 48000 && best_samplerate > 48000) {
+                        goto find_best;
+                    }
+                }
+            }
             if ((best_disposition > disposition) ||
                 (best_disposition == disposition && best_multiframe > multiframe) ||
                 (best_disposition == disposition && best_multiframe == multiframe && best_bitrate > bitrate) ||
@@ -4333,6 +4441,8 @@ int av_find_best_stream(AVFormatContext *ic, enum AVMediaType type,
                 continue;
         }
 
+find_best:
+        best_samplerate = par->sample_rate;
         best_disposition = disposition;
         best_count   = count;
         best_bitrate = bitrate;

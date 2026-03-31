@@ -40,6 +40,8 @@ static char *hccast_wifi_encrypt_str[] =
     "WPA2PSK_TKIP",
     "WPA2PSK_AES",
     "WPA2PSK_SAE",
+    " ",
+    "",
 };
 
 void urldecode(const char *str, char *dStr)

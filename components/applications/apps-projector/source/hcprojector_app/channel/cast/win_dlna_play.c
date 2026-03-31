@@ -437,15 +437,12 @@ static int win_dlna_play_close(void *arg)
         m_player_group = NULL;
     }
 
-    win_msgbox_msg_close();
-
     lv_obj_del(m_label_photo_frame);
     lv_obj_del(m_play_bar);
 	api_logo_off();
     m_label_photo_frame = NULL;
     m_play_bar = NULL;
 
-    win_data_buffing_close();
     m_win_dlna_open = false;
 
     api_ffmpeg_player_get_regist(NULL);
@@ -454,6 +451,8 @@ static int win_dlna_play_close(void *arg)
 
     api_hotkey_disable_clear();
     api_set_display_aspect(DIS_TV_16_9, DIS_NORMAL_SCALE);
+
+    win_clear_popup();
 	return API_SUCCESS;
 }
 
@@ -554,9 +553,6 @@ static void win_dlna_key_act(uint32_t key)
     case V_KEY_MENU:
         // ret = WIN_CTL_POPUP_CLOSE;
         break;
-  #if 1        
-    //test UI
-
     case V_KEY_PLAY:
         if (HCCAST_MEDIA_MOVIE == m_dlna_media_type ||
             HCCAST_MEDIA_MUSIC == m_dlna_media_type){
@@ -613,33 +609,6 @@ static void win_dlna_key_act(uint32_t key)
         break;
 #endif
 
-//////////////////////////////////////
-/// simulate the medie error code process
-    case 1:
-        ctl_msg.msg_type = MSG_TYPE_MEDIA_VIDEO_DECODER_ERROR;
-        api_control_send_msg(&ctl_msg);
-        break;
-    case 2:
-        ctl_msg.msg_type = MSG_TYPE_MEDIA_AUDIO_DECODER_ERROR;
-        api_control_send_msg(&ctl_msg);
-        break;
-    case 3:
-        ctl_msg.msg_type = MSG_TYPE_MEDIA_VIDEO_NOT_SUPPORT;
-        ctl_msg.msg_code = HC_AVCODEC_ID_HEVC;
-        api_control_send_msg(&ctl_msg);
-        break;
-    case 4:
-        ctl_msg.msg_type = MSG_TYPE_MEDIA_AUDIO_NOT_SUPPORT;
-        ctl_msg.msg_code = HC_AVCODEC_ID_EAC3;
-        api_control_send_msg(&ctl_msg);
-        break;
-    case 5:
-        ctl_msg.msg_type = MSG_TYPE_MEDIA_NOT_SUPPORT;
-        api_control_send_msg(&ctl_msg);
-        break;
-//////////////////////////////////////
-///
-  #endif
     }
 #endif
 }
@@ -771,7 +740,7 @@ static void win_dlna_msg_act(control_msg_t *ctl_msg)
 
     case MSG_TYPE_CAST_DLNA_START:
     case MSG_TYPE_CAST_AIRCAST_START:
-        win_msgbox_msg_close();
+        win_clear_popup();
         
         m_dlna_media_type = (hccast_media_type_e)(ctl_msg->msg_code);
 
@@ -859,10 +828,17 @@ static bool win_dlna_wait_open(uint32_t timeout)
 {
     uint32_t count;
     count = timeout/20;
+    int play_en = 0;
 
     while(count--){
-        if (m_win_dlna_open)
+        play_en = win_cast_get_play_request_flag();
+        if (m_win_dlna_open || !play_en){
+            if (!play_en){
+                printf("%s(), Exiting wireless menu.\n", __func__);
+                return 0;
+            }
             break;
+        }    
         api_sleep_ms(20);
     }
     printf("%s(), m_win_dlna_open(%d):%d\n", __func__, m_win_dlna_open, (int)count);

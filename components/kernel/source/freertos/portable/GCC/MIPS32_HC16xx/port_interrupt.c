@@ -521,16 +521,26 @@ UBaseType_t portGetDetailISRRunTimeStats(TaskStatus_t *pxTaskStatusArray, UBaseT
 #endif
 
 static uint32_t irq_bank[3] = { 0 };
+static uint32_t gpio_irq_en[4] = { 0 };
 void irq_save_all(void)
 {
 	irq_bank[0] = REG32_READ((uint32_t)&SYSIO0 + 0x38);
 	irq_bank[1] = enable_reg_bank1;
 	irq_bank[2] = REG32_READ((uint32_t)&SYSIO0 + 0x40) & BIT2;
+	gpio_irq_en[0] = REG32_READ((uint32_t)&GPIOLCTRL);
+	gpio_irq_en[1] = REG32_READ((uint32_t)&GPIOBCTRL);
+	gpio_irq_en[2] = REG32_READ((uint32_t)&GPIORCTRL);
+	gpio_irq_en[3] = REG32_READ((uint32_t)&GPIOTCTRL);
 
 	REG32_WRITE((uint32_t)&SYSIO0 + 0x38, 0);
 	REG32_WRITE((uint32_t)&SYSIO0 + 0x3c, 0);
 	enable_reg_bank1 = 0;
 	REG32_CLR_BIT((uint32_t)&SYSIO0 + 0x40, BIT2);
+
+	REG32_WRITE((uint32_t)&GPIOLCTRL, 0);
+	REG32_WRITE((uint32_t)&GPIOBCTRL, 0);
+	REG32_WRITE((uint32_t)&GPIORCTRL, 0);
+	REG32_WRITE((uint32_t)&GPIOTCTRL, 0);
 }
 
 void irq_restore_all(void)
@@ -540,6 +550,11 @@ void irq_restore_all(void)
 	REG32_WRITE((uint32_t)&SYSIO0 + 0x3c, enable_reg_bank1);
 	if (irq_bank[2])
 		REG32_SET_BIT((uint32_t)&SYSIO0 + 0x40, BIT2);
+
+	REG32_WRITE((uint32_t)&GPIOLCTRL, gpio_irq_en[0]);
+	REG32_WRITE((uint32_t)&GPIOBCTRL, gpio_irq_en[1]);
+	REG32_WRITE((uint32_t)&GPIORCTRL, gpio_irq_en[2]);
+	REG32_WRITE((uint32_t)&GPIOTCTRL, gpio_irq_en[3]);
 }
 
 static uint32_t av_irqs[] = {

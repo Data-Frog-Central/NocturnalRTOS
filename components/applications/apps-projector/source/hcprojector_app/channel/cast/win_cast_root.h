@@ -19,6 +19,8 @@ uint32_t win_cast_play_param();
 void win_cast_mirror_rotate_switch(void);
 void cast_stop_service(void);
 void win_cast_set_m_stop_service_exit(bool val);
+bool win_cast_get_play_request_flag(void);
+void win_cast_set_play_request_flag(bool val);
 
 #ifdef __cplusplus
 } /*extern "C"*/

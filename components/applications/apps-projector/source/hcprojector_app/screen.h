@@ -62,6 +62,8 @@ extern lv_obj_t *ui_mainpage;
 extern lv_obj_t *hdmi_scr;  
 extern lv_obj_t *cvbs_scr; 
 extern lv_obj_t *main_page_scr;
+extern lv_obj_t * ui_ebook_txt;
+
 extern lv_group_t *channel_g;
 extern lv_group_t *setup_g;
 extern lv_group_t *volume_g;
@@ -95,8 +97,9 @@ extern lv_obj_t *ui_cast_play;
 void ui_cast_play_init(void);
 #endif
 
-
-
+#ifdef USB_MIRROR_FAST_SUPPORT
+void ui_um_fast_init(void);
+#endif
 
 
 //int is_epg_code();
@@ -147,6 +150,12 @@ void ui_wifi_cast_init(void);
 #endif
 #ifdef USBMIRROR_SUPPORT
 void ui_um_play_init(void);
+#ifdef USB_MIRROR_FAST_SUPPORT
+  void ui_um_fast_proc(uint32_t msg_type);
+  bool um_service_off_by_menu(lv_obj_t *scr);
+  bool um_service_on_by_menu(lv_obj_t *scr);
+  void um_service_wait_exit(void);
+#endif
 #endif
 int get_ir_key(void);
 int get_adk_key(void);

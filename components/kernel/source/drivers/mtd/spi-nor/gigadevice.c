@@ -80,9 +80,17 @@ static const struct flash_info gigadevice_parts[] = {
 	{ "25HQ64I",  INFO(0xB36017, 0, 64 * 1024,	128, SECT_4K ) },
 
 	//Puya
+	{ "P25D80SH",  INFO(0x856014, 0, 64 * 1024,      16, SECT_4K ) },
 	{ "P25D16SH",  INFO(0x856015, 0, 64 * 1024,      32, SECT_4K ) },
 	{ "P25D32H",  INFO(0x856016, 0, 64 * 1024,      64, SECT_4K ) },
+	{ "P25Q32H",  INFO(0x852016, 0, 64 * 1024,  64, SECT_4K | SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ |SPI_NOR_HAS_LOCK | SPI_NOR_HAS_TB ) },
 	{ "P25Q64H",  INFO(0x856017, 0, 64 * 1024,  128, SECT_4K ) },
+	{ "P25Q64HA",  INFO(0x852017, 0, 64 * 1024,  128, SECT_4K
+			| SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ |
+			   SPI_NOR_HAS_LOCK | SPI_NOR_HAS_TB) },
+	{ "P25Q128HA",  INFO(0x852018, 0, 64 * 1024,  256, SECT_4K
+			| SPI_NOR_DUAL_READ | SPI_NOR_QUAD_READ |
+			   SPI_NOR_HAS_LOCK | SPI_NOR_HAS_TB) },
 };
 
 const struct spi_nor_manufacturer spi_nor_gigadevice = {

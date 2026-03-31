@@ -26,6 +26,8 @@
  * published by the Free Software Foundation.
  *
  */
+#define LOG_TAG "nand"
+#define ELOG_OUTPUT_LVL ELOG_LVL_DEBUG
 
 #include <linux/module.h>
 #include <linux/delay.h>
@@ -3873,6 +3875,10 @@ static struct nand_flash_dev *nand_get_flash_type(struct mtd_info *mtd,
 	for (i = 0; i < 8; i++)
 		id_data[i] = chip->read_byte(mtd);
 
+	pr_info("ID: %2.2x %2.2x %2.2x %2.2x %2.2x %2.2x %2.2x %2.2x\n",
+					id_data[0], id_data[1], id_data[2], id_data[3],
+					id_data[4], id_data[5], id_data[6], id_data[7]);		
+
 	if (id_data[0] != *maf_id || id_data[1] != *dev_id) {
 		pr_info("second ID read did not match %02x,%02x against %02x,%02x\n",
 			*maf_id, *dev_id, id_data[0], id_data[1]);
@@ -4475,6 +4481,28 @@ EXPORT_SYMBOL(nand_scan);
  * nand_release - [NAND Interface] Free resources held by the NAND device
  * @mtd: MTD device structure
  */
+void nand_release(struct mtd_info *mtd)
+{
+	struct nand_chip *chip = mtd->priv;
+
+	if (chip->ecc.mode == NAND_ECC_SOFT_BCH)
+		nand_bch_free((struct nand_bch_control *)chip->ecc.priv);
+
+	// mtd_device_unregister(mtd);
+
+	/* Free bad block table memory */
+	kfree(chip->bbt);
+	if (!(chip->options & NAND_OWN_BUFFERS))
+		kfree(chip->buffers);
+
+	/* Free bad block descriptor memory */
+	if (chip->badblock_pattern && chip->badblock_pattern->options
+			& NAND_BBT_DYNAMICSTRUCT)
+		kfree(chip->badblock_pattern);
+}
+EXPORT_SYMBOL_GPL(nand_release);
+
+
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Steven J. Hill <sjhill@realitydiluted.com>");

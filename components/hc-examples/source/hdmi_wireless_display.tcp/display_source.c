@@ -46,6 +46,7 @@
 
 #include "jenc_rdo.h"
 #include "tables.h"
+#include <crc32.h>
 
 #define NETWORK_MODE_ETHERNET
 
@@ -76,16 +77,10 @@ static int vkshm_fd = -1;
 #endif
 static unsigned int rotate_mode = 0;
 
-static bool video_send_running =false;
-static bool audio_send_running =false;
-
 struct data_element{
 	data_header_t header;
 	uint8_t *data;
 };
-
-static Queue *video_queue;
-static Queue *audio_queue;
 
 static int sndinfo_fd;
 
@@ -152,6 +147,162 @@ void print_frame_rate(struct frame_rate *rate, double count, int size)
 }
 #endif
 
+struct data_cache_element{
+	struct data_element e;
+	int len;
+};
+
+struct data_cache{
+	int count;
+	int r_index;
+	int w_index;
+	pthread_mutex_t r_mutex;
+	pthread_mutex_t w_mutex;
+	pthread_cond_t r_cond;
+	pthread_cond_t w_cond;
+	struct data_cache_element cache_array[0];
+};
+
+struct data_cache *video_cache;
+struct data_cache *audio_cache;
+
+static int cond_wait(pthread_cond_t *cond, pthread_mutex_t *mutex, uint32_t timeout)
+{
+  struct timespec rtime1, ts;
+  int ret;
+  if (timeout == 0) {
+	  pthread_cond_wait(cond, mutex);
+	  return 0;
+  }
+  clock_gettime(CLOCK_REALTIME, &rtime1);
+
+  ts.tv_sec = rtime1.tv_sec + timeout / 1000L;
+  ts.tv_nsec = rtime1.tv_nsec + (timeout % 1000L) * 1000000L;
+  if (ts.tv_nsec >= 1000000000L) {
+	  ts.tv_sec++;
+	  ts.tv_nsec -= 1000000000L;
+  }
+
+  ret = pthread_cond_timedwait(cond, mutex, &ts);
+
+  return ret;
+}
+
+#define min(a, b) (a < b)?(a):(b)
+
+#define DATA_CACHE_DEBUG(...) do{}while(0)
+
+static struct data_cache_element *data_cache_write(struct data_cache *pcache, int timeout)
+{
+	int i = -1;
+	int len = 1; 
+	int ret = 0;
+
+again:
+	pthread_mutex_lock(&pcache->w_mutex);
+	len = 1;
+	len = min(len, pcache->count - pcache->w_index + pcache->r_index);
+	if(len == 0){
+		ret = cond_wait(&pcache->w_cond, &pcache->w_mutex, timeout);
+		pthread_mutex_unlock(&pcache->w_mutex);
+		if (ret != ETIMEDOUT)
+			goto again;
+		return NULL;
+	}
+	i = pcache->w_index & (pcache->count - 1);
+	DATA_CACHE_DEBUG("%s:pcache: %p, i=%d\n", __func__, pcache, i);
+
+	pthread_mutex_unlock(&pcache->w_mutex);
+
+	return &pcache->cache_array[i];
+}
+static void data_cache_write_update(struct data_cache *pcache)
+{
+	pthread_mutex_lock(&pcache->r_mutex);
+	pcache->w_index++;
+	pthread_cond_signal(&pcache->r_cond);
+	DATA_CACHE_DEBUG("%s:pcache: %p\n", __func__, pcache);
+	pthread_mutex_unlock(&pcache->r_mutex);
+}
+
+static struct data_cache_element *data_cache_read(struct data_cache *pcache, int timeout)
+{
+	int i = -1;
+	int len = 1;
+	int ret = 0;
+again:
+	pthread_mutex_lock(&pcache->r_mutex);
+	len = 1;
+	len = min(len, pcache->w_index - pcache->r_index);
+	if(len == 0){
+		ret = cond_wait(&pcache->r_cond, &pcache->r_mutex, timeout);
+		pthread_mutex_unlock(&pcache->r_mutex);
+		if (ret != ETIMEDOUT)
+			goto again;
+		return NULL;
+	}
+	i = pcache->r_index & (pcache->count - 1);
+	DATA_CACHE_DEBUG("%s:pcache: %p, i=%d\n", __func__, pcache, i);
+	pthread_mutex_unlock(&pcache->r_mutex);
+	return &pcache->cache_array[i];
+
+}
+
+static void data_cache_read_update(struct data_cache *pcache, struct data_cache_element *p_element)
+{
+	pthread_mutex_lock(&pcache->w_mutex);
+	pcache->r_index++;
+	pthread_cond_signal(&pcache->w_cond);
+	DATA_CACHE_DEBUG("%s:pcache: %p\n", __func__, pcache);
+	pthread_mutex_unlock(&pcache->w_mutex);
+}
+
+static struct data_cache *data_cache_create(int count, int data_size)
+{
+	struct data_cache *pcache;
+	int i = 0;
+	pcache = calloc(1, sizeof(struct data_cache) + sizeof(struct data_cache_element)*count);
+	if(!pcache){
+		printf("%s:%d not enough memory\n", __func__, __LINE__);
+		return NULL;
+	}
+	pcache->count = count;
+	for(i = 0; i < pcache->count; i++){
+		pcache->cache_array[i].len = data_size;
+		pcache->cache_array[i].e.data = malloc(data_size);
+		if(!pcache->cache_array[i].e.data){
+			printf("%s:%d not enough memory\n", __func__, __LINE__);
+			goto fail;
+		}
+	}
+
+	pthread_mutex_init(&pcache->r_mutex, NULL);
+	pthread_mutex_init(&pcache->w_mutex, NULL);
+	pthread_cond_init(&pcache->r_cond, NULL);
+	pthread_cond_init(&pcache->w_cond, NULL);
+
+	return pcache;
+fail:
+	for(i = 0; i < pcache->count; i++){
+		if(pcache->cache_array[i].e.data){
+			free(pcache->cache_array[i].e.data);
+		}
+	}
+	free(pcache);
+	return NULL;
+}
+
+static void data_cache_destroy(struct data_cache *pcache)
+{
+	int i = 0;
+	for(i = 0; i < pcache->count; i++){
+		if(pcache->cache_array[i].e.data){
+			free(pcache->cache_array[i].e.data);
+		}
+	}
+	free(pcache);
+}
+
 static uint32_t get_sample_rate(void)
 {
 	if(sndinfo_fd <= 0){
@@ -167,7 +318,6 @@ static uint32_t get_sample_rate(void)
 		perror("get snd info error.\n");
 		return 0;
 	}
-	/*printf("info.pcm_params.rate: %d\n", info.pcm_params.rate);*/
 	return info.pcm_params.rate;
 }
 
@@ -264,6 +414,7 @@ static int read_data(struct kshm_info *hdl, uint8_t *buf, int size, kshm_cb cb, 
 static struct jenc_rdo_t g_rdo;
 static int threshhold = 0;
 static int frame_size = FRAME_SIZE_MAX;
+static int frame_size_default = 0;
 static int update_enc_table(struct jenc_rdo_t *rdo)
 {
 	struct jpeg_enc_quant enc_table;
@@ -282,9 +433,27 @@ static int update_enc_table(struct jenc_rdo_t *rdo)
 
 void jdo_change_quality(int32_t size)
 {
-	static int32_t prev = 0;
+	static int width = 0;
+	int ret = 0; 
+	struct hdmi_rx_video_info rx_info = {0}; 
+
+	if(frame_size_default == 0){
+		/* get hdmi rx data */
+		ret = ioctl(rx_fd, HDMI_RX_GET_VIDEO_INFO , &rx_info);
+		if(ret == 0 && rx_info.width != width){
+			width = rx_info.width;
+			if(width > 1280)
+				frame_size = FRAME_SIZE_MAX;
+			else
+				frame_size = (FRAME_SIZE_MAX * 30) / 60;
+
+			printf("frame_size: %d, width: %d\n", frame_size, width);
+		}    
+	}else
+		frame_size = frame_size_default;
+		
 	threshhold++;
-	prev = size;
+
 	if (threshhold >= 3 && (size < frame_size) && (frame_size - size) > frame_size * 0.2){
 		/*printf("size:%ld,FRAME_SIZE_MAX:%d,diff:%d\n",size, frame_size, abs(frame_size - size));*/
 		jenc_rdo_rate_control(&g_rdo, JENC_RDO_OP_INCREASE_BITRATE);
@@ -303,19 +472,13 @@ static void *audio_data_thread(void *args)
 {
 	AvPktHd hdr = {0};
 	struct data_element *e;
-#ifndef USE_UDP_PROTOCOL
+	struct data_cache_element *cache;
 	int header_size = 0;
-#else
-	int header_size = sizeof(data_header_t);
-#endif
+
 	printf("%s:%d\n", __func__, __LINE__);
 	while(true) {
-		
-		e = malloc(sizeof(*e));
-		/*printf("%s:%d\n", __func__, __LINE__);*/
-		if(!e){
-			printf("%s:%d,Not enough memory\n",__func__, __LINE__);
-			usleep(100 * 1000);
+		cache = data_cache_write(audio_cache, 0);
+		if(!cache){
 			continue;
 		}
 
@@ -327,15 +490,32 @@ again1:
 		if (read_data(&rx_audio_read_hdl, (uint8_t *)&hdr, sizeof(AvPktHd), NULL, NULL) != 0) {
 #endif
 			printf("read audio hdr from kshm err\n");
-			break;
+			continue;
 		}
 
-		if(hdr.size <=0)
+		if(hdr.size <=0){
+			usleep(10*1000);
 			goto again1;
-		e->data = malloc(hdr.size + header_size);
-		if(!e->data){
-			printf("%s:%d,Not enough memory\n",__func__, __LINE__);
-			goto again1;
+		}
+
+		e = &cache->e;
+		int data_size = ((hdr.size + header_size)/UDP_MAX_PAYLOAD_LEN + 1)*UDP_SEG_LENGTH;
+		if(cache->len < data_size || !e->data){
+			if(!e->data){
+				cache->len = data_size > 2 * 1024 * 1024? data_size: 2*1024*1024;
+				e->data = malloc(cache->len);
+			} else{
+				e->data = realloc(e->data, data_size);
+				cache->len = data_size;
+			}
+
+			if(!e->data){
+				printf("%s:%d,Not enough memory\n",__func__, __LINE__);
+				kshm_update_read(&rx_audio_read_hdl, hdr.size);
+				usleep(10*1000);
+				goto again1;
+			}
+			printf("%s:%d allocate\n", __func__, __LINE__);
 		}
 
 #ifndef __HCRTOS__
@@ -344,6 +524,7 @@ again1:
 		if(read_data(&rx_audio_read_hdl, e->data + header_size, hdr.size, NULL, NULL) != 0) {
 #endif
 			printf("read audio data from kshm err\n");
+			kshm_update_read(&rx_audio_read_hdl, hdr.size);
 			usleep(30 * 1000);
 			free(e->data);
 			goto again1;
@@ -355,25 +536,13 @@ again1:
 
 		strncpy(e->header.magic, DATA_HEADER_MAGIC, sizeof(e->header.magic));
 		/*printf("%s, e->header.size: %d\n", __func__, e->header.size);*/
-
-		if(header_size > 0){
-			memcpy(e->data, &e->header, header_size);
-		}
-
-		if(!audio_send_running){
-			free(e->data);
-			goto again1;
-		}
+		e->header.crc_val = crc32(0, (uint8_t *)&e->header, sizeof(data_header_t) - sizeof(uint32_t));
 
 #ifdef AIRPLAY_FRAME_RATE
-		/*print_frame_rate(&audio_frame_rate, 1, e->header.size);*/
+		print_frame_rate(&audio_frame_rate, 1, e->header.size);
 #endif
+		data_cache_write_update(audio_cache);
 
-		if(enqueue(audio_queue, e)){
-			free(e->data);
-			e->data = NULL;
-			goto again1;
-		}
 	}
 	return NULL;
 }
@@ -382,25 +551,16 @@ static void *video_data_thread(void *args)
 {
 	AvPktHd hdr = {0};
 	struct data_element *e;
-	int quality = 1;
-#ifndef USE_UDP_PROTOCOL
+	struct data_cache_element *cache;
 	int header_size = 0;
-#else
-	int header_size = sizeof(data_header_t);
-#endif
-
-
 	printf("%s:%d\n", __func__, __LINE__);
 
-	while(true) {
+	while(!stop_read) {
 
-		e = malloc(sizeof(*e));
-		if(!e){
-			printf("%s:%d,Not enough memory\n",__func__, __LINE__);
-			usleep(100 * 1000);
+		cache = data_cache_write(video_cache, 15);
+		if(!cache){
 			continue;
 		}
-
 again1:
 		
 #ifndef __HCRTOS__
@@ -412,18 +572,30 @@ again1:
 			break;
 		}
 
-		/*printf("video:vpkt size %d\n", (int)hdr.size);*/
-		/*if (vrecfile) {*/
-			//fwrite (&hdr, sizeof(AvPktHd), 1, vrecfile);
-		/*}*/
 
 		if(hdr.size <=0){
+			usleep(10*1000);
 			goto again1;
 		}
-		e->data = malloc(hdr.size + header_size);
-		if(!e->data){
-			printf("%s:%d,Not enough memory\n",__func__, __LINE__);
-			goto again1;
+
+		e = &cache->e;
+		int data_size = ((hdr.size + header_size)/UDP_MAX_PAYLOAD_LEN + 1)*UDP_SEG_LENGTH;
+		if(cache->len < data_size || !e->data){
+			if(!e->data){
+				cache->len = data_size > 2 * 1024 * 1024? data_size: 2*1024*1024;
+				e->data = malloc(cache->len);
+			} else{
+				e->data = realloc(e->data, data_size);
+				cache->len = data_size;
+			}
+
+			if(!e->data){
+				printf("%s:%d,Not enough memory\n",__func__, __LINE__);
+				kshm_update_read(&rx_video_read_hdl, hdr.size);
+				usleep(30*1000);
+				goto again1;
+			}
+			printf("%s:%d allocate data_size=%d\n", __func__, __LINE__, data_size);
 		}
 
 #ifndef __HCRTOS__
@@ -432,8 +604,8 @@ again1:
 		if(read_data(&rx_video_read_hdl, e->data + header_size, hdr.size, NULL, NULL) != 0) {
 #endif
 			printf("read audio data from kshm err\n");
+			kshm_update_read(&rx_video_read_hdl, hdr.size);
 			usleep(30 * 1000);
-			free(e->data);
 			goto again1;
 		}
 
@@ -441,67 +613,25 @@ again1:
 		e->header.pts = hdr.pts;
 
 		strncpy(e->header.magic, DATA_HEADER_MAGIC, sizeof(e->header.magic));
-		/*printf("%s, e->header.size: %d\n", __func__, e->header.size);*/
-
-		if(header_size > 0){
-			memcpy(e->data, &e->header, header_size);
-		}
-
-		if(!video_send_running){
-			free(e->data);
-			goto again1;
-		}
+		e->header.crc_val = crc32(0, (uint8_t *)&e->header, sizeof(data_header_t) - sizeof(uint32_t));
 
 #ifdef AIRPLAY_FRAME_RATE
-		/*print_frame_rate(&video_frame_rate, 1, e->header.size);*/
+		print_frame_rate(&video_frame_rate, 1, e->header.size);
 #endif
 
-#if 1
-        /*quality = change_quality(HDMI_WIRELESS_MAX_NET_SPEED, 30, e->header.size);*/
 		jdo_change_quality(e->header.size);
-#else
-
-#if 1
-        quality = JPEG_ENC_QUALITY_TYPE_ULTRA_HIGH_QUALITY;
-        if(video_queue->size == 1){
-            quality = JPEG_ENC_QUALITY_TYPE_HIGH_QUALITY;
-        }else if(video_queue->size >= 2){
-            quality = JPEG_ENC_QUALITY_TYPE_NORMAL;
-        }
-#else
-        quality = JPEG_ENC_QUALITY_TYPE_HIGH_QUALITY;
-        if(video_queue->size == 1){
-            quality = JPEG_ENC_QUALITY_TYPE_NORMAL;
-        }else if(video_queue->size >= 2){
-            quality = JPEG_ENC_QUALITY_TYPE_LOW_BITRATE;
-        }
-#endif
-
-#endif
-
-		if(enqueue(video_queue, e)){
-			free(e->data);
-			e->data = NULL;
-			goto again1;
-		}
+		data_cache_write_update(video_cache);
 	}
+
 	return NULL;
 }
 
-static void queue_element_free(QueueElement  p)
-{
-	struct data_element *e = (struct data_element *)p;
-	if(e){
-		if(e->data)
-			free(e->data);
-		free(e);
-	}
-}
 static void *rx_audio_read_thread(void *args)
 {
 	char *server_ip = (char *)args;
 	int data_len = 0;
 	struct sockaddr_in server_addr;
+	struct data_cache_element *cache;
 	if(audio_data_sock <=0) {
 		printf("audio_data_sock = %d\n", audio_data_sock);
 		return NULL;
@@ -529,13 +659,12 @@ static void *rx_audio_read_thread(void *args)
 			continue;
 		}
 		printf("connected.\n");
-		queue_clear(audio_queue, queue_element_free);
-		audio_send_running = true;
 		while(true) {
-			e = front(audio_queue);
-			if(!e){
+			cache = data_cache_read(audio_cache, 15);
+			if(!cache){
 				continue;
 			}
+			e = &cache->e;
 
 			/*printf("%s, e->header.size: %d\n", __func__, e->header.size);*/
 			data_len = send(audio_data_sock, &e->header, sizeof(e->header), 0);
@@ -546,9 +675,8 @@ static void *rx_audio_read_thread(void *args)
 				if(audio_data_sock <= 0) {
 					goto fail;
 				}
-				printf("%s,%d,send error, error: %s\n",__func__, __LINE__, strerror(errno));
-				free(e->data);
-				free(e);
+				/*printf("%s,%d,send error, error: %s\n",__func__, __LINE__, strerror(errno));*/
+				data_cache_read_update(audio_cache, cache);
 				break;
 			}
 
@@ -560,22 +688,19 @@ static void *rx_audio_read_thread(void *args)
 #endif
 
 			if(data_len != e->header.size) {
-				printf("%s,%d,send error, error: %s\n",__func__, __LINE__, strerror(errno));
+				/*printf("%s,%d,send error, error: %s\n",__func__, __LINE__, strerror(errno));*/
 				close(audio_data_sock);
 				audio_data_sock = create_socket(AUDIO_DATA_PORT);
 				if(audio_data_sock <= 0) {
 					goto fail;
 				}
-				free(e->data);
-				free(e);
+				data_cache_read_update(audio_cache, cache);
 				break;
 			}
 
-			free(e->data);
-			free(e);
+			data_cache_read_update(audio_cache, cache);
 
 		}
-		audio_send_running = false;
 	}
 
 	return NULL;
@@ -587,6 +712,7 @@ static void *rx_video_read_thread(void *args)
 {
 	char *server_ip = (char *)args;
 	int data_len = 0;
+	struct data_cache_element *cache;
 	struct sockaddr_in server_addr;
 	if(video_data_sock <=0) {
 		printf("video_data_sock = %d\n", video_data_sock);
@@ -605,7 +731,6 @@ static void *rx_video_read_thread(void *args)
 
 
 	struct data_element *e = NULL;
-	//printf("rx_video_read_thread run\n");
 	while (!stop_read) {
 
 		printf("video connect servier %s......\n",server_ip);
@@ -615,13 +740,12 @@ static void *rx_video_read_thread(void *args)
 			continue;
 		}
 		printf("connected.\n");
-		queue_clear(video_queue, queue_element_free);
-		video_send_running = true;
 		while(true) {
-			e = front(video_queue);
-			if(!e){
+			cache = data_cache_read(video_cache, 15);
+			if(!cache){
 				continue;
 			}
+			e = &cache->e;
 
 			data_len = send(video_data_sock, &e->header, sizeof(e->header), 0);
 
@@ -631,9 +755,8 @@ static void *rx_video_read_thread(void *args)
 				if(video_data_sock <= 0) {
 					goto fail;
 				}
-				printf("%s,%d,send error, error: %s\n",__func__, __LINE__, strerror(errno));
-				free(e->data);
-				free(e);
+				/*printf("%s,%d,send error, error: %s\n",__func__, __LINE__, strerror(errno));*/
+				data_cache_read_update(video_cache, cache);
 				break;
 			}
 
@@ -645,20 +768,17 @@ static void *rx_video_read_thread(void *args)
 #endif
 
 			if(data_len != e->header.size) {
-				printf("%s,%d,data_len: %d, send error, error: %s\n",__func__, __LINE__, data_len, strerror(errno));
+				/*printf("%s,%d,data_len: %d, send error, error: %s\n",__func__, __LINE__, data_len, strerror(errno));*/
 				close(video_data_sock);
 				video_data_sock = create_socket(VIDEO_DATA_PORT);
 				if(video_data_sock <= 0) {
 					goto fail;
 				}
-				free(e->data);
-				free(e);
+				data_cache_read_update(video_cache, cache);
 				break;
 			}
-			free(e->data);
-			free(e);
+			data_cache_read_update(video_cache, cache);
 		}
-		video_send_running = false;
 	}
 
 	return NULL;
@@ -695,7 +815,7 @@ static int udp_send(int sockfd, uint8_t *data, int32_t len, uint32_t flags, stru
 				usleep(3*1000);
 				continue;
 			}
-			printf("send error.\n");
+			/*printf("send error.\n");*/
 			r = -1;
 			break;
 		}
@@ -728,7 +848,7 @@ static int udp_send_v1(int sockfd, uint8_t *data, int32_t len, uint32_t flags, s
 				usleep(3*1000);
 				continue;
 			}
-			printf("send error.\n");
+			/*printf("send error.\n");*/
 			return -1;
 		}
 		ptr += UDP_SEG_LENGTH;
@@ -760,6 +880,7 @@ static int kshm_read_cb(kshm_handle_t hdl, void *request, void *buf, size_t size
 
 	while(size > 0){
 		payload_len = (size < (int32_t)UDP_MAX_PAYLOAD_LEN)? size: (int32_t)UDP_MAX_PAYLOAD_LEN;
+		h.crc_val = crc32(0, (uint8_t *)&h, sizeof(udp_header) - sizeof(uint32_t));
 		memcpy(dst, &h, sizeof(udp_header));
 		if(h.seg_id == 0){
 			payload_len -= sizeof(data_header_t);
@@ -781,21 +902,16 @@ static void *audio_data_thread(void *args)
 {
 	AvPktHd hdr = {0};
 	struct data_element *e;
-#ifndef USE_UDP_PROTOCOL
-	int header_size = 0;
-#else
+	struct data_cache_element *cache;
 	int header_size = sizeof(data_header_t);
-#endif
+
 	printf("%s:%d\n", __func__, __LINE__);
 	while(true) {
 		
-		e = malloc(sizeof(*e));
-		if(!e){
-			printf("%s:%d,Not enough memory\n",__func__, __LINE__);
-			usleep(100 * 1000);
+		cache = data_cache_write(audio_cache, 0);
+		if(!cache){
 			continue;
 		}
-
 again1:
 		memset(&hdr, 0, sizeof(AvPktHd));
 #ifndef __HCRTOS__
@@ -804,22 +920,41 @@ again1:
 		if (read_data(&rx_audio_read_hdl, (uint8_t *)&hdr, sizeof(AvPktHd), NULL, NULL) != 0) {
 #endif
 			printf("read audio hdr from kshm err\n");
-			break;
+			continue;
 		}
 
-		if(hdr.size <=0)
-			goto again1;
-		e->data = malloc(((hdr.size + header_size)/UDP_MAX_PAYLOAD_LEN + 1)*UDP_SEG_LENGTH);
-		if(!e->data){
-			printf("%s:%d,Not enough memory\n",__func__, __LINE__);
+		if(hdr.size <=0){
+			usleep(10*1000);
 			goto again1;
 		}
 
+		e = &cache->e;
+		int data_size = ((hdr.size + header_size)/UDP_MAX_PAYLOAD_LEN + 1)*UDP_SEG_LENGTH;
+		if(cache->len < data_size || !e->data){
+			if(!e->data){
+				cache->len = data_size > 2 * 1024 * 1024? data_size: 2*1024*1024;
+				e->data = malloc(cache->len);
+			} else{
+				e->data = realloc(e->data, data_size);
+				cache->len = data_size;
+			}
+
+			if(!e->data){
+				printf("%s:%d,Not enough memory\n",__func__, __LINE__);
+				kshm_update_read(&rx_audio_read_hdl, hdr.size);
+				usleep(10*1000);
+				goto again1;
+			}
+			printf("%s:%d allocate\n", __func__, __LINE__);
+		}
+	
 		e->header.size = hdr.size + header_size;
 		e->header.pts = hdr.pts;
 		e->header.sample_rate = get_sample_rate();
 
 		strncpy(e->header.magic, DATA_HEADER_MAGIC, sizeof(e->header.magic));
+
+		e->header.crc_val = crc32(0, (uint8_t *)&e->header, sizeof(data_header_t) - sizeof(uint32_t));
 
 #ifndef __HCRTOS__
 		if(read_data(akshm_fd, e->data + header_size, hdr.size) != 0) {
@@ -827,25 +962,15 @@ again1:
 		if(read_data(&rx_audio_read_hdl, e->data/* + header_size*/, hdr.size, kshm_read_cb, &e->header) != 0) {
 #endif
 			printf("read audio data from kshm err\n");
+			kshm_update_read(&rx_audio_read_hdl, hdr.size);
 			usleep(30 * 1000);
-			free(e->data);
-			goto again1;
-		}
-
-		if(!audio_send_running){
-			free(e->data);
 			goto again1;
 		}
 
 #ifdef AIRPLAY_FRAME_RATE
 		print_frame_rate(&audio_frame_rate, 1, e->header.size);
 #endif
-
-		if(enqueue(audio_queue, e)){
-			free(e->data);
-			e->data = NULL;
-			goto again1;
-		}
+		data_cache_write_update(audio_cache);
 	}
 	return NULL;
 }
@@ -854,13 +979,8 @@ static void *video_data_thread(void *args)
 {
 	AvPktHd hdr = {0};
 	struct data_element *e;
-	int quality = 1;
-#ifndef USE_UDP_PROTOCOL
-	int header_size = 0;
-#else
+	struct data_cache_element *cache;
 	int header_size = sizeof(data_header_t);
-#endif
-
 
 	printf("%s:%d\n", __func__, __LINE__);
 #if 0
@@ -870,15 +990,12 @@ static void *video_data_thread(void *args)
 	gettimeofday(&cur, NULL);
 #endif
 
-	while(true) {
+	while(!stop_read) {
 
-		e = malloc(sizeof(*e));
-		if(!e){
-			printf("%s:%d,Not enough memory\n",__func__, __LINE__);
-			usleep(100 * 1000);
+		cache = data_cache_write(video_cache, 0);
+		if(!cache){
 			continue;
 		}
-
 again1:
 		
 #ifndef __HCRTOS__
@@ -889,33 +1006,46 @@ again1:
 			printf("read video hdr from kshm err\n");
 			break;
 		}
+		/*printf("hdr.size: %d\n", hdr.size);*/
 
 		if(hdr.size <=0){
+			usleep(10*1000);
 			goto again1;
 		}
-		e->data = malloc(((hdr.size + header_size)/UDP_MAX_PAYLOAD_LEN + 1)*UDP_SEG_LENGTH);
-		if(!e->data){
-			printf("%s:%d,Not enough memory\n",__func__, __LINE__);
-			goto again1;
+
+		e = &cache->e;
+		int data_size = ((hdr.size + header_size)/UDP_MAX_PAYLOAD_LEN + 1)*UDP_SEG_LENGTH;
+		if(cache->len < data_size || !e->data){
+			if(!e->data){
+				cache->len = data_size > 2 * 1024 * 1024? data_size: 2*1024*1024;
+				e->data = malloc(cache->len);
+			} else{
+				e->data = realloc(e->data, data_size);
+				cache->len = data_size;
+			}
+
+			if(!e->data){
+				printf("%s:%d,Not enough memory\n",__func__, __LINE__);
+				kshm_update_read(&rx_video_read_hdl, hdr.size);
+				usleep(30*1000);
+				goto again1;
+			}
+			printf("%s:%d allocate data_size=%d\n", __func__, __LINE__, data_size);
 		}
 
 		e->header.size = hdr.size + header_size;
 		e->header.pts = hdr.pts;
 		strncpy(e->header.magic, DATA_HEADER_MAGIC, sizeof(e->header.magic));
 
+		e->header.crc_val = crc32(0, (uint8_t *)&e->header, sizeof(e->header) - sizeof(uint32_t));
 #ifndef __HCRTOS__
 		if(read_data(vkshm_fd, e->data + header_size, hdr.size) != 0) {
 #else
-		if(read_data(&rx_video_read_hdl, e->data/* + header_size*/, hdr.size, kshm_read_cb, &e->header) != 0) {
+		if(read_data(&rx_video_read_hdl, e->data, hdr.size, kshm_read_cb, &e->header) != 0) {
 #endif
 			printf("read audio data from kshm err\n");
+			kshm_update_read(&rx_video_read_hdl, hdr.size);
 			usleep(30 * 1000);
-			free(e->data);
-			goto again1;
-		}
-
-		if(!video_send_running){
-			free(e->data);
 			goto again1;
 		}
 
@@ -924,19 +1054,7 @@ again1:
 #endif
 
 		jdo_change_quality(e->header.size);
-
-		if(enqueue(video_queue, e)){
-			free(e->data);
-			e->data = NULL;
-			printf("video queue full\n");
-#if 0
-			gettimeofday(&cur, NULL);
-			diff = ((cur.tv_sec*1000000 + cur.tv_usec) - (before.tv_sec * 1000000 + before.tv_usec))/1000;
-			printf("f2:%lld\n", diff);
-			before = cur;
-#endif
-			goto again1;
-		}
+		data_cache_write_update(video_cache);
 #if 0
 		gettimeofday(&cur, NULL);
 		diff = ((cur.tv_sec*1000000 + cur.tv_usec) - (before.tv_sec * 1000000 + before.tv_usec))/1000;
@@ -944,17 +1062,8 @@ again1:
 		before = cur;
 #endif
 	}
-	return NULL;
-}
 
-static void queue_element_free(QueueElement  p)
-{
-	struct data_element *e = (struct data_element *)p;
-	if(e){
-		if(e->data)
-			free(e->data);
-		free(e);
-	}
+	return NULL;
 }
 
 static void *rx_audio_read_thread(void *args)
@@ -962,6 +1071,7 @@ static void *rx_audio_read_thread(void *args)
 	char *server_ip = (char *)args;
 	int data_len = 0;
 	struct sockaddr_in server_addr;
+	struct data_cache_element *cache;
 	if(audio_data_sock <=0) {
 		printf("audio_data_sock = %d\n", audio_data_sock);
 		exit(-1);
@@ -981,35 +1091,27 @@ static void *rx_audio_read_thread(void *args)
 	struct data_element *e = NULL;
 	while (!stop_read) {
 
-		printf("audio connect server %s......\n",server_ip);
-		queue_clear(audio_queue, queue_element_free);
-		audio_send_running = true;
-		while(true) {
-			e = front(audio_queue);
-			if(!e){
-				printf("%s:%d:bugs\n", __func__, __LINE__);
-				continue;
-			}
-
-			data_len = udp_send_v1(audio_data_sock, e->data, e->header.size, 0, (struct sockaddr *)&server_addr, sizeof(server_addr));
-#ifdef AIRPLAY_FRAME_RATE
-			print_frame_rate(&audio_frame_rate, 1, e->header.size);
-#endif
-			if(data_len != 0) {
-				close(audio_data_sock);
-				audio_data_sock = create_socket(AUDIO_DATA_PORT);
-				if(audio_data_sock <= 0) {
-					goto fail;
-				}
-				printf("%s,%d,send error, error: %s\n",__func__, __LINE__, strerror(errno));
-				free(e->data);
-				free(e);
-				break;
-			}
-			free(e->data);
-			free(e);
+		cache = data_cache_read(audio_cache, 15);
+		if(!cache){
+			continue;
 		}
-		audio_send_running = false;
+		e = &cache->e;
+
+		data_len = udp_send_v1(audio_data_sock, e->data, e->header.size, 0, (struct sockaddr *)&server_addr, sizeof(server_addr));
+#ifdef AIRPLAY_FRAME_RATE
+		print_frame_rate(&audio_frame_rate, 1, e->header.size);
+#endif
+		if(data_len != 0) {
+			close(audio_data_sock);
+			audio_data_sock = create_socket(AUDIO_DATA_PORT);
+			if(audio_data_sock <= 0) {
+				goto fail;
+			}
+			/*printf("%s,%d,send error, error: %s\n",__func__, __LINE__, strerror(errno));*/
+			data_cache_read_update(audio_cache, cache);
+			continue;
+		}
+		data_cache_read_update(audio_cache, cache);
 	}
 
 	return NULL;
@@ -1022,11 +1124,12 @@ static void *rx_video_read_thread(void *args)
 	char *server_ip = (char *)args;
 	int data_len = 0;
 	struct sockaddr_in server_addr;
+	struct data_cache_element *cache;
 	if(video_data_sock <=0) {
 		printf("video_data_sock = %d\n", video_data_sock);
 		exit(-1);
 	}
-	
+
 	bzero(&server_addr, sizeof(server_addr));
 
 	server_addr.sin_family = AF_INET;
@@ -1041,41 +1144,30 @@ static void *rx_video_read_thread(void *args)
 	struct data_element *e = NULL;
 
 	while (!stop_read) {
-
-		printf("video connect servier %s......\n",server_ip);
-		queue_clear(video_queue, queue_element_free);
-		video_send_running = true;
-		while(true) {
-			e = front(video_queue);
-			if(!e){
-				printf("%s:%d:bugs\n", __func__, __LINE__);
-				continue;
-			}
-
-			data_len = udp_send_v1(video_data_sock, e->data, e->header.size, 0, (struct sockaddr *)&server_addr, sizeof(server_addr));
-#ifdef AIRPLAY_FRAME_RATE
-			print_frame_rate(&audio_frame_rate, 1, e->header.size);
-#endif
-			if(data_len != 0) {
-				close(video_data_sock);
-				video_data_sock = create_socket(VIDEO_DATA_PORT);
-				if(video_data_sock <= 0) {
-					goto fail;
-				}
-				printf("%s,%d,send error, size:%ld, error: %s\n",__func__, __LINE__, e->header.size, strerror(errno));
-				free(e->data);
-				free(e);
-				break;
-			}
-
-			free(e->data);
-			free(e);
-
+		cache = data_cache_read(video_cache, 15);
+		if(!cache){
+			continue;
 		}
-		video_send_running = false;
+		e = &cache->e;
+
+		data_len = udp_send_v1(video_data_sock, e->data, e->header.size, 0, (struct sockaddr *)&server_addr, sizeof(server_addr));
+#ifdef AIRPLAY_FRAME_RATE
+		print_frame_rate(&audio_frame_rate, 1, e->header.size);
+#endif
+		if(data_len != 0) {
+			close(video_data_sock);
+			video_data_sock = create_socket(VIDEO_DATA_PORT);
+			if(video_data_sock <= 0) {
+				goto fail;
+			}
+			data_cache_read_update(video_cache, cache);
+			continue;
+		}
+
+		data_cache_read_update(video_cache, cache);
+
 	}
 
-	return NULL;
 fail:
 	return NULL;
 }
@@ -1130,22 +1222,24 @@ int main (int argc, char *argv[])
 	pthread_attr_t audio_attr;
 	int opt;
 
+	video_cache = data_cache_create(4, 1024*1024*2);
+	if(!video_cache){
+		printf("%s:%d create video_cache error.\n", __func__, __LINE__);
+		return -1;
+	}
+
+	audio_cache = data_cache_create(4, 1024*100);
+	if(!audio_cache){
+		printf("%s:%d create audio_cache error.\n", __func__, __LINE__);
+		data_cache_destroy(video_cache);
+		return -1;
+	}
+
 	opterr = 0;
 	optind = 0;
 	pthread_attr_init(&attr);
 	pthread_attr_setstacksize(&attr, 0x1000);
 
-	audio_queue = initQueue(5);
-	if(!audio_queue){
-		printf("init audio queue error.\n");
-		return -1;
-	}
-
-	video_queue = initQueue(3);
-	if(!video_queue){
-		printf("init video queue error.\n");
-		return -1;
-	}
 	printf("jenc_rd_init\n");
 	jenc_rdo_init(&g_rdo, JPEG_QUANT_TABLES_SIZE, 9, 2,
 			JPEG_QUANT_TABLES_SIZE, 17, 2);
@@ -1177,7 +1271,7 @@ int main (int argc, char *argv[])
 			usage();
 			return 0;
 		case 'f':
-			frame_size = atoi(optarg);
+			frame_size_default = atoi(optarg);
 			printf("frame_size:%d\n", frame_size);
 			break;
 		default:
@@ -1301,6 +1395,15 @@ err:
 	if (rx_fd >= 0)
 		close (rx_fd);
 	rx_fd = -1;
+	if(audio_cache){
+		data_cache_destroy(audio_cache);
+		audio_cache = NULL;
+	}
+
+	if(video_cache){
+		data_cache_destroy(video_cache);
+		video_cache = NULL;
+	}
 
 	return -1;
 }
@@ -1316,7 +1419,7 @@ static void display_thread(void *args)
 	console_run_cmd("net ifconfig eth0 192.168.61.2");
 	console_run_cmd("net ifconfig eth0 netmask 255.255.255.0 gateway 192.168.61.1");
 #endif
-	console_run_cmd("display_source -s 192.168.61.1 -a 0 -v 3 -q 3");
+	console_run_cmd("display_source -s 192.168.61.1 -a 100 -v 3 -q 3");
 	vTaskDelete(NULL);
 }
 static int display_source(void)

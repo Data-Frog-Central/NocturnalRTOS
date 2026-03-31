@@ -5,6 +5,7 @@
 #include <hcuapi/tvtype.h>
 
 #define HDMI_TX_GET_EDID_TVSYS			_IOR(HDMI_TX_IOCBASE, 0, enum TVSYS)
+#define HDMI_TX_GET_EDIDINFO			_IOR(HDMI_TX_IOCBASE, 1, struct hdmi_edidinfo)
 
 #define HDMI_TX_NOTIFY_CONNECT			_IO (HDMI_TX_IOCBASE, 8)
 #define HDMI_TX_NOTIFY_DISCONNECT		_IO (HDMI_TX_IOCBASE, 9)

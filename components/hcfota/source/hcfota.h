@@ -26,8 +26,17 @@ struct hcfota_header {
 	uint32_t uncompressed_length;
 	uint8_t board[16];
 	uint32_t payload_size;
-	uint8_t reserved3[12];
-	uint8_t reserved4[16];
+	uint8_t spinor_en_cs0;
+	uint8_t spinand_en_cs0;
+	uint8_t spinand_en_cs1;
+	uint8_t nand_en;
+	uint8_t emmc_v20_left_en;
+	uint8_t emmc_v20_top_en;
+	uint8_t emmc_v30_en;
+	uint8_t reserved3[5];
+	uint8_t erase_nor_chip;
+	uint8_t erase_nand_chip;
+	uint8_t reserved4[14];
 };
 
 union hcfota_entry {
@@ -70,6 +79,10 @@ struct hcfota_payload_header {
 	uint8_t reserved1[8];
 	uint8_t reserved2[16];
 	union hcfota_entry entry[31];
+};
+
+struct hcfota_entry_info {
+	char names[31][16];
 };
 
 #define HCFOTA_ERR_HEADER_CRC	(-10)

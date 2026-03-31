@@ -67,7 +67,9 @@ void fs_page_keyinput_event_cb(lv_event_t *event)
     int v_key=0;
     uint16_t new_item_idx;
     uint16_t old_item_idx;
-	file_node_t *file_node = NULL;
+    file_node_t *file_node = NULL;
+    struct stat  e_sa;
+    char ebook_file_name[MAX_FILE_NAME]={0};
     if(code == LV_EVENT_KEY)
     {
         file_node = file_mgr_get_file_node(m_cur_file_list, m_cur_file_list->item_index);
@@ -127,14 +129,26 @@ void fs_page_keyinput_event_cb(lv_event_t *event)
                     break;
                 }
             case LV_KEY_ENTER:
-				if(MEDIA_TYPE_TXT == m_cur_file_list->media_type && FILE_TXT == file_node->type)
-				{
-					printf("%s,%d\n",__func__,__LINE__);
-					_ui_screen_change(ui_ebook_txt,0,0); 
-					printf("%s,%d\n",__func__,__LINE__);
-				}
-				else
-                	media_fslist_enter(m_cur_file_list->item_index);
+                if(MEDIA_TYPE_TXT == m_cur_file_list->media_type && FILE_TXT == file_node->type)
+                {
+                    file_node_t *file_node = file_mgr_get_file_node(m_cur_file_list, m_cur_file_list->item_index);
+                    ebook_get_fullname(ebook_file_name,m_cur_file_list->dir_path,file_node->name);
+                    if(stat(ebook_file_name,&e_sa) == -1)
+                    {
+                        printf("stat failed\n");
+                        break;
+                    }
+                    if(e_sa.st_size > EBOOK_FILE_SIZE_MAX)
+                    {
+                        win_msgbox_msg_open(STR_FILE_FAIL, 2000, NULL, NULL);
+                        break;
+                    }
+                    else
+                        _ui_screen_change(ui_ebook_txt,0,0); 
+
+                }
+                else
+                    media_fslist_enter(m_cur_file_list->item_index);
                 break;
             case LV_KEY_ESC : //back btn value in lvgl mmap
                 if(lv_obj_is_valid(ui_win_zoom)){ 

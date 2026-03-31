@@ -139,13 +139,18 @@ static int tls_close(URLContext *h)
     if (c->ssl) {
         SSL_shutdown(c->ssl);
         SSL_free(c->ssl);
+        c->ssl = NULL;
     }
-    if (c->ctx)
+    if (c->ctx) {
         SSL_CTX_free(c->ctx);
+        c->ctx = NULL;
+    }
     ffurl_closep(&c->tls_shared.tcp);
 #if OPENSSL_VERSION_NUMBER >= 0x1010000fL
-    if (c->url_bio_method)
+    if (c->url_bio_method) {
         BIO_meth_free(c->url_bio_method);
+        c->url_bio_method = NULL;
+    }
 #endif
     ff_openssl_deinit();
     return 0;

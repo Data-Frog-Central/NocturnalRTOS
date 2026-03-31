@@ -425,8 +425,11 @@ void hccast_scene_init(void)
     pthread_attr_t attr;
     pthread_attr_init(&attr);
     pthread_attr_setstacksize(&attr, 0x2000);
-    if (pthread_create(&tid, NULL, hccast_scene_thread, NULL) < 0)
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+    if (pthread_create(&tid, &attr, hccast_scene_thread, NULL) < 0)
     {
         hccast_log(LL_WARNING,"[scene]:Create hccast_scene_thread error.\n");
     }
+    
+    pthread_attr_destroy(&attr);
 }

@@ -21,6 +21,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <hcuapi/snd.h>
 
 #include "com_api.h"
 #include "osd_com.h"
@@ -61,6 +62,33 @@ static void *aum_burning_process(void *arg)
     um_start_upgrade = 0;
 }
 
+void cast_api_set_volume(int vol)
+{
+    int snd_fd = open("/dev/sndC0i2so", O_WRONLY);
+    if (snd_fd < 0)
+    {
+        printf("Open /dev/sndC0i2so fail.\n");
+        return;
+    }
+    ioctl(snd_fd, SND_IOCTL_SET_VOLUME, &vol);
+    close(snd_fd);
+}
+
+int cast_api_get_volume(void)
+{
+    int snd_fd = open("/dev/sndC0i2so", O_WRONLY);
+    uint8_t vol = 0;
+    if (snd_fd < 0)
+    {
+        return 0;
+    }
+    ioctl(snd_fd, SND_IOCTL_GET_VOLUME, &vol);
+    //printf("get vol: %d\n", vol);
+    close(snd_fd);
+
+    return vol;
+}
+
 void cast_api_set_dis_zoom(av_area_t *src_rect,
                          av_area_t *dst_rect,
                          dis_scale_avtive_mode_e active_mode)
@@ -98,6 +126,7 @@ static void ium_event_process_cb(int event, void *param1, void *param2)
     int total_data_len ;
     pthread_t pid;
     app_data_t* app_data = data_mgr_app_get();
+    static int g_vol = 0;
     
     if ((event != HCCAST_IUM_EVT_GET_FLIP_MODE) && (event != HCCAST_IUM_EVT_UPG_DOWNLOAD_PROGRESS))
         printf("ium event: %d\n", event);
@@ -116,10 +145,18 @@ static void ium_event_process_cb(int event, void *param1, void *param2)
             //hccast_scene_switch(HCCAST_SCENE_IUMIRROR);
             ctl_msg.msg_type = MSG_TYPE_CAST_IUSB_START;
             api_osd_off_time(1000);
+
+            g_vol = cast_api_get_volume();
+            cast_api_set_volume(100);
+            printf("%s set vol %d->100\n", __func__, g_vol);
+            
             break;
         case HCCAST_IUM_EVT_MIRROR_STOP:
             printf("%s(), line:%d. HCCAST_IUM_EVT_MIRROR_STOP\n", __func__, __LINE__);
             ctl_msg.msg_type = MSG_TYPE_CAST_IUSB_STOP;
+
+            cast_api_set_volume(g_vol);
+            
             break;
         case HCCAST_IUM_EVT_SAVE_PAIR_DATA: //param1: buf; param2: length
         {    

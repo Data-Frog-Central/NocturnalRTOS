@@ -27,6 +27,7 @@ void __attribute__((weak)) hardware_init_hook(void)
 	usleep(1);
 	REG32_CLR_BIT((uint32_t)&SYSIO0 + 0x80, BIT23);
 #endif
+	sys_hcprogrammer_check();
 	return;
 }
 
@@ -385,6 +386,20 @@ static void cpp_do_global_dtors(void)
 	}
 }
 
+static void disabled_strap_pin(void)
+{
+	void *strap_pin_addr = (void *)&STRAP_PIN_CTRL;
+#ifdef CONFIG_SOC_HC16XX
+	REG32_SET_BIT(strap_pin_addr, BIT18); //disabled uart0 strap pin
+	REG32_SET_BIT(strap_pin_addr, BIT19); //disabled sflash csj strap pin
+	REG32_SET_BIT(strap_pin_addr, BIT20); //disabled sflash holdj strap pin
+	REG32_SET_BIT(strap_pin_addr, BIT24); //disabled sflash wj strap pin
+#elif defined(CONFIG_SOC_HC15XX)
+	REG32_SET_BIT(strap_pin_addr, BIT18); //disabled uart0 strap pin
+	REG32_SET_BIT(strap_pin_addr, BIT19); //disabled uart0 strap pin
+#endif
+}
+
 void __attribute__((weak)) software_init_hook(void)
 {
 	cache_patch_read = MIPS_UNCACHED_ADDR((int)_start);
@@ -393,6 +408,7 @@ void __attribute__((weak)) software_init_hook(void)
 	fdt_early_setup();
 	scpu_clock_init();
 	mcpu_clock_init();
+	sys_hcprogrammer_check();
 	OsKHeapInit();
 	OsKMmzInit();
 	fdt_setup();
@@ -400,5 +416,8 @@ void __attribute__((weak)) software_init_hook(void)
 	of_scan_flat_dt(platform_setup_setbit, NULL);
 	of_scan_flat_dt(platform_setup_setreg, NULL);
 
+	disabled_strap_pin();
+
 	cpp_do_global_ctors();
+	sys_hcprogrammer_check();
 }

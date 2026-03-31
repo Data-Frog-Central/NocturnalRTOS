@@ -9,6 +9,7 @@
 //extern lv_indev_t * indev_keypad;
 void create_volume();
 void create_mute_icon();
+void del_volume2();
 void del_volume();
 
 #endif //LVGL_VOLUME_H

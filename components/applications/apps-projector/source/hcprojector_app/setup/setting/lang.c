@@ -543,10 +543,9 @@ void change_language(){
 #endif    
     _change_language1(main_page_scr);
     _change_language1(channel_scr);
-    // _change_language(ui_mainpage, id,&select_font_media[id]);
-    // _change_language(ui_subpage, id,&select_font_media[id]);
-    // _change_language(ui_fspage, id,&select_font_mplist[id]);
-    // _change_language(ui_ctrl_bar, id,&select_font_mplist[id]);
+    /*if obj is not recreate when set language 
+    need to call this func to refresh obj*/ 
+    _change_language1(ui_ctrl_bar);
 }
 static const char* osd_lang_vec[LANGUAGE_MAX+1] = {0};
 

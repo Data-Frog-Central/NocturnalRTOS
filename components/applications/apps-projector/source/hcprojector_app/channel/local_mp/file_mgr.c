@@ -227,11 +227,13 @@ bool file_mgr_subtitle_filter(char* file_name)
 	}
 	if( strcasestr(ext_name,"ass")||
 		strcasestr(ext_name,"ssa")||
-		strcasestr(ext_name,"srt")||
-		strcasestr(ext_name,"txt")||
+		strcasestr(ext_name,"idx")||
 		strcasestr(ext_name,"sub")||
 		strcasestr(ext_name,"smi")||
-		strcasestr(ext_name,"idx")||
+		strcasestr(ext_name,"sami")||
+		strcasestr(ext_name,"txt")||
+		strcasestr(ext_name,"mpl2")||
+		strcasestr(ext_name,"srt")||
 		strcasestr(ext_name,"vtt")||
 		strcasestr(ext_name,"lrc")
 	){
@@ -296,6 +298,14 @@ int file_mgr_create_list(file_list_t *file_list, char *path)
 	// int i=0;
 	int len;
 	if ((dirp = opendir(path)) == NULL) {
+		control_msg_t ctl_msg={0};
+        partition_info_t*  p_info=mmp_get_partition_info();
+        char *devname=strdup(p_info->used_dev);
+		ctl_msg.msg_type=MSG_TYPE_USB_UNMOUNT;
+        ctl_msg.msg_code=(uint32_t)devname;
+        api_storage_devinfo_state_set(false);
+        api_control_send_msg(&ctl_msg);
+        printf(">>!%s ,%d\n",__func__,__LINE__);
 		return API_FAILURE;
 	}
 
@@ -394,6 +404,14 @@ int file_mgr_create_list_without_dir(file_list_t *file_list, char *path)
 	// int i=0;
 	int len;
 	if ((dirp = opendir(path)) == NULL) {
+		control_msg_t ctl_msg={0};
+        partition_info_t*  p_info=mmp_get_partition_info();
+        char *devname=strdup(p_info->used_dev);
+		ctl_msg.msg_type=MSG_TYPE_USB_UNMOUNT;
+        ctl_msg.msg_code=(uint32_t)devname;
+        api_storage_devinfo_state_set(false);
+        api_control_send_msg(&ctl_msg);
+        printf(">>!%s ,%d\n",__func__,__LINE__);
 		return API_FAILURE;
 	}
 
@@ -542,7 +560,7 @@ int file_mgr_rm_extension(char *str_out, char *str_in)
     int len = 0;
     int i = 0;
     len = strlen(str_in);
-    for(i = len-1; i >= 0; i--){
+    for(i=0; i<len; i++){
         if('.' == str_in[i]){
             strncpy(str_out, str_in, i);
             break;

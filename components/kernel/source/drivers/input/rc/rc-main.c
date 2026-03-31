@@ -1122,4 +1122,4 @@ static int rc_core_init(void)
 	return 0;
 }
 
-module_driver(rc_core, rc_core_init, NULL, 0)
+module_system(rc_core, rc_core_init, NULL, 0)

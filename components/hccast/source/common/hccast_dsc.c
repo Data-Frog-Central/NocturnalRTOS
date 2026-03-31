@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/ioctl.h>
 #include <fcntl.h>
 #include <stdint.h>
 #include <pthread.h>
@@ -13,6 +14,8 @@
 #endif
 #include <hccast_dsc.h>
 #include <hccast_log.h>
+
+#define BLOCK_SIZE (32 * 1024)
 
 int hccast_dsc_mmp_init(dsc_ctx_t* dsc_ctx)
 {
@@ -150,6 +153,94 @@ int hccast_dsc_cbc_setkey(dsc_ctx_t* dsc_ctx, unsigned char *key, unsigned char*
     return 0;
 }
 
+#ifdef HC_RTOS
+int _hccast_dsc_common_decrypt(dsc_ctx_t* dsc_ctx, unsigned char *data, 
+    unsigned char *output, int size, unsigned long mode)
+{
+    struct dsc_crypt out = {0};
+    unsigned int count_block = ((size + BLOCK_SIZE - 1) / BLOCK_SIZE);
+    int i = 0;
+    int left_len = size;
+    int dec_size = 0;
+    int dec_pos = 0;
+
+    if(((unsigned int)data & 0x1F) || ((unsigned int)output & 0x1F))
+    {
+        for(i = 0; i < count_block; i++)
+        {
+            if(left_len < BLOCK_SIZE)
+            {
+                dec_size = left_len;
+            }
+            else
+            {
+                dec_size = BLOCK_SIZE;
+            }
+
+            out.input = dsc_ctx->mmap_addr;
+            out.size = dec_size;
+            out.output = dsc_ctx->mmap_addr;
+            memcpy(dsc_ctx->mmap_addr, data + dec_pos, dec_size);    
+            ioctl(dsc_ctx->fd, mode, &out); 
+            memcpy(output + dec_pos, dsc_ctx->mmap_addr, dec_size);
+        
+            left_len -= dec_size;
+            dec_pos += dec_size;
+        }
+    }
+    else
+    {   
+        vPortCacheFlush(data, size);
+        vPortCacheFlush(output, size);
+        vPortCacheInvalidate(output, size);
+    
+        out.input = data;
+        out.size = size;
+        out.output = output;
+        ioctl(dsc_ctx->fd, mode, &out);
+    }
+    
+    return 0;
+}
+
+#else
+ int _hccast_dsc_common_decrypt(dsc_ctx_t* dsc_ctx, unsigned char *data, 
+    unsigned char *output, int size, unsigned long mode)   
+{
+    struct dsc_crypt out = {0};
+    unsigned int count_block = ((size + BLOCK_SIZE - 1) / BLOCK_SIZE);
+    int i = 0;
+    int left_len = size;
+    int dec_size = 0;
+    int dec_pos = 0;
+
+    for(i = 0; i < count_block; i++)
+    {
+        if(left_len < BLOCK_SIZE)
+        {
+            dec_size = left_len;
+        }
+        else
+        {
+            dec_size = BLOCK_SIZE;
+        }
+
+        out.input = dsc_ctx->mmap_addr;
+        out.size = dec_size;
+        out.output = dsc_ctx->mmap_addr;
+        memcpy(dsc_ctx->mmap_addr, data + dec_pos, dec_size);    
+        ioctl(dsc_ctx->fd, mode, &out); 
+        memcpy(output + dec_pos, dsc_ctx->mmap_addr, dec_size);
+    
+        left_len -= dec_size;
+        dec_pos += dec_size;
+    }
+
+    return 0;
+}
+
+#endif
+
 void hccast_dsc_common_decrypt(dsc_ctx_t* dsc_ctx, unsigned char *data, unsigned char *output, int size)
 {
     struct dsc_crypt out = {0};
@@ -166,36 +257,7 @@ void hccast_dsc_common_decrypt(dsc_ctx_t* dsc_ctx, unsigned char *data, unsigned
         return ;
     }
 
-    if(size > dsc_ctx->mmap_size)
-    {
-        hccast_log(LL_WARNING,"[%s]: decrypt size-%d is bigger than %d \n", __func__,size,dsc_ctx->mmap_size);
-        return ;
-    }
-#ifdef HC_RTOS
-    if(((unsigned int)data & 0x1F) || ((unsigned int)output & 0x1F))
-    {
-        out.input = dsc_ctx->mmap_addr;
-        out.size = size;
-        out.output = dsc_ctx->mmap_addr;
-        memcpy(dsc_ctx->mmap_addr, data, size);    
-        ioctl(dsc_ctx->fd, DSC_DO_DECRYPT, &out);
-        memcpy(output, dsc_ctx->mmap_addr, size);
-    }
-    else
-    {
-        out.input = data;
-        out.size = size;
-        out.output = output;
-        ioctl(dsc_ctx->fd, DSC_DO_DECRYPT, &out);
-    }
-#else
-    out.input = dsc_ctx->mmap_addr;
-    out.size = size;
-    out.output = dsc_ctx->mmap_addr;
-    memcpy(dsc_ctx->mmap_addr, data, size);    
-    ioctl(dsc_ctx->fd, DSC_DO_DECRYPT, &out);
-    memcpy(output, dsc_ctx->mmap_addr, size);
-#endif
+    _hccast_dsc_common_decrypt(dsc_ctx, data, output, size, DSC_DO_DECRYPT);    
 }
 
 int hccast_dsc_aes_decrypt(dsc_ctx_t* dsc_ctx, unsigned char *key, unsigned char* iv, unsigned char *data, unsigned char *output, int size)
@@ -281,15 +343,8 @@ int hccast_dsc_aes_encrypt(dsc_ctx_t* dsc_ctx, unsigned char *key, unsigned char
             return -1;
         }
 
-        memcpy(dsc_ctx->mmap_addr, input, len);
-        struct dsc_crypt out =
-        {
-            .input = dsc_ctx->mmap_addr,
-            .size = len,
-        };
-        out.output = dsc_ctx->mmap_addr;
-        ioctl(dsc_ctx->fd, DSC_DO_ENCRYPT, &out);
-        memcpy(output, dsc_ctx->mmap_addr, len);
+        _hccast_dsc_common_decrypt(dsc_ctx, input, output, len, DSC_DO_ENCRYPT);
+
     }
     else if (dsc_ctx->mode == AES_CTR)
     {
@@ -325,37 +380,7 @@ int hccast_dsc_aes_encrypt(dsc_ctx_t* dsc_ctx, unsigned char *key, unsigned char
             return -1;
         }
 
-        if(len > dsc_ctx->mmap_size)
-        {
-            hccast_log(LL_WARNING,"[%s]: decrypt size-%d is bigger than %d \n", __func__,len,dsc_ctx->mmap_size);
-            return -1;
-        }
-
-#ifdef HC_RTOS
-        if(((unsigned int)input & 0x1F) || ((unsigned int)output & 0x1F))
-        {
-            out.input = dsc_ctx->mmap_addr;
-            out.size = len;
-            out.output = dsc_ctx->mmap_addr;
-            memcpy(dsc_ctx->mmap_addr, input, len);    
-            ioctl(dsc_ctx->fd, DSC_DO_ENCRYPT, &out);
-            memcpy(output, dsc_ctx->mmap_addr, len);
-        }
-        else
-        {
-            out.input = input;
-            out.size = len;
-            out.output = output;
-            ioctl(dsc_ctx->fd, DSC_DO_ENCRYPT, &out);
-        }
-#else
-        out.input = dsc_ctx->mmap_addr;
-        out.output = dsc_ctx->mmap_addr;
-        out.size = len;
-        memcpy(dsc_ctx->mmap_addr, input, len);
-        ioctl(dsc_ctx->fd, DSC_DO_ENCRYPT, &out);
-        memcpy(output, dsc_ctx->mmap_addr, len);    
-#endif
+        _hccast_dsc_common_decrypt(dsc_ctx, input, output, len, DSC_DO_ENCRYPT);
     }
     else
     {

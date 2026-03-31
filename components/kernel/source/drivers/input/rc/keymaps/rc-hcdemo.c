@@ -10,93 +10,115 @@
 #include <hcuapi/input-event-codes.h>
 #include <hcuapi/rc-proto.h>
 #include "../rc-map.h"
-static struct rc_map_table hcdemo[] =
-{
- {0x45, KEY_POWER},
- {0x46, KEY_MENU},
- {0x47, KEY_MUTE},
- {0x44,KEY_MODE},
- {0x40,KEY_UP},
- 
- {0x43,KEY_ESC},
- {0x7,KEY_LEFT},
- {0x15, KEY_OK},
- {0x9,KEY_RIGHT},
- {0x16,KEY_0},
- 
- {0x19,KEY_DOWN},
- {0xd,KEY_OK},
- {0xc,KEY_1},
- {0x18, KEY_2},
- {0x5e, KEY_3},
- 
- {0x8, KEY_4},
- {0x1c, KEY_5},
- {0x5a, KEY_6},
- {0x42, KEY_7},
- {0x52, KEY_8},
- 
- {0x4a, KEY_9}, 
+
+static struct rc_map_table hcdemo[] = {
+
+	/*  0x1c   0x3   0x42  0x8  *
+	 * POWER  AUDIO  SAT   MUTE *
+	 *                          */
+	{ 0x1c, KEY_POWER },
+	{ 0x03, KEY_AUDIO },
+	{ 0x42, KEY_SAT   },
+	{ 0x08, KEY_MUTE  },
+
+	/*  0x55    0x51       0x5e *
+	 * ZOOM    TIMESHIFT   SUB  *
+	 *                          */
+	{ 0x55, KEY_ZOOM     },
+	{ 0x51, KEY_TIME     },
+	{ 0x5e, KEY_SUBTITLE },
+
+	/*  0x5a    0x52     0x5d *
+	 * TV/RADIO TTX   FILELIST  *
+	 *                          */
+	{ 0x5a, KEY_TV   },
+	{ 0x52, KEY_TEXT },
+	{ 0x5d, KEY_LIST },
+
+	/*  0x18           0x17  *
+	 * MENU           EXIT   *
+	 *                       */
+	{ 0x18, KEY_MENU },
+	{ 0x17, KEY_EXIT },
+
+	/*          0x1a          *
+	 *           Up           *
+	 *                        *
+	 *  0x47    0x06    0x07  *
+	 *  Left     Ok     Right *
+	 *                        *
+	 *         0x48           *
+	 *         Down           *
+	 *                        */
+	{ 0x47, KEY_LEFT  },
+	{ 0x1a, KEY_UP    },
+	{ 0x07, KEY_RIGHT },
+	{ 0x48, KEY_DOWN  },
+	{ 0x06, KEY_OK },
+
+	/*  0x49           0xa  *
+	 * EPG           INFO   *
+	 *                      */
+	{ 0x49, KEY_EPG  },
+	{ 0x0a, KEY_INFO },
+
+	/*  0x54    0x16    0x15  *
+	 *   1       2       3    *
+	 *                        *
+	 *  0x50    0x12    0x11  *
+	 *   4       5       6    *
+	 *                        *
+	 *  0x4c    0xe    0xd    *
+	 *   7       8       9    *
+	 *                        */
+	{ 0x54, KEY_NUMERIC_1 },
+	{ 0x16, KEY_NUMERIC_2 },
+	{ 0x15, KEY_NUMERIC_3 },
+	{ 0x50, KEY_NUMERIC_4 },
+	{ 0x12, KEY_NUMERIC_5 },
+	{ 0x11, KEY_NUMERIC_6 },
+	{ 0x4c, KEY_NUMERIC_7 },
+	{ 0x0e, KEY_NUMERIC_8 },
+	{ 0x0d, KEY_NUMERIC_9 },
+
+	/*  0x10    0x41    0xc  *
+	 * RECALL    FAV      0  *
+	 *                       */
+	{ 0x10, KEY_AGAIN     },
+	{ 0x41, KEY_FAVORITES },
+	{ 0x0c, KEY_NUMERIC_0 },
+
+
+	/*  0x09       0x05        0x4b   0x4f *
+	 *  LEFTSHIFT RIGHTSHIFT PREVIOUS NEXT *
+	 *                                     */
+	{ 0x09, KEY_LEFTSHIFT  },
+	{ 0x05, KEY_RIGHTSHIFT },
+	{ 0x4b, KEY_PREVIOUS   },
+	{ 0x4f, KEY_NEXT       },
+
+	/*  0x01  0x5f  0x19  0x58 *
+	 *  PLAY PAUSE STOP RECORD *
+	 *                         */
+	{ 0x01, KEY_PLAY   },
+	{ 0x5f, KEY_PAUSE  },
+	{ 0x19, KEY_STOP   },
+	{ 0x58, KEY_RECORD },
+
+	/*  0x56  0x57  0x1f  0x5b *
+	 *  RED  GREEN YELLO BLUE  *
+	 *                         */
+	{ 0x56, KEY_RED    },
+	{ 0x57, KEY_GREEN  },
+	{ 0x1f, KEY_YELLOW },
+	{ 0x5b, KEY_BLUE   },
+
+	/*  0x14              0x13      *
+	 *  KEY_VOLUMEUP KEY_VOLUMEDOWN *
+	 *                              */
+	{ 0x14, KEY_VOLUMEUP    },
+	{ 0x13, KEY_VOLUMEDOWN  },
 };
-
-
-
-	static struct rc_map_table hcdemo1[] = {
-	
-		/*	0x1c   0x3	 0x42  0x8	*
-		 * POWER  AUDIO  SAT   MUTE *
-		 *							*/
-		{ 0x45, KEY_POWER },
-		{ 0x46, KEY_TV	 },
-		//{ 0x47, KEY_USB_SD	 },
-		
-		{ 0x44, KEY_1 },
-		{ 0x40, KEY_2	 },
-		{ 0x43, KEY_3	 },
-		{ 0x07, KEY_4 },
-		{ 0x15, KEY_5	 },
-		{ 0x09, KEY_6	 },
-		{ 0x16, KEY_7 },
-		{ 0x19, KEY_8	 },
-		{ 0x0D, KEY_9	 },
-	//	{ 0x0C, KEY_10 },
-		{ 0x18, KEY_UP	 },
-		{ 0x5e, KEY_BACK	 },
-		{ 0x08, KEY_VOLUMEDOWN },
-		{ 0x1C, KEY_ENTER	 },
-		{ 0x5A, KEY_VOLUMEUP	 },
-	//	{ 0x42, KEY_REPEAT },
-		{ 0x52, KEY_DOWN	 },
-	//		{0x4A,KEY_NP},
-	
-		/*	{0X7E1000,KEY_1},
-			{0X7EF098,KEY_2},
-
-			{0X7E20F4,KEY_3},
-			{0X7E2082,KEY_4},
-			{0X7E300A,KEY_5},
-			{0X7E007A,KEY_6},
-			{0X7E60F6,KEY_7},
-			{0X7ED0BE,KEY_8},
-			{0X7E70B1,KEY_9},
-			{0X7E5079,KEY_10},
-
-		
-			{0X771000,KEY_DOWN},
-			{0X772058,KEY_UP},
-			{0X77D0F4,KEY_OK},
-			{0X773082,KEY_BACK},
-			{0X7E1000,KEY_PLAY},
-			{0X7EF098,KEY_PAUSE},
-
-
-			{0X7E1000,KEY_STOP},
-			{0X7EF098,KEY_RESTART},
-
-		
-			{0X7E1000,KEY_VOLUMEDOWN},
-			{0X7EF098,KEY_VOLUMEUP},*/
-	};
 
 static struct rc_map_list hcdemo_map = {
 	.map = {
@@ -112,4 +134,4 @@ static int init_rc_map_hcdemo(void)
 	return rc_map_register(&hcdemo_map);
 }
 
-module_driver(rc_map_hcdemo, init_rc_map_hcdemo, NULL, 0)
+module_system(rc_map_hcdemo, init_rc_map_hcdemo, NULL, 0)

@@ -27,9 +27,10 @@ network_api.c: use for network, include wifi, etc
 #include <hcuapi/dis.h>
 #include "cast_api.h"
 #include "app_config.h"
-#include "cast_log.h"
+#include "app_log.h"
 #include "../wifi/wifi.h"
 #include <arpa/inet.h>
+#include "setup.h"
 
 #define UUID_HEADER "HCcast"
 
@@ -39,17 +40,14 @@ network_api.c: use for network, include wifi, etc
 
 /**********************************************************************
 NETWORK_UPGRADE_URL:
-config name: %s_upgrade_config.json == produdct_hcscreen_rtos_upgrade_config.jsonp
-example:http://119.3.89.190:8080/upgrade_package/HC15A210_hcscreen_rtos_upgrade_config.jsonp
+config name: HCFOTA.jsonp
+example:http://http://172.16.12.81:80/hccast/rtos/HC15A210/hcprojector/HCFOTA.jsonp
 **********************************************************************/
 #ifdef __linux__
-//#define NETWORK_UPGRADE_URL "http://119.3.89.190:8080/upgrade_package/%s_hcprojector_linux_upgrade_config.jsonp"
-#define NETWORK_UPGRADE_URL "http://test/%s_test.jsonp"
+#define NETWORK_UPGRADE_URL "http://172.16.12.81:80/hccast/linux/%s/hcprojector/HCFOTA.jsonp"
 #else
-//#define NETWORK_UPGRADE_URL "http://119.3.89.190:8080/upgrade_package/%s_hcprojector_rtos_upgrade_config.jsonp"
-#define NETWORK_UPGRADE_URL "http://test/%s_test.jsonp"
+#define NETWORK_UPGRADE_URL "http://172.16.12.81:80/hccast/rtos/%s/hcprojector/HCFOTA.jsonp"
 #endif
-
 
 wifi_config_t m_wifi_config = {0};
 
@@ -59,7 +57,11 @@ static int m_probed_wifi_module = 0;
 static int hostap_connect_count = 0;
 static int factary_init = 0;
 static int hostap_discover_ok = 0;
-static int m_wifi_connect_status = 0;
+//static int m_wifi_connect_status = 0;
+//static pthread_mutex_t g_wifi_status_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t m_wifi_state_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t m_service_en_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t m_wifi_switch_mode_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static int wifi_mgr_callback_func(hccast_wifi_event_e event, void* in, void* out);
 
@@ -80,15 +82,12 @@ int network_upgrade_start();
 #endif
 
 static void network_probed_wifi(void);
-
-static pthread_mutex_t g_wifi_status_mutex = PTHREAD_MUTEX_INITIALIZER;
-
-
 char *app_get_connecting_ssid()
 {
     return g_connecting_ssid;
 }
 
+/*
 int app_get_wifi_connect_status()
 {
     int status;
@@ -104,6 +103,7 @@ void app_set_wifi_connect_status(int status)
     m_wifi_connect_status = status;
     pthread_mutex_unlock(&g_wifi_status_mutex);
 }
+*/
 
 void hccast_start_services(void)
 {
@@ -114,40 +114,79 @@ void hccast_start_services(void)
 
     printf("[%s]  begin start services.\n", __func__);
 
+#ifdef DLNA_SUPPORT
     hccast_dlna_service_stop();
     hccast_dlna_service_start();
+#endif
+
+#ifdef AIRCAST_SUPPORT    
     hccast_air_service_stop();
     hccast_air_service_start();
+#endif
+
+#ifdef MIRACAST_SUPPORT    
     hccast_mira_service_start();
+#endif    
 }
 
 void hccast_stop_services(void)
 {
     printf("[%s]  begin stop services.\n", __func__);
 
+#ifdef DLNA_SUPPORT
     hccast_dlna_service_stop();
+#endif
+
+#ifdef AIRCAST_SUPPORT        
     hccast_air_service_stop();
+#endif
+
+#ifdef MIRACAST_SUPPORT    
     hccast_mira_service_stop();
+#endif    
 }
 
 
 static void hccast_ap_dlna_aircast_start(void)
 {
+#ifdef DLNA_SUPPORT    
     hccast_dlna_service_start();
+#endif
+#ifdef AIRCAST_SUPPORT
     hccast_air_service_start();
+#endif
 }
 
 static void hccast_ap_dlna_aircast_stop(void)
 {
+#ifdef DLNA_SUPPORT
     hccast_dlna_service_stop();
+#endif
+#ifdef AIRCAST_SUPPORT
     hccast_air_service_stop();
+#endif
 }
 
 bool app_wifi_connect_status_get(void){
     return m_wifi_config.bConnected;
 }
 
+void app_wifi_connect_status_set(bool b){
+     m_wifi_config.bConnected = b;
+}
+
 #ifdef WIFI_SUPPORT
+#define AP_EXIST_SIZE 71
+#define MULT 31
+static int hash(char* str){
+    unsigned int h = 0;
+    while(*str){
+        h = MULT * h + *str;
+        str++;
+    }
+    return h % AP_EXIST_SIZE;
+}
+
 static int wifi_mgr_callback_func(hccast_wifi_event_e event, void* in, void* out)
 {
     log(DEMO, INFO, "[%s] event: %d", __func__,event);
@@ -169,32 +208,76 @@ static int wifi_mgr_callback_func(hccast_wifi_event_e event, void* in, void* out
             log(DEMO, INFO, "AP NUM: %d\n***********", res->ap_num);
             int j;
             wifi_list_set_zero();
+            char* ap_exist[AP_EXIST_SIZE] = {0};
             for (int i = 0; i < res->ap_num; i++)
             {
                 log(DEMO, INFO, "ssid: %s, quality: %d", res->apinfo[i].ssid, res->apinfo[i].quality);
-                
-                if((j=sysdata_get_wifi_index_by_ssid(res->apinfo[i].ssid)) < 0){
-                     wifi_list_add(&res->apinfo[i]);
-                }else{
-                    if(saved_wifi_sig_strength_max_id<0 && sysdata_wifi_ap_get_auto(j)){
-                        saved_wifi_sig_strength_max_id = j;
+                if(strlen(res->apinfo[i].ssid) == 0){
+                    continue;
+                }
+                if(wifi_list_update_is_enable())
+                {
+                    int hIdx = hash(res->apinfo[i].ssid);
+                    if(ap_exist[hIdx]){
+                        if(strcmp(ap_exist[hIdx], res->apinfo[i].ssid) == 0){
+                            continue;
+                        }else{
+                            int j = (hIdx+1)%AP_EXIST_SIZE;
+                            bool conn = false;
+                            while(ap_exist[j]){
+                                if(strcmp(ap_exist[j], res->apinfo[i].ssid) == 0){
+                                    conn = true;
+                                }
+                                j = (j+1)%AP_EXIST_SIZE;
+                            }
+                            if(conn){
+                                continue;
+                            }
+                            ap_exist[j] = res->apinfo[i].ssid;
+                        }
+                    }else if(hIdx < AP_EXIST_SIZE){
+                        ap_exist[hIdx] = res->apinfo[i].ssid;
                     }
                     
-                    hccast_wifi_ap_info_t *info = sysdata_get_wifi_info_by_index(j);
-                    if(info){
-                        info->quality = res->apinfo[i].quality;
-                        info->encryptMode = res->apinfo[i].encryptMode;
-                    }
-                    if(saved_wifi_sig_strength_max_id>=0){
-                        info = sysdata_get_wifi_info_by_index(saved_wifi_sig_strength_max_id);
-                        if(info && info->quality < res->apinfo[i].quality){
-                            if(sysdata_wifi_ap_get_auto(j)){
-                                saved_wifi_sig_strength_max_id = j;
-                            }                            
+                    if((j=sysdata_get_wifi_index_by_ssid(res->apinfo[i].ssid)) < 0){
+                        if(!wifi_list_mutex_lock()){
+                            break;
                         }
-                    }
-                }
-               
+                        wifi_scan_node *node = wifi_list_get_tail();
+                        while(node){
+                            if(node->res.quality < res->apinfo[i].quality){
+                                node = node->prev;
+                            }else{
+                                //printf("no %d\n", i);
+                                break;
+                            }
+                        }
+                        if(node){    
+                            wifi_list_insert(&res->apinfo[i], node);
+                        }else{
+                            wifi_list_insert(&res->apinfo[i], (wifi_scan_node*)wifi_list_get_head());
+                        }
+                        wifi_list_mutex_unlock();
+                    }else{
+                        if(saved_wifi_sig_strength_max_id<0 && sysdata_wifi_ap_get_auto(j)){
+                            saved_wifi_sig_strength_max_id = j;
+                        }
+                        
+                        hccast_wifi_ap_info_t *info = sysdata_get_wifi_info_by_index(j);
+                        if(info){
+                            info->quality = res->apinfo[i].quality;
+                            info->encryptMode = res->apinfo[i].encryptMode;
+                        }
+                        if(saved_wifi_sig_strength_max_id>=0){
+                            info = sysdata_get_wifi_info_by_index(saved_wifi_sig_strength_max_id);
+                            if(info && info->quality < res->apinfo[i].quality){
+                                if(sysdata_wifi_ap_get_auto(j)){
+                                    saved_wifi_sig_strength_max_id = j;
+                                }                            
+                            }
+                        }
+                    }                    
+                }          
             }
 
             log(DEMO, INFO, "\n***********");
@@ -248,11 +331,12 @@ static int wifi_mgr_callback_func(hccast_wifi_event_e event, void* in, void* out
 					}
 					else
 					{
+                        pthread_mutex_lock(&m_service_en_mutex);
                         if (network_service_enable_get()){
                             printf("hccast_start_services\n");
                             hccast_start_services();
                         }
-						  
+                        pthread_mutex_unlock(&m_service_en_mutex);
 					}
 			
                     m_wifi_config.sta_ip_ready = true;
@@ -262,6 +346,9 @@ static int wifi_mgr_callback_func(hccast_wifi_event_e event, void* in, void* out
 
                     strncpy(m_wifi_config.local_ip, result->ip, MAX_IP_STR_LEN);
                     wifi_get_udhcp_result(result);
+                    #ifdef BLUETOOTH_SUPPORT
+                    bt_set_shield_wifi_channel(hccast_wifi_mgr_get_current_freq());
+                    #endif
                     ctl_msg.msg_type = MSG_TYPE_NETWORK_WIFI_CONNECTED;
                     api_control_send_msg(&ctl_msg);
         #ifdef AUTO_HTTP_UPGRADE_SUPPORT
@@ -289,26 +376,28 @@ static int wifi_mgr_callback_func(hccast_wifi_event_e event, void* in, void* out
                     ctl_msg.msg_type = MSG_TYPE_NETWORK_WIFI_CONNECT_FAIL;
                     api_control_send_msg(&ctl_msg);
 
-					if((hccast_get_current_scene() == HCCAST_SCENE_IUMIRROR) || (hccast_get_current_scene() == HCCAST_SCENE_AUMIRROR))
-					{
-						printf("Cur scene is doing USB MIRROR\n");
-					}
-					else
-					{
+ 	            if((hccast_get_current_scene() == HCCAST_SCENE_IUMIRROR) || (hccast_get_current_scene() == HCCAST_SCENE_AUMIRROR))
+		    {
+		        printf("Cur scene is doing USB MIRROR\n");
+		    }
+		    else
+		    {
+                        pthread_mutex_lock(&m_service_en_mutex);
                         if (network_service_enable_get())
                         {    
-                            hccast_mira_service_start();
                             app_wifi_switch_work_mode(WIFI_MODE_AP);
+                        #ifdef MIRACAST_SUPPORT
+                            hccast_mira_service_start();
+                        #endif
                         }
-
-					}	
+                        pthread_mutex_unlock(&m_service_en_mutex);
+		    }	
                     m_wifi_config.sta_ip_ready = false;
                     m_wifi_config.bConnected = false;
                     m_wifi_config.bConnectedByPhone = false;
 
                 }
             }
-
             break;
         }
 
@@ -320,6 +409,7 @@ static int wifi_mgr_callback_func(hccast_wifi_event_e event, void* in, void* out
             m_wifi_config.sta_ip_ready = false;            
             memset(g_connecting_ssid, 0, sizeof(g_connecting_ssid));
             memset(m_wifi_config.local_ip, 0, sizeof(m_wifi_config.local_ip));
+            hccast_wifi_mgr_udhcpc_stop();
             if (hccast_wifi_mgr_p2p_get_connect_stat() == 0)
             {
                 printf("%s Wifi has been disconnected, beging change to host ap mode\n",__func__);
@@ -329,12 +419,14 @@ static int wifi_mgr_callback_func(hccast_wifi_event_e event, void* in, void* out
                 hccast_mira_service_stop();
             #endif
         
+                pthread_mutex_lock(&m_service_en_mutex);
                 if (network_service_enable_get()){
                     app_wifi_switch_work_mode(WIFI_MODE_AP);
-			#ifndef __linux__
+                #ifdef MIRACAST_SUPPORT   
         	        hccast_mira_service_start();
-			#endif
+                #endif
 				}
+                pthread_mutex_unlock(&m_service_en_mutex);
             }
             ctl_msg.msg_type = MSG_TYPE_NETWORK_WIFI_DISCONNECTED;
             api_control_send_msg(&ctl_msg);
@@ -364,6 +456,18 @@ static int wifi_mgr_callback_func(hccast_wifi_event_e event, void* in, void* out
 
             break;
         }
+       case HCCAST_WIFI_RECONNECT:
+            m_wifi_config.bConnected = false;
+            wifi_is_reconning_set(true);
+            ctl_msg.msg_type = MSG_TYPE_NETWORK_WIFI_RECONNECTE;
+            api_control_send_msg(&ctl_msg);
+           break;
+        case HCCAST_WIFI_RECONNECTED:
+            m_wifi_config.bConnected = true;
+            wifi_is_reconning_set(false);
+            ctl_msg.msg_type = MSG_TYPE_NETWORK_WIFI_RECONNECTED;
+            api_control_send_msg(&ctl_msg);
+            break;
 
         default:
             break;
@@ -403,24 +507,28 @@ static void *wifi_connect_thread(void *args)
     app_wifi_switch_work_mode(WIFI_MODE_STATION);
 
     memcpy(g_connecting_ssid, ap_wifi->ssid, sizeof(g_connecting_ssid));
-    hccast_wifi_mgr_connect(ap_wifi);
+    int ret = hccast_wifi_mgr_connect(ap_wifi);
+    if (HCCAST_WIFI_ERR_USER_ABORT == ret)
+    {
+        printf("%s(), line:%d. user abort.\n", __FUNCTION__, __LINE__);
+        hccast_wifi_mgr_udhcpc_stop();
+        hccast_wifi_mgr_disconnect_no_message();
+        m_wifi_config.bConnected = false;
+        m_wifi_config.bConnectedByPhone = false;
+        m_wifi_config.host_ap_ip_ready = false;
+        m_wifi_config.sta_ip_ready = false;
+        memset(m_wifi_config.local_ip, 0, MAX_IP_STR_LEN);
+        memset(g_connecting_ssid, 0, sizeof(g_connecting_ssid));
+
+        goto EXIT;
+    }
+
     if (hccast_wifi_mgr_get_connect_status())
     {
         hccast_wifi_mgr_udhcpc_stop();
-        api_sleep_ms(100);
         hccast_wifi_mgr_udhcpc_start();
 
-        index = sysdata_check_ap_saved(ap_wifi);
-        printf("ssid index: %d\n",index);
-        if(index >= 0)//set the index ap to first.
-        {
-             sysdata_wifi_ap_delete(index);
-        }
-
-        sysdata_wifi_ap_save(ap_wifi);
-
-        projector_sys_param_save();
-        sleep(1);
+        sysdata_wifi_ap_resave(ap_wifi);
     }
     else
     {
@@ -437,11 +545,21 @@ static void *wifi_connect_thread(void *args)
         control_msg_t ctl_msg = {0};
         ctl_msg.msg_type = MSG_TYPE_NETWORK_WIFI_DISCONNECTED;
         api_control_send_msg(&ctl_msg);
-        app_wifi_switch_work_mode(WIFI_MODE_AP);
-        hccast_mira_service_start();
+        pthread_mutex_lock(&m_service_en_mutex);
+        if(network_service_enable_get()) {
+            app_wifi_switch_work_mode(WIFI_MODE_AP);
+        #ifdef MIRACAST_SUPPORT
+            hccast_mira_service_start();
+        #endif
+        }
+        pthread_mutex_unlock(&m_service_en_mutex);
     }
 
+EXIT:
     free(ap_wifi);
+    pthread_mutex_lock(&m_wifi_state_mutex);
+    m_wifi_config.wifi_connecting = false;
+    pthread_mutex_unlock(&m_wifi_state_mutex);
     return NULL;
 }
 
@@ -473,7 +591,9 @@ static void *wifi_switch_hs_channel_thread(void* arg)
 {
     hccast_mira_service_stop();
     hccast_wifi_mgr_hostap_switch_channel((int)arg);
+#ifdef MIRACAST_SUPPORT
     hccast_mira_service_start();
+#endif
     pthread_detach(pthread_self());
 
     return NULL;
@@ -563,8 +683,10 @@ static int httpd_callback_func(hccast_httpd_event_e event, void* in, void* out)
                 projector_set_some_sys_param(P_AIRCAST_MODE, temp);
 	            if(hccast_get_current_scene() == HCCAST_SCENE_NONE)
 	            {
-	                hccast_air_service_stop();
+            #ifdef AIRCAST_SUPPORT
+                    hccast_air_service_stop();
 	                hccast_air_service_start();
+            #endif
 	            }
 			}
             break;
@@ -616,8 +738,10 @@ static int httpd_callback_func(hccast_httpd_event_e event, void* in, void* out)
                     {
                         if(hccast_air_service_is_start())
                         {
+                        #ifdef AIRCAST_SUPPORT
                             hccast_air_service_stop();
                             hccast_air_service_start();
+                        #endif
                         }
                     }
                 }
@@ -693,9 +817,48 @@ static int httpd_callback_func(hccast_httpd_event_e event, void* in, void* out)
                 if(ap_wifi)
                 {
                     pthread_t tid;
+                    pthread_attr_t attr;
+                    hccast_wifi_ap_info_t *temp_ap = wifi_list_get_node_by_name(con_ap->ssid);
+                    hccast_wifi_ap_info_t *temp_ap1 = sysdata_get_wifi_info(con_ap->ssid);
+                    pthread_mutex_lock(&m_wifi_state_mutex);
                     memcpy(ap_wifi,con_ap,sizeof(hccast_wifi_ap_info_t));
+                    if(temp_ap)
+                    {
+                        ap_wifi->quality = temp_ap->quality;
+                    }
+                    else if(temp_ap1)
+                    {
+                         ap_wifi->quality = temp_ap1->quality;
+                    }
+                    else
+                    {
+                        ap_wifi->quality = 0;
+                    }
+
+                    if (m_wifi_config.wifi_connecting )
+                    {
+                        printf("wifi is connecting skip this time connect\n");
+                        pthread_mutex_unlock(&m_wifi_state_mutex);
+                        return -1;
+                    }
+
+                    m_wifi_config.wifi_connecting = 1;
                     memcpy(g_connecting_ssid, con_ap->ssid, sizeof(g_connecting_ssid));
-                    pthread_create(&tid, NULL,wifi_connect_thread,(void*)ap_wifi);
+                    pthread_attr_init(&attr);
+                    pthread_attr_setstacksize(&attr, 0x2000);
+                    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+                    if (pthread_create(&tid, &attr,wifi_connect_thread,(void*)ap_wifi) != 0)
+                    {
+                        printf("crate wifi_connect_thread fail.\n");
+                        m_wifi_config.wifi_connecting = 0;
+                        free(ap_wifi);
+                        pthread_attr_destroy(&attr);
+                        pthread_mutex_unlock(&m_wifi_state_mutex);
+                        return -1;
+                    } 
+
+                    pthread_attr_destroy(&attr);
+                    pthread_mutex_unlock(&m_wifi_state_mutex);
                 }
                 else
                 {
@@ -971,11 +1134,20 @@ static int httpd_callback_func(hccast_httpd_event_e event, void* in, void* out)
 
             break;
         case HCCAST_HTTPD_STOP_MIRA_SERVICE:
-            hccast_mira_service_stop();
-            sleep(1);
+            #ifdef MIRACAST_SUPPORT
+            if(network_service_enable_get())
+            {
+                hccast_mira_service_stop();
+            }
+            #endif
             break;
         case HCCAST_HTTPD_START_MIRA_SERVICE:
-            hccast_mira_service_start();
+            #ifdef MIRACAST_SUPPORT
+            if(network_service_enable_get())
+            {
+                hccast_mira_service_start();
+            }
+            #endif
             break;
 	case HCCAST_HTTPD_GET_MIRROR_ROTATION:
 		ret = projector_get_some_sys_param(P_MIRROR_ROTATION);
@@ -1049,6 +1221,8 @@ static void media_callback_func(hccast_media_event_e msg_type, void* param)
 {
     control_msg_t ctl_msg = {0};
     ctl_msg.msg_code = (uint32_t)param;
+    hccast_media_play_info_t *media_paly_info = NULL;
+    int menu_status;
 
     switch (msg_type)
     {
@@ -1127,6 +1301,41 @@ static void media_callback_func(hccast_media_event_e msg_type, void* param)
             *(int*)param = flip_mode;
             break;
         }
+        case HCCAST_MEDIA_EVENT_URL_START_PLAY:
+        {   
+            media_paly_info = (hccast_media_play_info_t *)param;
+            media_paly_info->interface_valid = 1;
+            ctl_msg.msg_code = (uint32_t)media_paly_info->media_type;
+
+            printf("[%s] %d   HCCAST_MEDIA_EVENT_URL_START_PLAY, media_type: %d, url_mode:%d\n", \
+                __func__, __LINE__,media_paly_info->media_type, media_paly_info->url_mode);
+            if(media_paly_info->url_mode == HCCAST_MEDIA_URL_DLNA)
+            {
+                ctl_msg.msg_type = MSG_TYPE_CAST_DLNA_START;
+            }
+            else if(media_paly_info->url_mode == HCCAST_MEDIA_URL_AIRCAST)
+            {
+                ctl_msg.msg_type = MSG_TYPE_CAST_AIRCAST_START;
+            }
+
+            break;
+        }
+        case HCCAST_MEDIA_EVENT_GET_ZOOM_INFO:
+        {   
+        #ifdef SYS_ZOOM_SUPPORT
+            hccast_media_zoom_info_t *zoom_info = (hccast_media_zoom_info_t*)param;
+            zoom_info->enable = 1;
+            zoom_info->src_rect.x = DIS_SOURCE_FULL_X;
+            zoom_info->src_rect.y = DIS_SOURCE_FULL_Y;
+            zoom_info->src_rect.w = DIS_SOURCE_FULL_W;
+            zoom_info->src_rect.h = DIS_SOURCE_FULL_H;
+            zoom_info->dst_rect.x = get_display_x();
+            zoom_info->dst_rect.y = get_display_y();
+            zoom_info->dst_rect.w = get_display_h();
+            zoom_info->dst_rect.h = get_display_v();
+        #endif
+            break;
+        }
         default:
             break;
     }
@@ -1152,7 +1361,13 @@ static void media_callback_func(hccast_media_event_e msg_type, void* param)
         // close slowly.
         // printf("[%s] wait dlna menu open start tick: %d\n",__func__,(int)time(NULL));
         if (dlna_ui_wait_ready)
-            dlna_ui_wait_ready(20000);
+        {
+            menu_status = dlna_ui_wait_ready(20000);
+            if(media_paly_info && !menu_status)
+            {
+                media_paly_info->enable_url_play = 0;
+            }
+        }    
         // printf("[%s] wait dlna menu open end tick: %d\n",__func__,(int)time(NULL));
     }
 }
@@ -1400,8 +1615,12 @@ int network_deinit(void)
     hccast_httpd_service_uninit();
 #endif    
 
+#ifdef MIRACAST_SUPPORT
     hccast_mira_service_uninit();
+#endif
+#ifdef DLNA_SUPPORT
     hccast_dlna_service_uninit();
+#endif    
     return API_SUCCESS;
 }
 
@@ -1453,15 +1672,14 @@ static void hostap_config_init(void)
 #endif
 }
 
-volatile bool m_wifi_connecting = false;
-volatile bool m_wifi_init_done = false;
-bool app_wifi_init_done(void)
+bool app_get_wifi_init_done(void)
 {
-    return m_wifi_init_done;
+    return m_wifi_config.wifi_init_done;
 }
 
-bool get_m_wifi_connecting(){
-    return m_wifi_connecting;
+void app_set_wifi_init_done(int state)
+{
+    m_wifi_config.wifi_init_done = state;
 }
 
 #define WIFI_CHECK_TIME 50000000
@@ -1469,7 +1687,6 @@ static void *network_connect_task(void *arg)
 {
     hccast_wifi_ap_info_t wifi_ap;
     uint32_t loop_cnt = WIFI_CHECK_TIME/100;
-    m_wifi_connecting = true;
     char connect_fail = 0;
     control_msg_t ctl_msg = {0};
 
@@ -1496,21 +1713,19 @@ static void *network_connect_task(void *arg)
     if (projector_get_some_sys_param(P_WIFI_ONOFF) && sysdata_wifi_ap_get(&wifi_ap))
     {
         app_wifi_switch_work_mode(WIFI_MODE_STATION);
-
+        memcpy(g_connecting_ssid, wifi_ap.ssid, sizeof(g_connecting_ssid));
         ctl_msg.msg_type = MSG_TYPE_NETWORK_WIFI_CONNECTING;
         api_control_send_msg(&ctl_msg);
 
         //Get wifi AP from flash, connect wifi
         printf("%s(), line:%d, connect to %s, pwd:%s\n", __FUNCTION__, __LINE__, \
                wifi_ap.ssid, wifi_ap.pwd);
-        memcpy(g_connecting_ssid, wifi_ap.ssid, sizeof(g_connecting_ssid));
+
         hccast_wifi_mgr_connect(&wifi_ap);
         if (hccast_wifi_mgr_get_connect_status())
         {
             hccast_wifi_mgr_udhcpc_stop();
-            api_sleep_ms(100);
             hccast_wifi_mgr_udhcpc_start();
-            api_sleep_ms(100);
         }
         else
         {
@@ -1525,38 +1740,48 @@ static void *network_connect_task(void *arg)
             usleep(50*1000);
             ctl_msg.msg_type = MSG_TYPE_NETWORK_WIFI_CONNECT_FAIL;
             api_control_send_msg(&ctl_msg);
-
             hccast_wifi_mgr_udhcpc_stop();
             hccast_wifi_mgr_disconnect_no_message();
 
+            pthread_mutex_lock(&m_service_en_mutex);
             if(network_service_enable_get())
             {
                 app_wifi_switch_work_mode(WIFI_MODE_AP);
+            #ifdef MIRACAST_SUPPORT
                 hccast_mira_service_start();
+            #endif
             }
+            pthread_mutex_unlock(&m_service_en_mutex);
         }
     }
     else
     {
+        ctl_msg.msg_type = MSG_TYPE_NETWORK_WIFI_STATUS_UPDATE;
+        api_control_send_msg(&ctl_msg);
+
+        pthread_mutex_lock(&m_service_en_mutex);
         if(network_service_enable_get())
         {
             //No wif AP in flash, entering AP mode
             app_wifi_switch_work_mode(WIFI_MODE_AP);
-
-            ctl_msg.msg_type = MSG_TYPE_NETWORK_WIFI_STATUS_UPDATE;
-            api_control_send_msg(&ctl_msg);
+        #ifdef MIRACAST_SUPPORT
             hccast_mira_service_start();
+        #endif
 
             printf("%s(), line:%d. AP mode start\n", __FUNCTION__, __LINE__);
         }
+        pthread_mutex_unlock(&m_service_en_mutex);
     }
 #endif
 connect_exit:
-    m_wifi_connecting = false;
+    pthread_mutex_lock(&m_wifi_state_mutex);
+    m_wifi_config.wifi_connecting = false;
+    pthread_mutex_unlock(&m_wifi_state_mutex);
+
     if (connect_fail)    
-        m_wifi_init_done = false;
+        m_wifi_config.wifi_init_done = false;
     else
-        m_wifi_init_done = true;
+        m_wifi_config.wifi_init_done = true;
 
     return NULL;
 }
@@ -1584,10 +1809,13 @@ static void udhcpc_cb(unsigned int data)
 int network_connect(void)
 {
 #ifdef WIFI_SUPPORT
-
-    if (m_wifi_connecting)
+    pthread_mutex_lock(&m_wifi_state_mutex);
+    if (m_wifi_config.wifi_connecting ) {
+        pthread_mutex_unlock(&m_wifi_state_mutex);
         return API_SUCCESS;
-
+    }
+    
+    m_wifi_config.wifi_connecting = true;
     pthread_t thread_id = 0;
     pthread_attr_t attr;
     //create the message task
@@ -1596,9 +1824,13 @@ int network_connect(void)
     pthread_attr_setdetachstate(&attr,PTHREAD_CREATE_DETACHED); //release task resource itself
     if(pthread_create(&thread_id, &attr, network_connect_task, NULL))
     {
+        m_wifi_config.wifi_connecting = false;
+        pthread_mutex_unlock(&m_wifi_state_mutex);     
         return API_FAILURE;
     }
     pthread_attr_destroy(&attr);
+
+    pthread_mutex_unlock(&m_wifi_state_mutex);
 #else // 
 
 	static udhcp_conf_t eth_udhcpc_conf =
@@ -1639,7 +1871,9 @@ bool network_service_enable_get()
 
 void network_service_enable_set(bool start)
 {
+    pthread_mutex_lock(&m_service_en_mutex);
     m_service_enable = start;
+    pthread_mutex_unlock(&m_service_en_mutex);
 }
 
 wifi_config_t *app_wifi_config_get(void)
@@ -1881,25 +2115,28 @@ static void wifi_do_connect(hccast_wifi_ap_info_t *wifi_info)
                wifi_ap.ssid, wifi_ap.pwd);
 
         memcpy(g_connecting_ssid, wifi_ap.ssid, sizeof(g_connecting_ssid));
-        hccast_wifi_mgr_connect(&wifi_ap);
-        if (hccast_wifi_mgr_get_connect_status())
+        int ret = hccast_wifi_mgr_connect(&wifi_ap);
+        if (HCCAST_WIFI_ERR_USER_ABORT == ret)
         {
-            hccast_wifi_mgr_udhcpc_stop();
-            api_sleep_ms(100);
-            hccast_wifi_mgr_udhcpc_start();
-            api_sleep_ms(100);
+            printf("%s(), line:%d. user abort.\n", __FUNCTION__, __LINE__);
+            m_wifi_config.bConnected = false;  
+            m_wifi_config.bConnectedByPhone = false;
+            m_wifi_config.host_ap_ip_ready = false;
+            m_wifi_config.sta_ip_ready = false;
+            memset(m_wifi_config.local_ip, 0, MAX_IP_STR_LEN);
+            memset(g_connecting_ssid, 0, sizeof(g_connecting_ssid));
 
-        index = sysdata_check_ap_saved(&wifi_ap);
-        printf("ssid index: %d\n",index);
-        if(index >= 0)//set the index ap to first.
-        {
-            sysdata_wifi_ap_delete(index);
+            hccast_wifi_mgr_udhcpc_stop();
+            hccast_wifi_mgr_disconnect_no_message();
+
+            return ;
         }
 
-        sysdata_wifi_ap_save(&wifi_ap);
-        projector_sys_param_save();
-        sleep(1);
-
+        if (hccast_wifi_mgr_get_connect_status())
+        {
+            sysdata_wifi_ap_resave(&wifi_ap);
+            hccast_wifi_mgr_udhcpc_stop();
+            hccast_wifi_mgr_udhcpc_start();
         }
         else
         {
@@ -1917,23 +2154,31 @@ static void wifi_do_connect(hccast_wifi_ap_info_t *wifi_info)
             hccast_wifi_mgr_udhcpc_stop();
             hccast_wifi_mgr_disconnect_no_message();
 
+            pthread_mutex_lock(&m_service_en_mutex);
             if(network_service_enable_get())
             {
                 app_wifi_switch_work_mode(WIFI_MODE_AP);
+            #ifdef MIRACAST_SUPPORT
                 hccast_mira_service_start();
-            }    
+            #endif
+            }
+            pthread_mutex_unlock(&m_service_en_mutex);
         }
     }
     else
     {
         //No wif AP in flash, entering AP mode
+        pthread_mutex_lock(&m_service_en_mutex);
         if(network_service_enable_get())
         {
             app_wifi_switch_work_mode(WIFI_MODE_AP);
             ctl_msg.msg_type = MSG_TYPE_NETWORK_WIFI_CONNECTED;
             api_control_send_msg(&ctl_msg);
+        #ifdef MIRACAST_SUPPORT
             hccast_mira_service_start();
+        #endif
         }
+        pthread_mutex_unlock(&m_service_en_mutex);
         printf("%s(), line:%d. AP mode start\n", __FUNCTION__, __LINE__);
     }
 
@@ -1942,47 +2187,64 @@ static void wifi_do_connect(hccast_wifi_ap_info_t *wifi_info)
 static void *wifi_connect_task(void *arg)
 {
     hccast_wifi_ap_info_t *wifi_ap = (hccast_wifi_ap_info_t*)arg;
-    m_wifi_connecting = true;
 
     if (network_wifi_module_get()){
         wifi_do_connect(wifi_ap);
     }
 
-    m_wifi_connecting = false;
-
+    pthread_mutex_lock(&m_wifi_state_mutex);
+    m_wifi_config.wifi_connecting = false;
+    pthread_mutex_unlock(&m_wifi_state_mutex);
     return NULL;
 }
 
 int app_wifi_reconnect(hccast_wifi_ap_info_t *wifi_ap)
 {
-    if (m_wifi_connecting)
+    pthread_mutex_lock(&m_wifi_state_mutex);
+    if (m_wifi_config.wifi_connecting ) {
+        pthread_mutex_unlock(&m_wifi_state_mutex);
         return 1;
+	}
 
+    m_wifi_config.wifi_connecting = true;
     pthread_t thread_id = 0;
     pthread_attr_t attr;
     //create the message task
     pthread_attr_init(&attr);
     pthread_attr_setstacksize(&attr, 0x2000);
     pthread_attr_setdetachstate(&attr,PTHREAD_CREATE_DETACHED); //release task resource itself
-    pthread_create(&thread_id, &attr, wifi_connect_task, (void*)wifi_ap);
+    if (pthread_create(&thread_id, &attr, wifi_connect_task, (void*)wifi_ap) != 0)
+    {
+        m_wifi_config.wifi_connecting = false;
+        pthread_mutex_unlock(&m_wifi_state_mutex);
+        return -1;
+    }
+    
     pthread_attr_destroy(&attr);
-
+    pthread_mutex_unlock(&m_wifi_state_mutex);
     return 0;
+}
+
+WIFI_MODE_e app_wifi_get_work_mode()
+{
+    WIFI_MODE_e mode = WIFI_MODE_NONE;
+    pthread_mutex_lock(&m_wifi_switch_mode_mutex);
+    mode = m_wifi_config.mode;
+    pthread_mutex_unlock(&m_wifi_switch_mode_mutex);
+
+    return mode;
 }
 
 int app_wifi_switch_work_mode(WIFI_MODE_e wifi_mode)
 {
-    char delay_flag = 0;
-    
+    pthread_mutex_lock(&m_wifi_switch_mode_mutex);
+
     if (WIFI_MODE_STATION == wifi_mode){
-        if (hccast_wifi_mgr_get_hostap_status()){      
+        if (hccast_wifi_mgr_get_hostap_status()){
             hccast_wifi_mgr_hostap_stop();
-            delay_flag = 1;
         }
     #ifdef __HCRTOS__
         if (!hccast_wifi_mgr_get_station_status()){
-            if (delay_flag)
-                api_sleep_ms(50);            
             hccast_wifi_mgr_enter_sta_mode();
         }
     #endif        
@@ -1990,33 +2252,35 @@ int app_wifi_switch_work_mode(WIFI_MODE_e wifi_mode)
     #ifdef __HCRTOS__
         if (hccast_wifi_mgr_get_station_status()){
             hccast_wifi_mgr_exit_sta_mode();
-            delay_flag = 1;
         }
     #endif
-        if (!hccast_wifi_mgr_get_hostap_status())   {   
-            if (delay_flag)
-                api_sleep_ms(50);
-
-    #ifdef __linux__
-    #else
+        if (!hccast_wifi_mgr_get_hostap_status()) {
+    #ifdef __HCRTOS__
             hostap_config_init();
     #endif
             hccast_wifi_mgr_hostap_start();
         }
+        else if (2 == hccast_wifi_mgr_get_hostap_status()) // current status is disable
+        {
+        #ifdef __HCRTOS__
+            hccast_wifi_mgr_hostap_enable();
+            hccast_wifi_mgr_udhcpd_start();
+        #endif
+        }
     } else if (WIFI_MODE_NONE == wifi_mode){
         if (hccast_wifi_mgr_get_hostap_status()){      
             hccast_wifi_mgr_hostap_stop();
-            delay_flag = 1;
         }
     #ifdef __HCRTOS__
         if (hccast_wifi_mgr_get_station_status()){
-            if (delay_flag)
-                api_sleep_ms(50);            
             hccast_wifi_mgr_exit_sta_mode();
         }
-    #endif        
+    #endif
     }
     m_wifi_config.mode = wifi_mode;
+
+    pthread_mutex_unlock(&m_wifi_switch_mode_mutex);
+    return 0;
 }
 
 

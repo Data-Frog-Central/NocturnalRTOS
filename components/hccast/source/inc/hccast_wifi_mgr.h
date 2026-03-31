@@ -60,6 +60,7 @@ enum
     HCCAST_WIFI_ERR_MEM                     = -0x3,
     HCCAST_WIFI_ERR_SOCKET_FAILED           = -0x4,
     HCCAST_WIFI_ERR_IOCTL_FAILED            = -0x5,
+    HCCAST_WIFI_ERR_USER_ABORT              = -0x6,
 
     HCCAST_WIFI_ERR_CMD_WPAS_NO_RUN         = -0x100,
     HCCAST_WIFI_ERR_CMD_WPAS_OPEN_FAILED    = -0x101,
@@ -181,6 +182,8 @@ typedef enum
     HCCAST_WIFI_DISCONNECT,
     HCCAST_WIFI_DISCONNECT_RESULT,
     HCCAST_WIFI_HOSTAP_OFFER,
+    HCCAST_WIFI_RECONNECT,
+    HCCAST_WIFI_RECONNECTED,
     HCCAST_WIFI_MAX,
 } hccast_wifi_event_e;
 
@@ -231,6 +234,19 @@ extern "C" {
  * @return The current state of the wifi scan: 1:scanning other: other .
  */
 int hccast_wifi_mgr_scan(hccast_wifi_scan_result_t *scan_res);
+
+/**
+ * WiFi scan and retrieves the scan results within a timeout period.
+ *
+ * @param scan_res A pointer to a structure that will hold the scan results.
+ * @param timeout The "timeout" parameter is the maximum time (in seconds) to wait for the scan to
+ * complete. If the scan takes longer than the specified timeout, the function will return with the
+ * current scan results. If the timeout is set to 0, the function will wait indefinitely until the scan
+ * is complete or scan abort.If the timeout is set to < 0, timeout will use default value, equal hccast_wifi_mgr_scan.
+ *
+ * @return an integer value.
+ */
+int hccast_wifi_mgr_scan_timeout(hccast_wifi_scan_result_t *scan_res, int timeout);
 
 /**
  * Get the current status of scanning AP
@@ -286,6 +302,21 @@ int hccast_wifi_mgr_rm_list_net(char* net_id);
  * @return < 0: err, 0:failed, 1: success
  */
 int hccast_wifi_mgr_connect(const hccast_wifi_ap_info_t *ap_info);
+
+/**
+ * connects to a WiFi access point with a timeout.
+ *
+ * @param ap_info A pointer to a structure containing information about the access point (AP) to
+ * connect to. This structure likely includes fields such as the SSID (network name) and authentication
+ * credentials (e.g., password).
+ * @param timeout The timeout parameter is the maximum time in seconds that the function will wait
+ * for the Wi-Fi connection to be established. If the connection is not established within this time,
+ * the function will return an error.If the timeout is set to 0, the function will wait indefinitely until the connect
+ * is complete or connect abort.If the timeout is set to < 0, timeout will use default value, equal hccast_wifi_mgr_connect.
+ *
+ * @return an integer value.
+ */
+int hccast_wifi_mgr_connect_timeout(const hccast_wifi_ap_info_t *ap_info, int timeout);
 
 /**
  * This function is used to disconnect AP, with cb message
@@ -607,7 +638,7 @@ int hccast_wifi_mgr_trigger_scan(char *inf);
 int hccast_wifi_mgr_get_best_channel(int argc, int **argv);
 int hccast_wifi_mgr_set_best_channel(int *ch24G, int *ch5G);
 int hccast_wifi_mgr_p2p_wps_pbc(void);
-int hccast_wifi_mgr_get_support_miracast();
+int hccast_wifi_mgr_get_support_miracast(void);
 
 
 #ifdef __cplusplus

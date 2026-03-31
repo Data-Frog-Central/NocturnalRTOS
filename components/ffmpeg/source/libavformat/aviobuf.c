@@ -1381,6 +1381,11 @@ int avio_open_dyn_buf(AVIOContext **s)
     return url_open_dyn_buf_internal(s, 0);
 }
 
+int avio_open_dyn_buf_len(AVIOContext **s, int len)
+{
+    return url_open_dyn_buf_internal(s, len);
+}
+
 int ffio_open_dyn_packet_buf(AVIOContext **s, int max_packet_size)
 {
     if (max_packet_size <= 0)

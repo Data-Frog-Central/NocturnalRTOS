@@ -20,11 +20,15 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include <linux/mutex.h>
+
 #define MTDNOR_TEST 0
 
 #ifndef max
 #define max(a, b) (((a) > (b)) ? (a) : (b))
 #endif
+
+extern struct mutex            sf_lock;
 
 LIST_HEAD(__mtd_idr);
 static int __mtd_idx = 0;
@@ -43,14 +47,22 @@ struct hc_flash_dev {
 static int hc_flash_erase(struct mtd_dev_s *dev, off_t startblock,
 			  size_t nblocks)
 {
+	int ret;
 	struct hc_flash_dev *priv = (struct hc_flash_dev *)dev;
 	struct mtd_info *mtd = priv->mtd;
 	struct erase_info instr = { 0 };
 
+
 	instr.addr = mtd->erasesize * startblock;
 	instr.len = mtd->erasesize * nblocks;
 
-	return mtd_erase(mtd, &instr);
+	mutex_lock(&sf_lock);
+
+	ret = mtd_erase(mtd, &instr);
+
+	mutex_unlock(&sf_lock);
+
+	return ret;
 }
 
 /*
@@ -72,7 +84,11 @@ static ssize_t hc_flash_bread(struct mtd_dev_s *dev, off_t startblock,
 	from = startblock * blocksize;
 	len = nblocks * blocksize;
 
+	mutex_lock(&sf_lock);
+
 	ret = mtd_read(mtd, from, len, &retlen, buf);
+
+	mutex_unlock(&sf_lock);
 
 	if (ret)
 		return ret;
@@ -95,7 +111,11 @@ static ssize_t hc_flash_read(struct mtd_dev_s *dev, off_t offset, size_t nbytes,
 	size_t retlen = 0;
 	int ret;
 
+	mutex_lock(&sf_lock);
+
 	ret = mtd_read(mtd, offset, nbytes, &retlen, buf);
+
+	mutex_unlock(&sf_lock);
 
 	if (ret)
 		return ret;
@@ -126,7 +146,12 @@ static ssize_t hc_flash_bwrite(struct mtd_dev_s *dev, off_t startblock,
 	to = startblock * blocksize;
 	len = nblocks * blocksize;
 
+	mutex_lock(&sf_lock);
+
 	ret = mtd_write(mtd, to, len, &retlen, buf);
+
+	mutex_unlock(&sf_lock);
+
 	if (ret)
 		return ret;
 
@@ -141,7 +166,11 @@ static ssize_t hc_flash_write(struct mtd_dev_s *dev, off_t offset,
 	ssize_t retlen = 0;
 	int ret;
 
+	mutex_lock(&sf_lock);
+
 	ret = mtd_write(mtd, offset, nbytes, &retlen, buf);
+
+	mutex_unlock(&sf_lock);
 
 	if (ret)
 		return ret;
@@ -157,6 +186,9 @@ static int hc_flash_read_oob(FAR struct mtd_dev_s *dev, off_t offset,
 	struct mtd_info *mtd = priv->mtd;
 	loff_t from = (loff_t)offset;
 	struct mtd_oob_ops ops;
+	int rc;
+
+	mutex_lock(&sf_lock);
 
 	memset(&ops, 0, sizeof(ops));
 	ops.mode = MTD_OPS_AUTO_OOB;
@@ -165,13 +197,18 @@ static int hc_flash_read_oob(FAR struct mtd_dev_s *dev, off_t offset,
 	ops.datbuf = data;
 	ops.oobbuf = oob;
 
-	return mtd_read_oob(mtd, from, &ops);
+	rc = mtd_read_oob(mtd, from, &ops);
+
+	mutex_unlock(&sf_lock);
+
+	return rc;
 }
 
 static int hc_flash_write_oob(FAR struct mtd_dev_s *dev, off_t offset,
 			      const uint8_t *data, int data_len,
 			      const uint8_t *oob, int oob_len)
 {
+	int ret;
 	struct hc_flash_dev *priv = (struct hc_flash_dev *)dev;
 	struct mtd_info *mtd = priv->mtd;
 	loff_t to = (loff_t)offset;
@@ -194,25 +231,45 @@ static int hc_flash_write_oob(FAR struct mtd_dev_s *dev, off_t offset,
 	ops.datbuf = (u8 *)data;
 	ops.oobbuf = (u8 *)oob;
 
-	return mtd_write_oob(mtd, to, &ops);
+	mutex_lock(&sf_lock);
+
+	ret = mtd_write_oob(mtd, to, &ops);
+
+	mutex_unlock(&sf_lock);
+
+	return ret;
 }
 
 /* NOTE: startblock here is in units of erasesize */
 static int hc_flash_block_isbad(FAR struct mtd_dev_s *dev, off_t startblock)
 {
+	int ret;
 	struct hc_flash_dev *priv = (struct hc_flash_dev *)dev;
 	struct mtd_info *mtd = priv->mtd;
 
-	return mtd_block_isbad(mtd, startblock * mtd->erasesize);
+	mutex_lock(&sf_lock);
+
+	ret = mtd_block_isbad(mtd, startblock * mtd->erasesize);
+
+	mutex_unlock(&sf_lock);
+
+	return ret;
 }
 
 /* NOTE: startblock here is in units of erasesize */
 static int hc_flash_block_markbad(FAR struct mtd_dev_s *dev, off_t startblock)
 {
+	int ret;
 	struct hc_flash_dev *priv = (struct hc_flash_dev *)dev;
 	struct mtd_info *mtd = priv->mtd;
 
-	return mtd_block_markbad(mtd, startblock * mtd->erasesize);
+	mutex_lock(&sf_lock);
+
+	ret = mtd_block_markbad(mtd, startblock * mtd->erasesize);
+
+	mutex_unlock(&sf_lock);
+
+	return ret;
 }
 
 static int hc_flash_ioctl(struct mtd_dev_s *dev,
@@ -238,7 +295,10 @@ static int hc_flash_ioctl(struct mtd_dev_s *dev,
 		struct erase_info instr = { 0 };
 		instr.addr = 0;
 		instr.len = mtd->size;
+
+		mutex_lock(&sf_lock);
 		mtd_erase(mtd, &instr);
+		mutex_unlock(&sf_lock);
 		break;
 	}
 
@@ -247,7 +307,9 @@ static int hc_flash_ioctl(struct mtd_dev_s *dev,
 		struct erase_info instr = { 0 };
 		instr.addr = eraseinfo->start;
 		instr.len = eraseinfo->length;
+		mutex_lock(&sf_lock);
 		ret = mtd_erase(mtd, &instr);
+		mutex_unlock(&sf_lock);
 		break;
 	}
 

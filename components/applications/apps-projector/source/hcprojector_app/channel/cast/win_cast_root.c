@@ -132,7 +132,7 @@ win_cast_root.c
 #define LABEL_CONNECT_MSG_X  ((OSD_MAX_WIDTH-LABEL_CONNECT_MSG_W) >> 1) 
 #define LABEL_CONNECT_MSG_Y  LABEL_VERSION_Y
 
-#define QR_MSG_X        20
+#define QR_MSG_X        10
 #define QR_MSG_Y        220
 #define QR_MSG_W        300
 
@@ -192,6 +192,9 @@ static bool m_exit_to_cast_by_key = false;
 //if there is wifi ap information in data node.
 static volatile int m_first_flag = 1;
 
+//if cast menu is exiting to the main menu, we shuold skip any cast play request.
+static bool m_cast_enable_play_request = false;
+
 LV_FONT_DECLARE(cast_font_chn);
 
 
@@ -227,6 +230,18 @@ void win_cast_set_m_stop_service_exit(bool val)
 {
 	m_stop_service_exit = val;
 }
+
+bool win_cast_get_play_request_flag(void)
+{
+	return m_cast_enable_play_request;
+}
+
+void win_cast_set_play_request_flag(bool val)
+{
+	m_cast_enable_play_request = val;
+}
+
+
 //font_idx: select the font belong to same language enviriment
 static lv_font_t *win_cast_font_get(int font_idx)
 {
@@ -457,7 +472,7 @@ static void win_cast_connect_state_upate(bool force_station)
         {
             printf("cur_ssid: %s\n", cur_ssid);
             lv_obj_set_style_text_font(lv_obj_get_child(m_wifi_ssid, 0),osd_font_get_by_langid(0,FONT_MID),0);
-            lv_label_set_text_fmt(lv_obj_get_child(m_wifi_ssid, 0), "%s", LV_SYMBOL_WIFI);
+            lv_label_set_text_fmt(lv_obj_get_child(m_wifi_ssid, 0), "%s", "WiFi:");
             lv_label_set_text(lv_obj_get_child(m_wifi_ssid, 1), cur_ssid);
 
         }
@@ -518,6 +533,8 @@ static void cast_start_service()
 
     if (network_service_enable_get())
         return;
+    
+    win_cast_set_play_request_flag(true);
 
     #ifdef HTTPD_SERVICE_SUPPORT
         hccast_httpd_service_start();
@@ -529,7 +546,7 @@ static void cast_start_service()
     }
 
     //first time bootup, if wifi not init, re-init and connet again.
-    if (!app_wifi_init_done()){    
+    if (!app_get_wifi_init_done()){
         network_service_enable_set(true);
         network_connect();
         return;
@@ -551,7 +568,7 @@ static void cast_start_service()
             }else{
                 //
                 if (!hccast_wifi_is_connecting()){
-                    app_wifi_switch_work_mode(WIFI_MODE_AP);
+                    //app_wifi_switch_work_mode(WIFI_MODE_AP);
                     network_service_enable_set(true);
 
                     app_wifi_reconnect(NULL);
@@ -582,7 +599,8 @@ void cast_stop_service(void)
         return;
 
     m_stop_service_exit = false;
-    network_service_enable_set(false);   
+    network_service_enable_set(false);
+    win_cast_set_play_request_flag(false);
 
 #ifdef HTTPD_SERVICE_SUPPORT
     hccast_httpd_service_stop();
@@ -590,16 +608,45 @@ void cast_stop_service(void)
 
     hccast_stop_services();
 
-/*
-#ifdef __HCRTOS__
-    if (hccast_wifi_mgr_get_station_status())
-        hccast_wifi_mgr_exit_sta_mode();
-#endif  
-    if (hccast_wifi_mgr_get_hostap_status())      
+    if (WIFI_MODE_AP == app_wifi_get_work_mode())
+    {
+    #ifdef __HCRTOS__
+        hccast_wifi_mgr_hostap_disenable();
+        hccast_wifi_mgr_udhcpd_stop();
+    #else
         hccast_wifi_mgr_hostap_stop();
-*/        
+    #endif
+    }
 }
-#endif
+
+#ifdef MIRACAST_SUPPORT
+static int cast_mira_reset(int reset_type)
+{
+    // first time boot up, if wifi not init, re-init and connect again.
+    if (!app_get_wifi_init_done()){
+        network_service_enable_set(true);
+        hccast_mira_service_stop();
+        network_connect();
+        return 0;
+    }
+
+    if (network_wifi_module_get())
+    {
+        if (reset_type){
+            network_service_enable_set(true);
+            hccast_mira_service_stop();
+            app_wifi_reconnect(NULL);
+        } else {
+            //ap mode
+            app_wifi_switch_work_mode(WIFI_MODE_AP);
+            hccast_mira_service_stop();
+            hccast_mira_service_start();
+        }
+    }
+    return 0;
+}
+#endif // MIRACAST_SUPPORT End
+#endif // WIFI_SUPPORT End
 
 static int win_cast_open(void)
 {   
@@ -607,7 +654,10 @@ static int win_cast_open(void)
 	m_exit_to_cast_by_key = false;
 
 #ifdef WIFI_SUPPORT
-//    network_upgrade_start();
+  #ifdef USB_MIRROR_FAST_SUPPORT
+    um_service_wait_exit();
+  #endif    
+
     cast_start_service();
 #endif
     win_root_obj = lv_obj_create(ui_wifi_cast_root);
@@ -769,13 +819,15 @@ static int win_cast_close(void)
 {
     printf("%s(), line: %d!\n", __func__, __LINE__);
 #ifdef WIFI_SUPPORT
+    if(hccast_wifi_mgr_is_connecting() || hccast_wifi_mgr_is_scanning()){
+        hccast_wifi_mgr_op_abort();
+    }
     cast_stop_service();
 #endif
     lv_obj_del(win_root_obj);
     // lv_obj_add_flag(lv_scr_act(), LV_OBJ_FLAG_HIDDEN);
     // lv_obj_add_flag(m_img_phone_connect, LV_OBJ_FLAG_HIDDEN);
     // lv_obj_add_flag(m_img_dongle_connect, LV_OBJ_FLAG_HIDDEN);
-	win_msgbox_msg_close();
 	
     api_osd_off_time(500);
     api_logo_off();
@@ -799,7 +851,9 @@ static int win_cast_close(void)
     m_first_flag = 1;
     
     //recover the dispaly aspect.
-    api_set_display_aspect(DIS_TV_16_9, DIS_NORMAL_SCALE);
+    if (m_stop_service_exit)
+        api_set_display_aspect(DIS_TV_16_9, DIS_NORMAL_SCALE);
+    win_clear_popup();
     return API_SUCCESS;
 }
 
@@ -840,8 +894,7 @@ static void win_cast_msg_proc(void *arg1, void *arg2)
     case MSG_TYPE_CAST_AIRMIRROR_START:
     case MSG_TYPE_CAST_MIRACAST_START:
 
-#ifdef MIRROR_ES_DUMP_SUPPORT
-    {
+    #ifdef MIRROR_ES_DUMP_SUPPORT
         extern bool api_mirror_dump_enable_get(char* folder);
         char dump_folder[64];
         if (USB_STAT_MOUNT != mmp_get_usb_stat())
@@ -871,9 +924,8 @@ static void win_cast_msg_proc(void *arg1, void *arg2)
                 
             }
         }
-    }
 
-#endif    
+    #endif    
         m_stop_service_exit = false;
         m_cast_play_param = (uint32_t)ctl_msg->msg_type;
         if (ui_cast_play){
@@ -882,31 +934,29 @@ static void win_cast_msg_proc(void *arg1, void *arg2)
         }
 
     	break;
-#endif
-    case MSG_TYPE_CAST_AUSB_START:
-    case MSG_TYPE_CAST_IUSB_START:
-        win_msgbox_msg_close();
-        m_cast_play_param = (uint32_t)ctl_msg->msg_type;
 
-        // cur_win = &g_win_um_play;
-        // cur_win->param = (void*)ctl_msg->msg_type;
-        // menu_mgr_push(cur_win);
-        // ret = WIN_CTL_PUSH_CLOSE;
+#ifdef MIRACAST_SUPPORT
+    case MSG_TYPE_CAST_MIRACAST_RESET:
+        cast_mira_reset((int)ctl_msg->msg_code);
         break;
+#endif // MIRACAST_SUPPORT End
+#endif // WIFI_SUPPORT End
 
+    case MSG_TYPE_NETWORK_WIFI_RECONNECTED:
     case MSG_TYPE_NETWORK_WIFI_CONNECTED:
     case MSG_TYPE_NETWORK_WIFI_DISCONNECTED:
     case MSG_TYPE_NETWORK_DEVICE_BE_CONNECTED:
     case MSG_TYPE_NETWORK_DEVICE_BE_DISCONNECTED:
     case MSG_TYPE_NETWORK_WIFI_STATUS_UPDATE:
-        win_cast_connect_state_upate(false);        
+        win_cast_connect_state_upate(false);
         break;
     case MSG_TYPE_NETWORK_WIFI_CONNECT_FAIL:
         win_msgbox_msg_open(STR_CONNECT_WIFI_FAIL, 5000, NULL, NULL);
-        win_cast_connect_state_upate(false);        
+        win_cast_connect_state_upate(false);
         break;
+    case MSG_TYPE_NETWORK_WIFI_RECONNECTE:
     case MSG_TYPE_NETWORK_WIFI_CONNECTING:
-        win_cast_connect_state_upate(true);        
+        win_cast_connect_state_upate(true);
         break;
     case MSG_TYPE_NETWORK_WIFI_SCANNING:
         //lv_label_set_text(m_label_state_msg, "WiFi is scanning ...");
@@ -1024,7 +1074,7 @@ static bool win_cast_root_wait_open(uint32_t timeout)
     count = timeout/20;
 
     while(count--){
-        if (m_win_cast_open)
+        if (m_win_cast_open || !win_cast_get_play_request_flag())
             break;
         api_sleep_ms(20);
     }

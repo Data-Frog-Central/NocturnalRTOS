@@ -26,27 +26,21 @@
 #include "channel/local_mp/media_player.h"
 #include "channel/local_mp/mp_ctrlbarpage.h"
 
-#ifdef __HCRTOS__
-//Do not enter standby repeatedly
-static void set_bootloader_standby_flag(void)
-{
-    int i;
-    unsigned int ddr_addr=0xa0000200;
-	unsigned int ddr_value=0x12345678;
-    for (i = 0; i < 1024; i += 4) {
-        REG32_WRITE(ddr_addr + i, ddr_value);
-    }
-}
-#endif
-
 static void standby_pre_process(void);
 // pre process before enter standby mode
 static void standby_pre_process(void)
 {
     int fd;
     int temp = 0;
-    //step 1: stop device & save system data	
-    hdmi_rx_leave();
+
+    //step 1: close display    
+    api_set_backlight_brightness(0);
+    api_osd_show_onoff(false);
+    api_logo_off();
+    api_dis_show_onoff(false);
+
+    //step 2: stop device & save system data	
+    hdmirx_pause();
     cvbs_rx_stop();
     media_player_close();
 
@@ -65,57 +59,43 @@ static void standby_pre_process(void)
     bluetooth_deinit();
 #endif    
 
-    //step 2:  close lcd/backlight/light-machine etc.
+    //step 3:  lowpower disaplay: lcd/backlight/light-machine etc.
     printf("close lcd/backlight/ etc.\n");
-
-	api_set_backlight_brightness(0);
-
-	fd = open("/dev/lvds",O_RDWR);
-    if(fd)
-    {
-        ioctl(fd, LVDS_SET_GPIO_POWER,0);//lvds gpio power close
-        close(fd);
-    }
-
-	fd = open("/dev/mipi",O_RDWR);
-	{
-		ioctl(fd, MIPI_DSI_GPIO_ENABLE,0);//mipi close gpio enable
-        close(fd);
+	fd = open("/dev/lvds", O_RDWR);
+	if (fd) {
+		ioctl(fd, LVDS_SET_GPIO_POWER, 0); //lvds gpio power close
+		close(fd);
 	}
-
-	fd = open("/dev/lcddev",O_RDWR);//lcddev close gpio enable
-	if(fd)
-	{
+	fd = open("/dev/mipi", O_RDWR);
+	if (fd) {
+		ioctl(fd, MIPI_DSI_GPIO_ENABLE, 0); //mipi close gpio enable
+		close(fd);
+	}
+	fd = open("/dev/lcddev", O_RDWR); //lcddev close gpio enable
+	if (fd) {
 		temp = 0;
-		write(fd,&temp,4);
+		write(fd, &temp, 4);
 		close(fd);
 	}
 
-    api_osd_show_onoff(false);
-    api_logo_off();
-    api_dis_show_onoff(false);
+    api_dis_suspend();
     api_sleep_ms(100);
 
-    //step 3: stop media player/ 
 
-#ifdef __HCRTOS__
-    //setp 4: set standby flag,Do not enter standby repeatedly
-    set_bootloader_standby_flag();
-#endif    
 }
 
 // the Keys set in DTS, not here
 void enter_standby(void)
 {
     int fd_standby;    
-
-    standby_pre_process();
     
     fd_standby = open("/dev/standby", O_RDWR);
     if(fd_standby<0){
         printf("Open /dev/standby failed!\n");
         return;
     }
+    standby_pre_process();
+
     printf("enter standby!\n");
 
     api_watchdog_stop();

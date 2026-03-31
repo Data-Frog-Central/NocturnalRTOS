@@ -149,12 +149,21 @@ if( xSwitchRequired )								\
 	#define portREMOVE_STATIC_QUALIFIER
 #endif
 
+#ifdef CONFIG_TASK_NORMAL_PRIORITY
 enum
 {
 	portPRI_TASK_NORMAL	= CONFIG_TASK_NORMAL_PRIORITY,
 	portPRI_TASK_HIGH	= CONFIG_TASK_HIGH_PRIORITY,
 	portPRI_TASK_CRITICL	= CONFIG_TASK_CRITICAL_PRIORITY,
 };
+#else
+enum
+{
+	portPRI_TASK_NORMAL	= 11,
+	portPRI_TASK_HIGH	= 14,
+	portPRI_TASK_CRITICL	= 21,
+};
+#endif
 
 void portClearTickTimerInterrupt( void );
 #define configCLEAR_TICK_TIMER_INTERRUPT() portClearTickTimerInterrupt()

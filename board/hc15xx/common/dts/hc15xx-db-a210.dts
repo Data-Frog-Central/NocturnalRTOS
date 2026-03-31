@@ -71,7 +71,7 @@
 #define HCRTOS_SYSMEM_OFFSET (0)
 
 #define HCRTOS_BOOTMEM_SIZE (0x1000000)
-#define HCRTOS_BOOTMEM_OFFSET (((HCRTOS_SYSMEM_SIZE < 0xc000000 ? HCRTOS_SYSMEM_SIZE : 0xc000000) - 0x1000000) & 0xffff0000)
+#define HCRTOS_BOOTMEM_OFFSET (((HCRTOS_SYSMEM_SIZE < 0xc000000 ? HCRTOS_SYSMEM_SIZE : 0xc000000) - HCRTOS_BOOTMEM_SIZE) & 0xffff0000)
 
 /{
 hcrtos {
@@ -312,7 +312,7 @@ hcrtos {
 
 	sfspi {
 		pinmux-active = <PINPAD_L11 1 PINPAD_L12 1 PINPAD_L13 1 PINPAD_L14 1>;
-		sclk = <50000000>;
+		sclk = <27000000>;
 		dma-mode = <1>;
 		status = "okay";
 
@@ -331,15 +331,15 @@ hcrtos {
 				part1-filename = "bootloader.bin";
 
 				part2-label = "eromfs";
-				part2-reg = <0x60000 0x20000>;
+				part2-reg = <0x60000 0x60000>;
 				part2-filename = "romfs.img";
 
 				part3-label = "firmware";
-				part3-reg = <0x80000 0x360000>;
+				part3-reg = <0xa0000 0x500000>;
 				part3-filename = "hcdemo.uImage";
 
 				part4-label = "persistentmem";
-				part4-reg = <0x3e0000 0x20000>;
+				part4-reg = <0x5a0000 0x20000>;
 				part4-filename = "persistentmem.bin";
 			};
 		};

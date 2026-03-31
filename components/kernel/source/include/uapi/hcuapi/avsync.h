@@ -51,6 +51,9 @@ void avsync_video_update_stc(enum AVSYNC_STCID id, uint32_t tick);
 
 enum AVSYNC_STATUS avsync_audio_sync_check(enum AVSYNC_STCID id, uint32_t tick);
 
+uint32_t avsync_get_video_delay_ms(enum AVSYNC_STCID id);
+void avsync_set_video_delay_ms(enum AVSYNC_STCID id, uint32_t delay);
+
 /**
  * pause or resume the hardware STC
  *
@@ -64,17 +67,23 @@ void avsync_pause_stc(enum AVSYNC_STCID id, int pause);
 #define AVSYNC_SET_STC					_IO (AVSYNC_IOCBASE, 2)
 #define AVSYNC_SET_STC_MS				_IO (AVSYNC_IOCBASE, 3)
 
-#define AVSYNC_SET_AUD_UPDATE_THRESH			_IO (AVSYNC_IOCBASE, 4)//unit: ms, default 2ms
-#define AVSYNC_SET_AUD_UPDATE_DELAY_THRESH		_IO (AVSYNC_IOCBASE, 5) //unit: ms, default 0ms
-#define AVSYNC_SET_AUD_SYNC_THRESH			_IO (AVSYNC_IOCBASE, 6) //unit: ms, default 180ms
-#define AVSYNC_SET_AUD_SYNC_STC_VALID_THRESH		_IO (AVSYNC_IOCBASE, 7) //unit: ms, default 10000ms
-#define AVSYNC_SET_AUD_SYNC_DELAY_THRESH		_IO (AVSYNC_IOCBASE, 8) //unit: ms, default 0ms
-#define AVSYNC_ENABLE_AUD_HOLD				_IO (AVSYNC_IOCBASE, 9) //1: enable audio hold, default 0
+#define AVSYNC_SET_AUD_UPDATE_THRESH			_IO (AVSYNC_IOCBASE, 4) //<! unit: ms, default 2ms
+#define AVSYNC_SET_AUD_UPDATE_DELAY_THRESH		_IO (AVSYNC_IOCBASE, 5) //<! unit: ms, default 0ms
+#define AVSYNC_SET_AUD_SYNC_THRESH			_IO (AVSYNC_IOCBASE, 6) //<! unit: ms, default 180ms
+#define AVSYNC_SET_AUD_SYNC_STC_VALID_THRESH		_IO (AVSYNC_IOCBASE, 7) //<! unit: ms, default 10000ms
+#define AVSYNC_SET_AUD_SYNC_DELAY_THRESH		_IO (AVSYNC_IOCBASE, 8) //<! unit: ms, default 0ms
+#define AVSYNC_ENABLE_AUD_HOLD				_IO (AVSYNC_IOCBASE, 9) //<! 1: enable audio hold, default 0
 
-#define AVSYNC_SET_VID_UPDATE_THRESH			_IO (AVSYNC_IOCBASE, 10) //unit: ms, default 100ms
+#define AVSYNC_SET_VID_UPDATE_THRESH			_IO (AVSYNC_IOCBASE, 10) //<! unit: ms, default 100ms
 
-#define AVSYNC_GET_AUD_SYNC_THRESH			_IOR (AVSYNC_IOCBASE, 11, uint32_t) //unit: ms
+#define AVSYNC_GET_AUD_SYNC_THRESH			_IOR (AVSYNC_IOCBASE, 11, uint32_t) //<! unit: ms
 
-#define AVSYNC_PAUSE_STC				_IO (AVSYNC_IOCBASE, 12)//1 pause; 0 start.
+#define AVSYNC_PAUSE_STC				_IO (AVSYNC_IOCBASE, 12) //<! param: 1 pause; 0 start.
+
+#define AVSYNC_SET_STC_RATE				_IOW (AVSYNC_IOCBASE, 13, float) //<! type float, e.g (0.x ~ 3.0)
+#define AVSYNC_GET_STC_RATE				_IOR (AVSYNC_IOCBASE, 14, float) //<! type float, e.g (0.x ~ 3.0)
+
+#define AVSYNC_SET_VIDEO_DELAY_MS			_IO (AVSYNC_IOCBASE, 15) //<! unit:ms, if set 300, the audio will ahead of video for 300ms
+#define AVSYNC_GET_VIDEO_DELAY_MS			_IOR(AVSYNC_IOCBASE, 16, uint32_t) //<! unit:ms
 
 #endif /* _HCUAPI_AVSYNC_H_ */

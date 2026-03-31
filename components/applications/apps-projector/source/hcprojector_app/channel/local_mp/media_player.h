@@ -79,6 +79,7 @@ typedef struct{
 	int                 msg_id;
 	void* 				playlist; //use for prev or next
 	uint8_t             exit;
+	int 				pic_effect_mode;
 	pthread_mutex_t 	api_lock;
 	pthread_mutex_t 	msg_task_mutex;
 	pthread_cond_t 		msg_task_cond;

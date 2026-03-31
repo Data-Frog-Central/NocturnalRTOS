@@ -6,20 +6,41 @@
 #include <stdio.h>
 #include <nuttx/fs/fs.h>
 #include <linux/slab.h>
+#include <hcuapi/sysdata.h>
+#include <hcuapi/persistentmem.h>
 
 #include "adc_15xx_reg_struct.h"
 
+#define QUERY_ADC_ADJUST_WAY_NONE               0
+#define QUERY_ADC_ADJUST_WAY_FLASH              2
+
 struct adc_priv_1512
 {
-	struct device *dev;
-	void __iomem *base;
+	struct 			device *dev;
+	void __iomem 		*base;
+	uint8_t			adjust_way;  /* adjust way : flash > none */
+	uint8_t			adjust_value;
 };
 
-static int queryadc_open(struct file *filep){
+static int queryadc_open(struct file *filep)
+{
+	struct inode *inode = filep->f_inode;
+	struct adc_priv_1512 *priv = inode->i_private;
+	saradc_1512_reg_t *reg = (saradc_1512_reg_t *)priv->base;
+
+	reg->sar_ctrl_reg1.sar_en = 0x01;
+
 	return 0;
 }
 
-static int queryadc_close(struct file *filep){
+static int queryadc_close(struct file *filep)
+{
+	struct inode *inode = filep->f_inode;
+	struct adc_priv_1512 *priv = inode->i_private;
+	saradc_1512_reg_t *reg = (saradc_1512_reg_t *)priv->base;
+
+	reg->sar_ctrl_reg1.sar_en = 0x00;
+
 	return 0;
 }
 
@@ -30,7 +51,10 @@ static ssize_t queryadc_read(struct file *filep, char *buffer, size_t buflen)
 	struct adc_priv_1512 *priv = inode->i_private;
 	saradc_1512_reg_t *reg = (saradc_1512_reg_t *)priv->base;
 
-	sar_dout = reg->sar_ctrl_reg0.sar_dout;
+	if (priv->adjust_way == QUERY_ADC_ADJUST_WAY_FLASH)
+		sar_dout = reg->sar_ctrl_reg0.sar_dout * 241 / priv->adjust_value;
+	else
+		sar_dout = reg->sar_ctrl_reg0.sar_dout;
 
 	*buffer = sar_dout;
 
@@ -42,6 +66,19 @@ static const struct file_operations query_fops = {
 	.close = queryadc_close, /* close */
 	.read  = queryadc_read, /* read */
 };
+
+static void hc_key_adc_adjust_init(struct adc_priv_1512 *priv)
+{
+	/* flash adjust */
+	if (!sys_get_sysdata_adc_adjust_value(&priv->adjust_value)) {
+		if (priv->adjust_value != 0) {
+			priv->adjust_way = QUERY_ADC_ADJUST_WAY_FLASH;
+			return;
+		}
+	}
+	/* no adjust way */
+	priv->adjust_way = QUERY_ADC_ADJUST_WAY_NONE;
+}
 
 static int hc_1512_adc_reg_init(struct adc_priv_1512 *priv)
 {
@@ -92,7 +129,7 @@ static int hc_1512_queryadc_probe(char *node)
 	if (ret < 0) {
 		goto err;
 	}
-
+	hc_key_adc_adjust_init(priv);
 	register_driver(path, &query_fops, 0666, priv);
 
 	return 0;

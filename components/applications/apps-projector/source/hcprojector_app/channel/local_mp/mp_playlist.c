@@ -67,7 +67,6 @@ void mp_playlist_win_event_cb(lv_event_t * e )
         uint32_t key = lv_indev_get_key(lv_indev_get_act());
         uint32_t vkey_value=key_convert2_vkey(key);
         int act_key=0;
-        static uint16_t new_item_idx = 0;
         uint16_t old_item_idx = playlist.item_index;  
         switch (key)
         {
@@ -78,12 +77,10 @@ void mp_playlist_win_event_cb(lv_event_t * e )
                 act_key=V_KEY_DOWN;
                 break;
             case LV_KEY_RIGHT:
-                // filelist_enter(playlist.item_index);
                 break;
             case LV_KEY_LEFT:
                 break;
             case LV_KEY_ENTER:
-                // filelist_enter(playlist.item_index);
                 act_key=V_KEY_OK;
                 break;
             case LV_KEY_ESC:
@@ -95,13 +92,9 @@ void mp_playlist_win_event_cb(lv_event_t * e )
                 break;
         }
         if(act_key==V_KEY_DOWN||act_key==V_KEY_UP){
-            new_item_idx = playlist_ctrl_proc(&playlist_ctrl, act_key, old_item_idx);
-            // playlist.item_index = new_item_idx;
-            // printf("old_item_idx:%d, new_item_idx:%d, top:%d, cur_pos:%d, file_count:%d\n", 
-            // old_item_idx, new_item_idx,playlist_ctrl.top, playlist_ctrl.cur_pos, playlist_ctrl.count);
+            playlist.item_index = playlist_ctrl_proc(&playlist_ctrl, act_key, old_item_idx);
         }
         else if(act_key==V_KEY_OK){
-            playlist.item_index = new_item_idx;
             filelist_enter(playlist.item_index);
         }
         else if(vkey_value==V_KEY_BLUE){

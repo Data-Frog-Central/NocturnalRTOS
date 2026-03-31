@@ -27,6 +27,7 @@
 SCREEN_SUBMP_E screen_submp;
 media_type_t media_type;
 static int fc_obj_index=0;
+#define OBJITEM_CNT 4
 void set_key_group(lv_group_t * group)
 {
 	lv_indev_set_group(indev_keypad, group);
@@ -141,9 +142,8 @@ void storage_icon_refresh_cb(lv_event_t *event)
 }
 static int scr_handle_group_focus(void)
 {
-    int cnt=lv_group_get_obj_count(lv_group_get_default());
-    lv_obj_t* temp_g[cnt];
-    for(int i=0;i<cnt;i++){
+    lv_obj_t* temp_g[OBJITEM_CNT]={NULL};
+    for(int i=0;i<OBJITEM_CNT;i++){
         temp_g[i]=lv_obj_get_child(lv_obj_get_child(main_cont1,i),1);
         //index 1 mean btn in cont 
     }    
@@ -165,6 +165,7 @@ int mainpage_open(void)
 
 int mainpage_close(void)
 {
+    win_msgbox_msg_close_on_top();
     lv_group_remove_all_objs(main_group);
     lv_group_del(main_group);
     clear_mainpage_scr();

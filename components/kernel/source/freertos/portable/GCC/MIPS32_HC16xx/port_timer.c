@@ -106,7 +106,7 @@ static void vPortTimerStart(void)
 static void vPortTimerInit(void)
 {
 	/* reset south timer*/
-	REG32_WRITE((uint32_t)&TIMER00 + 0x8, BIT3);
+	REG32_WRITE((uint32_t)&TIMER00 + 0x8, BIT3 | BIT2);
 	REG32_WRITE((uint32_t)&TIMER10 + 0x8, BIT3);
 	REG32_WRITE((uint32_t)&TIMER20 + 0x8, BIT3);
 	REG32_WRITE((uint32_t)&TIMER30 + 0x8, BIT3);
@@ -189,33 +189,51 @@ void vPortPlatformTimeSetup(void)
 
 void vPortPlatformTimeSet(time_t sec, long usec)
 {
-	uint64_t tmp_tick = usec2tick((uint64_t)sec * 1000000 + (uint64_t)usec);
-	uint32_t ticklo;
+	uint32_t magic = REG32_READ(0xb8818a00);
+	uint32_t msec = usec / 1000;
+	uint32_t _sec;
+	uint32_t _msec;
 
-	/* disable timer and interrupt */
-	gHrTmr->ctrl.en = 0;
-	gHrTmr->ctrl.int_en = 0;
+	do {
+		_sec = REG32_READ(0xb8818a0c);
+		_msec = (uint32_t)REG16_READ(0xb8818a0a);
+	} while (_sec != REG32_READ(0xb8818a0c));
 
-	gTickHi = tmp_tick >> 32;
-	ticklo = tmp_tick & 0xFFFFFFFF;
+	_sec = sec - _sec;
 
-	gHrTmr->cnt.val = ticklo;
+	if (_msec < msec) {
+		_msec = msec - _msec;
+	} else {
+		_sec--;
+		_msec = msec + 1000 - _msec;
+	}
 
-	/* enable timer and interrupt */
-	gHrTmr->ctrl.en = 1;
-	gHrTmr->ctrl.int_en = 1;
-
-	gHrTmr->ctrl.overflow = 1;
+	magic &= (0xfc00ffff);
+	magic |= _msec << 16;
+	REG32_WRITE(0xb8818a10, _sec);
+	REG32_WRITE(0xb8818a00, magic);
 }
 
 void vPortPlatformTimeGet(time_t *sec, long *usec)
 {
-	uint32_t ticklo = gHrTmr->cnt.val;
-	uint64_t tmp_usec =
-		tick2usec((((uint64_t)gTickHi) << 32) + (uint64_t)ticklo);
+	uint32_t _sec;
+	uint32_t _msec;
 
-	*sec = tmp_usec / 1000000;
-	*usec = tmp_usec % 1000000;
+	do {
+		_sec = REG32_READ(0xb8818a0c);
+		_msec = (uint32_t)REG16_READ(0xb8818a0a);
+	} while (_sec != REG32_READ(0xb8818a0c));
+
+	_sec += REG32_READ(0xb8818a10);
+	_msec += (REG32_READ(0xb8818a00) >> 16) & 0x3ff;
+
+	if (_msec >= 1000) {
+		_msec -= 1000;
+		_sec++;
+	}
+
+	*sec = _sec;
+	*usec = _msec * 1000;
 }
 
 uint64_t uxPortTimerHrTickGet(void)

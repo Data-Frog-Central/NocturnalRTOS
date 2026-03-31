@@ -73,6 +73,11 @@ static nt35510_dev_t nt35510dev;
 
 static int nt35510_display_init(void)
 {
+	gpio_configure(nt35510dev.spi_clk_num,GPIO_DIR_OUTPUT);//clk
+	gpio_configure(nt35510dev.spi_mosi_num,GPIO_DIR_OUTPUT);//mosi
+	gpio_configure(nt35510dev.spi_cs_num,GPIO_DIR_OUTPUT);//cs
+	gpio_configure(nt35510dev.lcd_stbyb_num,GPIO_DIR_OUTPUT);//STBYB
+	gpio_configure(nt35510dev.spi_miso_num,GPIO_DIR_OUTPUT);//miso
     log_d("lcd init\n");
     //LV2 Page 1 enable
 	 //NT35510-CPT40-TRADE
@@ -445,8 +450,7 @@ static int nt35510_probe(const char *node)
 	fdt_get_property_u_32_index(np, "spi-gpio-stbyb", 	0, &nt35510dev.lcd_stbyb_num);
 	log_d("nt35510dev.lcd_stbyb_num = %d %d %d %d\n",nt35510dev.spi_clk_num,nt35510dev.spi_mosi_num,nt35510dev.spi_cs_num,nt35510dev.lcd_stbyb_num);
 
-	int default_off = 0;
-	fdt_get_property_u_32_index(np, "default-off", 	0, &default_off);
+	int default_off = fdt_property_read_bool(np, "default-off");
 	if(default_off ==0)
 		nt35510_display_init();
 

@@ -31,6 +31,7 @@ static int g_is_air_audio = 0;
 static int current_aircast_mode = 0;
 static int g_frame_num = 60;//default
 static int g_url_enable_def_vol = 1;
+static int g_url_def_vol = 80;
 
 static int total_time = 0;
 static int playing_url = 0;
@@ -524,7 +525,7 @@ void hccast_air_ap_seturl(void *param)
 
     if(g_url_enable_def_vol)
     {
-        hccast_set_volume(80);
+        hccast_air_callback_func(HCCAST_AIR_SET_AUDIO_VOL, (void*)g_url_def_vol, NULL);
     }    
 }
 
@@ -564,7 +565,7 @@ void hccast_air_ap_get_play_info(void *param)
     if (!total_time && pplayerStat->status == AIRCAST_MEDIA_STATUS_PLAYING)
         total_time = pplayerStat->totalTime;
 
-    if (aircast_cur_event == AIRCAST_VIDEO_LOADING)
+    if ((aircast_cur_event == AIRCAST_VIDEO_LOADING) && (pplayerStat->status != AIRCAST_MEDIA_STATUS_PAUSED))
     {
         diff = pplayerStat->currTime > seek_old_pos ? pplayerStat->currTime - seek_old_pos : seek_old_pos - pplayerStat->currTime;
         if (diff > 1)
@@ -631,6 +632,8 @@ void hccast_air_ap_url_seek(void *param)
 
 void hccast_air_ap_mirror_start()
 {
+    int enable_play = 1;//when APP set flag at (0) ,it mean not open video dec. 1 -- default open.
+    
     aircast_mirror_conn ++;
     hccast_air_mirror_set_skip_url(0);
     hccast_scene_switch(HCCAST_SCENE_AIRCAST_MIRROR);
@@ -638,15 +641,23 @@ void hccast_air_ap_mirror_start()
     hccast_log(LL_NOTICE,"[%s][%d]:AIRCAST_MIRROR_START (%d)\n", __func__, __LINE__, aircast_mirror_conn);
     usleep(100 * 1000);
 	
-    hccast_air_callback_func(HCCAST_AIR_MIRROR_START, NULL, NULL);
-    if (g_aircast_av_func._video_open)
-    {
-        g_aircast_av_func._video_open();
-    }
+    hccast_air_callback_func(HCCAST_AIR_MIRROR_START, (void *)&enable_play, NULL);
 
-    if (g_aircast_av_func._audio_open)
+    if (enable_play)
     {
-        g_aircast_av_func._audio_open();
+        if (g_aircast_av_func._video_open)
+        {
+            g_aircast_av_func._video_open();
+        }
+
+        if (g_aircast_av_func._audio_open)
+        {
+            g_aircast_av_func._audio_open();
+        }
+    }
+    else
+    {
+        hccast_log(LL_NOTICE, "[%s][%d]: App condition not allow to open video and audio.\n", __func__, __LINE__);
     }
 }
 
@@ -692,7 +703,7 @@ void hccast_air_ap_set_volume(void *param)
     int vol_cid = -1;
     hccast_air_api_ioctl(AIRCAST_GET_VOL_ID, &vol_cid, 0);
     int vol = 0;
-    hccast_log(LL_NOTICE,"[%s][%d]AIRCAST_SET_VOLUME:vol=%d\n", __func__, __LINE__, volume);
+    //hccast_log(LL_NOTICE,"[%s][%d]AIRCAST_SET_VOLUME:vol=%d\n", __func__, __LINE__, volume);
 
     //range[-30 ~ 0]
     if (volume < -30)
@@ -711,13 +722,13 @@ void hccast_air_ap_set_volume(void *param)
 
     cur_vol_cid = vol_cid;
     //set volume
-    if((hccast_get_current_scene() == HCCAST_SCENE_AIRCAST_PLAY) && (vol == 0))
+    if(0/*(hccast_get_current_scene() == HCCAST_SCENE_AIRCAST_PLAY) && (vol == 0)*/)
     {
         hccast_log(LL_NOTICE,"Aircast skip this time setting vol.\n");
     }
     else
     {
-    	hccast_set_volume(vol);
+    	hccast_air_callback_func(HCCAST_AIR_SET_AUDIO_VOL, (void*)vol, NULL);
     }
     
 }
@@ -1013,6 +1024,8 @@ int hccast_air_service_start()
     g_air_started = 1;
     pthread_mutex_unlock(&g_air_svr_mutex);
     hccast_log(LL_NOTICE,"[Aircast]: hc_aircast_service_start done\n");
+
+    return 0;
 }
 
 int hccast_air_service_stop()
@@ -1033,6 +1046,8 @@ int hccast_air_service_stop()
     pthread_mutex_unlock(&g_air_svr_mutex);
 
     hccast_log(LL_NOTICE,"[Aircast]: hc_aircast_service_stop done\n");
+
+    return 0;
 }
 
 int hccast_air_ioctl(int cmd, void *arg)
@@ -1095,6 +1110,8 @@ int hccast_air_stop_playing()
     }
 
     hccast_log(LL_NOTICE, "[%s:%u] done.\n",__func__, hccast_air_get_tick());
+
+    return 0;
 }
 
 
@@ -1113,6 +1130,8 @@ int hccast_air_service_init(hccast_air_event_callback aircast_cb)
 #ifdef HC_RTOS
     hc_mdns_set_devname("wlan0");
 #endif
+
+    return 0;
 }
 
 

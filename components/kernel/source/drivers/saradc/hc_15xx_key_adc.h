@@ -35,11 +35,12 @@ struct adc_priv_1512
 	uint32_t 			timeout;
 
 	struct timer_list 		timer_keyup;
+	struct timer_list 		timer_clr_cnt;
+	struct timer_list 		timer_adjust;
 	int				key_up_val;
 
 	uint 				val_cmp;
 
-	unsigned int 			def_key_value;
 	int				key_state;	/* 0: key down, 1: repead key down */
 	uint32_t 			deviation;
 	uint8_t				efuse_adjust;	/* 0 : invalid, others : valid, high priority */
@@ -49,7 +50,7 @@ struct adc_priv_1512
 	uint8_t 			store_adjust;	/* 0 : invalid, others : valid, low priority */
 	int16_t 			dyn_adjust_temp;
 	int 				dts_refer_value;
-	struct work_s			work;
+	struct work_s			irq_work;
 	int				work_first_read;
 };
 

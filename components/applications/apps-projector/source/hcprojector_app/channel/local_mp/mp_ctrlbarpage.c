@@ -20,6 +20,7 @@
 #include <hcuapi/input-event-codes.h>
 #include <hcuapi/dis.h>
 #include <ffplayer.h>
+#include "factory_setting.h"
 #include "local_mp_ui.h"
 #include "local_mp_ui_helpers.h"
 #include "mp_mainpage.h"
@@ -29,7 +30,6 @@
 #include "screen.h"
 #include "../../volume/volume.h"
 #include "setup.h"
-#include "factory_setting.h"
 
 #include "mul_lang_text.h"
 
@@ -60,6 +60,10 @@ extern SCREEN_TYPE_E cur_scr;
 extern SCREEN_SUBMP_E screen_submp;
 static bool blacklight_val=false;
 static bool is_bg_music=false;
+int Ctrlbar_mediastate_refr(void);
+
+static char *str_line=NULL;
+static char *str_line2=NULL;
 
 static int user_vkey_action_ctrl(uint32_t user_vkey,lv_obj_t* target)
 {
@@ -189,8 +193,7 @@ static int user_vkey_action_ctrl(uint32_t user_vkey,lv_obj_t* target)
                         if (P_STA!=MEDIA_STOP ){
                             media_fastbackward(m_cur_media_hld);
                         }
-                        set_label_text2(ui_playstate,STR_FB,FONT_MID);
-                        ctrlbar_reflesh_speed();
+                        Ctrlbar_mediastate_refr();
                     }
                     break;
                 case V_KEY_FF:
@@ -199,8 +202,7 @@ static int user_vkey_action_ctrl(uint32_t user_vkey,lv_obj_t* target)
                         if (P_STA!=MEDIA_STOP ){
                             media_fastforward(m_cur_media_hld);
                         }    
-                        set_label_text2(ui_playstate,STR_FF,FONT_MID);
-                        ctrlbar_reflesh_speed();
+                        Ctrlbar_mediastate_refr();
                     }
                     break;
                 case V_KEY_PREV:
@@ -284,6 +286,7 @@ int ctrl_bar_enter(lv_obj_t * parent_btn)
 {
     char *play_name = NULL;
     char *m_play_file_name=NULL;
+    int ret = 0;
     media_handle_t* m_hdl=mp_get_cur_player_hdl();
     if(m_cur_file_list->media_type!=MEDIA_TYPE_TXT){
         play_state= media_get_state(m_cur_media_hld);
@@ -387,8 +390,12 @@ int ctrl_bar_enter(lv_obj_t * parent_btn)
                 break;
             case MEDIA_TYPE_TXT://prev
                 play_name = win_media_get_pre_file(app_get_playlist_t()); 
+                ret = ebook_read_file(play_name);
                 if(play_name){
-                    ebook_read_file(play_name);
+                    if(ret < 0)
+                    {
+                        win_msgbox_msg_open(STR_FILE_FAIL, 2000, NULL, NULL);
+                    }
                     m_play_file_name = win_media_get_cur_file_name(app_get_playlist_t());
                     lv_label_set_text(ui_playname, m_play_file_name);
                 }
@@ -417,9 +424,15 @@ int ctrl_bar_enter(lv_obj_t * parent_btn)
         }else{
             play_name = win_media_get_next_file(app_get_playlist_t()); //next
             if(play_name){
-                ebook_read_file(play_name);
-                m_play_file_name = win_media_get_cur_file_name(app_get_playlist_t());
-                lv_label_set_text(ui_playname, m_play_file_name);
+                ret = ebook_read_file(play_name);
+                if(play_name){
+                    if(ret < 0)
+                    {
+                        win_msgbox_msg_open(STR_FILE_FAIL, 2000, NULL, NULL);
+                    }
+                    m_play_file_name = win_media_get_cur_file_name(app_get_playlist_t());
+                    lv_label_set_text(ui_playname, m_play_file_name);
+                }
             }
         }
 
@@ -596,14 +609,15 @@ int ctrl_bar_enter(lv_obj_t * parent_btn)
     {
         /*for media step*/
         if(m_cur_media_hld->type==MEDIA_TYPE_VIDEO){ 
-            /*500 ms after to do sonthing */
-            /*create& start  a timer,after timer goto timer cb*/  
-            /* or lvgl task sleep 200s then reset*/
-            if(MEDIA_PAUSE == media_get_state(m_cur_media_hld))
+            if(MEDIA_PAUSE == media_get_state(m_cur_media_hld)){
                 media_resume(m_cur_media_hld);
-                api_sleep_ms(200);
-            if (MEDIA_PLAY == media_get_state(m_cur_media_hld))
-                media_pause(m_cur_media_hld);
+                lv_obj_set_style_bg_img_src(ctrlbarbtn[0],&Hint_Pause,0);
+                set_label_text2(lv_obj_get_child(ctrlbarbtn[0],0),STR_PAUSE,FONT_MID);
+            }
+            api_sleep_ms(200);
+            media_pause(m_cur_media_hld);
+            lv_obj_set_style_bg_img_src(ctrlbarbtn[0],&Hint_Play,0);
+            set_label_text2(lv_obj_get_child(ctrlbarbtn[0],0),STR_PLAY,FONT_MID);
         }
         else if(m_cur_media_hld->type==MEDIA_TYPE_PHOTO)
         {
@@ -694,7 +708,6 @@ int ctrl_bar_enter(lv_obj_t * parent_btn)
                     break;
                 case IMG_SHOW_FADE: 
                     img_effect.mode=IMG_SHOW_NULL;
-                    api_pic_effect_enable(false);
                     set_img_dis_modeparam(&img_effect);
                     set_label_text2(lv_obj_get_child(parent_btn,0),STR_NO_EFFECT,FONT_MID);        
                     break; 
@@ -733,8 +746,6 @@ void sec_timer_cb(lv_timer_t * t)
     uint32_t play_time = 0;
     uint32_t total_time = 0;
     char time_fmt[16];
-    int id = projector_get_some_sys_param(P_OSD_LANGUAGE);
-
     play_time = media_get_playtime(m_cur_media_hld);
     format_time(play_time, time_fmt);
     lv_label_set_text(lv_obj_get_child(ui_play_bar,2), time_fmt);
@@ -747,7 +758,6 @@ void sec_timer_cb(lv_timer_t * t)
         lv_slider_set_range(ui_playbar, 0, total_time);
     
     play_state= media_get_state(m_cur_media_hld);
-    Ctrlbar_mediastate_refr();
 }
 
 void show_play_bar(bool show)
@@ -830,7 +840,7 @@ void subtitles_event_send(int e, lv_subtitle_t *subtitle){
             return;
         }
         if(subtitle->type == 1){
-            subtitles_str = subtitle->data;     
+            subtitles_str = (char *)subtitle->data;     
         }else if(subtitle->type == 0){
             subtitles_img_dsc.header.w = subtitle->w;
             subtitles_img_dsc.header.h = subtitle->h;
@@ -849,7 +859,7 @@ void subtitles_timer_handle(lv_timer_t *e){
 
 void create_subtitles_rect(void){
 
-    if(m_cur_media_hld->type == MEDIA_TYPE_VIDEO){
+    if(m_cur_media_hld->type == MEDIA_TYPE_VIDEO||m_cur_media_hld->type == MEDIA_TYPE_MUSIC){
         lv_obj_t *obj = lv_obj_create(ui_ctrl_bar);
         lv_obj_move_background(obj);
         lv_obj_set_size(obj, LV_PCT(80), LV_PCT(18));
@@ -863,7 +873,7 @@ void create_subtitles_rect(void){
         subtitles_obj = lv_label_create(obj);
         lv_obj_set_style_border_width(subtitles_obj, 0, 0);
         lv_obj_set_style_pad_bottom(subtitles_obj, 0, 0);
-        lv_obj_set_size(subtitles_obj, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+        lv_obj_set_size(subtitles_obj, LV_PCT(100), LV_SIZE_CONTENT);
         lv_label_set_text(subtitles_obj, "");
         lv_obj_set_style_text_font(subtitles_obj, &LISTFONT_3000, 0);
         lv_obj_set_style_text_color(subtitles_obj, lv_color_white(), 0);
@@ -892,18 +902,27 @@ void create_subtitles_rect(void){
 }
 
 void del_subtitles_rect(void){
-    subtitles_event_send(SUBTITLES_EVENT_CLOSE, NULL);
+    if(subtitles_timer){
+        lv_timer_pause(subtitles_timer);
+        lv_timer_del(subtitles_timer);
+        subtitles_timer = NULL;
+        lv_obj_del(subtitles_obj->parent);
+        /* this obj was local var,form its child to link it*/ 
+        subtitles_obj=NULL;
+        subtitles_obj_pic=NULL;
+        printf("subtitles close\n");
+    }
 }
 
 void show_subtitles( char *str){
-    if(str==""){
+    if(!str){
         lv_label_set_text(subtitles_obj, "");
         return;
     }
     str = subtitles_str_remove_prefix(str);
     subtitles_str_get_text(str);   
     lv_obj_move_foreground(subtitles_obj);
-    //lv_label_set_text(subtitles_obj, str);
+    lv_obj_set_size(subtitles_obj->parent,lv_pct(80),lv_pct(18));
 }
 
 void show_subtitles_pic(lv_img_dsc_t *dsc){
@@ -912,7 +931,8 @@ void show_subtitles_pic(lv_img_dsc_t *dsc){
     }else{
         lv_obj_clear_flag(subtitles_obj_pic, LV_OBJ_FLAG_HIDDEN);
         lv_img_set_src(subtitles_obj_pic, dsc);
-        lv_obj_move_foreground(subtitles_obj_pic);        
+        lv_obj_move_foreground(subtitles_obj_pic);
+        lv_obj_set_size(subtitles_obj_pic->parent,dsc->header.w,dsc->header.h);
     }
 
 }
@@ -935,15 +955,34 @@ char* subtitles_str_remove_prefix(char* str){
     }
     return "";
 }
-/*
-* 
-*/
+
+/**
+ * @brief Parse string text and display it
+ * @param *str
+ */
 void subtitles_str_get_text(char* str){
     int a=-1, first = -1, second = -1;
     int size = strlen(str);
-    printf("str size: %d\n", size);
+    if(str_line == NULL){
+        str_line=(char *)malloc(MAX_FILE_NAME);
+        if (NULL == str_line){
+            printf("ERROR: %s(), line: %d. malloc %d buffer fail!\n", 
+                __func__, __LINE__, MAX_FILE_NAME);
+            return;
+        }
+    }
+    if(str_line2 == NULL){
+        str_line2=(char *)malloc(MAX_FILE_NAME);
+        if (NULL == str_line2){
+            printf("ERROR: %s(), line: %d. malloc %d buffer fail!\n", 
+                __func__, __LINE__, MAX_FILE_NAME);
+            return;
+        }
+    }
+    memset(str_line, 0, MAX_FILE_NAME);
+    memset(str_line2, 0, MAX_FILE_NAME);
+
     for(int i=0; i<size;i++){
-        //printf("%c\n", str[i]);
         if(str[i] == 0x5c && i+1<size && str[i+1] == 'N'){
             str[i] = '\0';
             i+=2;
@@ -957,7 +996,6 @@ void subtitles_str_get_text(char* str){
             }
             if(i<size && str[i] == '}'){
                 str[i] = '\0';
-                subtitles_str_set_style(str+a);
             }
             i++;
         }
@@ -974,21 +1012,18 @@ void subtitles_str_get_text(char* str){
     }
     if(first>=0){
         if(second>first){
-            lv_label_set_text_fmt(subtitles_obj,"%s\n%s", str+first, str+second);             
+            string_fmt_conv_to_utf8((unsigned char*)str+first,str_line);
+            string_fmt_conv_to_utf8((unsigned char*)str+second,str_line2);
+            lv_label_set_text_fmt(subtitles_obj,"%s\n%s", str_line,str_line2);             
         }else{
-            lv_label_set_text(subtitles_obj, str+first);
+            string_fmt_conv_to_utf8((unsigned char*)str+first,str_line);
+            lv_label_set_text(subtitles_obj,str_line);
         }
     }else{
         lv_label_set_text(subtitles_obj, "");
     }
-
 }
 
-void subtitles_str_set_style(char *str){
-    // if(strncmp(str, "\c&H", 4) == 0){
-
-    // }
-}
 /**
  * @description: sepecial handle for ext subtitle format .idx , if has this format(xxx.idx)
  * do not add xxx.sub in subtitle list or del it in subs list 
@@ -1020,10 +1055,11 @@ glist* ext_subtitle_format_handle(glist* subs_glist)
     return dst_glist;
 }
 static ext_subtitle_t ext_subtitle;
-#define MAX_EXT_SUBTITLE_NUM 100
+#define MAX_EXT_SUBTITLE_NUM 128
 char *m_uris[MAX_EXT_SUBTITLE_NUM]={NULL};
 int ext_subtitles_init(file_list_t* src_list)
 {
+    int j=0;
     if(src_list==NULL||src_list->list==NULL){
         return 0;
     }
@@ -1033,25 +1069,28 @@ int ext_subtitles_init(file_list_t* src_list)
         // idx file had to specal handle 
         if(subs_list!=NULL){
             int len=glist_length(subs_list);
-            int j=0;
             file_node_t * file_node = file_mgr_get_file_node(src_list, src_list->item_index);
             if(file_node->name!=NULL){
-                char file_without_ext[1024]={0};
+                char file_without_ext[MAX_FILE_NAME]={0};
                 file_mgr_rm_extension(file_without_ext,file_node->name);
+                char* sub_without_ext=(char*)malloc(MAX_FILE_NAME);
+                if(!sub_without_ext){
+                    return -1;
+                }
                 for(int i=0;i<len;i++){
-                    if(!strncmp((char *)glist_nth_data(subs_list,i),file_without_ext,strlen(file_without_ext))){
-                        // printf("--------> %s ,add in ext_subtitle struct\n",file_without_ext);
+                    memset(sub_without_ext,0,MAX_FILE_NAME);
+                    file_mgr_rm_extension(sub_without_ext,(char *)glist_nth_data(subs_list,i));
+                    if(!strcmp(sub_without_ext,file_without_ext)){
                         ext_subtitle.ext_subs_count++;
-                        char url_single[1024]={0};
+                        char url_single[MAX_FILE_NAME]={0};
                         file_mgr_get_fullname(url_single,src_list->dir_path,glist_nth_data(subs_list,i));
                         m_uris[j]=strdup(url_single);
-                        // put it in a char * cont,strdup will malloc mem ,need to free mem when 
                         j++;
                         ext_subtitle.uris=m_uris;
                     }
-                }            
+                }
+                free(sub_without_ext);            
             }
-
         }
     }
     return 0;
@@ -1066,6 +1105,14 @@ int ext_subtitle_deinit()
             }
         memset(&ext_subtitle,0,sizeof(ext_subtitle_t));
     }
+	if(str_line){
+		free(str_line);
+		str_line = NULL;
+	}
+	if(str_line2){
+		free(str_line2);
+		str_line2 = NULL;
+	}
     return 0;
 }
 ext_subtitle_t * ext_subtitle_data_get()
@@ -1079,6 +1126,34 @@ void ctrlbarpage_open(void)
 {
     file_node_t *file_node = NULL;
     char m_play_path_name[1024];
+
+    if(last_scr==SCREEN_SETUP||last_scr==SCREEN_CHANNEL)
+    {
+        if (m_cur_media_hld && MEDIA_PLAY_END == media_get_state(m_cur_media_hld)){
+            //Continue play next media if back from channel or setup menu.            
+            if(m_cur_media_hld->loop_type==PlAY_LIST_SEQUENCE){
+                ctrl_bar_enter(ctrlbarbtn[4]); //play next media
+            }else if(m_cur_media_hld->loop_type==PLAY_LIST_ONE){
+                char * play_name = win_media_get_cur_file_name(app_get_playlist_t()); 
+                if (play_name){
+                    if (MEDIA_STOP != media_get_state(m_cur_media_hld))
+                        media_stop(m_cur_media_hld);
+                    media_play(m_cur_media_hld, m_cur_media_hld->play_name);
+                    set_label_text2(ui_playstate,STR_PLAY,FONT_MID);
+                    set_label_text2(ui_speed,STR_NONE,FONT_MID);
+                }
+            }
+
+        }
+
+        //change screen from setup or channel, do not need
+        //create object again
+        if (play_bar_group)
+            set_key_group(play_bar_group);
+        show_play_bar(true);
+        return;
+    }
+
     //add group 
     play_bar_group= lv_group_create();
     play_bar_group->auto_focus_dis=1;
@@ -1087,26 +1162,18 @@ void ctrlbarpage_open(void)
     file_node = file_mgr_get_file_node(m_cur_file_list, m_cur_file_list->item_index);
     lv_label_set_text(ui_playname,file_node->name);
     set_label_text2(ui_playstate,STR_PLAY,FONT_MID);
+
     //play media file
-    if(last_scr==SCREEN_SETUP||last_scr==SCREEN_CHANNEL)
-    {
-        //do nothing 
-        set_keystone_disable(false);
-        is_previwe_open=false;
+    api_set_display_area(projector_get_some_sys_param(P_ASPECT_RATIO));
+    playlist_init();    
+    m_cur_media_hld = m_player_hld[m_cur_file_list->media_type];
+    if (NULL == m_cur_media_hld){
+        m_cur_media_hld = media_open(m_cur_file_list->media_type);
+        m_player_hld[m_cur_file_list->media_type] = m_cur_media_hld;
     }
-    else    
-    {
-        api_set_display_area(projector_get_some_sys_param(P_ASPECT_RATIO));
-        playlist_init();    
-        m_cur_media_hld = m_player_hld[m_cur_file_list->media_type];
-        if (NULL == m_cur_media_hld){
-            m_cur_media_hld = media_open(m_cur_file_list->media_type);
-            m_player_hld[m_cur_file_list->media_type] = m_cur_media_hld;
-        }
-        file_mgr_get_fullname(m_play_path_name, m_cur_file_list->dir_path, file_node->name);
-        media_play(m_cur_media_hld, m_play_path_name);
-        //set_display_zoom_when_sys_scale();
-    }
+    file_mgr_get_fullname(m_play_path_name, m_cur_file_list->dir_path, file_node->name);
+    media_play(m_cur_media_hld, m_play_path_name);
+    //set_display_zoom_when_sys_scale();
 
     switch(m_cur_media_hld->type){
         case MEDIA_TYPE_VIDEO:
@@ -1140,6 +1207,17 @@ void media_player_close(void)
         m_cur_media_hld = NULL;
 
     }
+    dis_zoom_t dis_zoom={
+        .src_area.h=1080,
+        .src_area.w=1920,
+        .src_area.x=0,
+        .src_area.y=0,
+        .dst_area.h=1080,
+        .dst_area.w=1920,
+        .dst_area.x=0,
+        .dst_area.y=0,
+    };
+    api_set_display_zoom2(&dis_zoom);
     api_pic_effect_enable(false);
 }
 
@@ -1169,9 +1247,20 @@ void media_player_open2(file_list_t*m_filelist)
     file_mgr_get_fullname(m_play_path_name, m_filelist->dir_path, file_node->name);
     media_play(m_cur_media_hld, m_play_path_name);
 }
-int ctrlbarpage_close(void)
+int ctrlbarpage_close(bool force)
 {
     win_msgbox_msg_close();
+
+    if (!force){
+        //change screen to setup or channel, do not need
+        //delete objects. playing background.
+        if(cur_scr==SCREEN_CHANNEL||cur_scr==SCREEN_SETUP)//perss EPG /MENU
+            return 0;
+    }
+
+    if (!play_bar_group)
+        return 0;
+
     lv_group_remove_all_objs(play_bar_group);
     lv_group_del(play_bar_group);
     play_bar_group=NULL;
@@ -1207,17 +1296,16 @@ int ctrlbarpage_close(void)
         default :
             break;
     }   
-    if(cur_scr==SCREEN_CHANNEL||cur_scr==SCREEN_SETUP)//perss EPG /MENU
-        return 0;
+
     playlist_deinit();    
     media_player_close();
     return 0;
 } 
 
-static char *m_str_ff[] = {"", ">> x2", " >> x4", ">> x8", ">> x16", ">> x24", ">> x32"};
-static char *m_str_fb[] = {"", "<< x2", " << x4", "<< x8", "<< x16", "<< x24", "<< x32"};
-static char *m_str_sf[] = {"", ">> 1/2", " >> 1/4", ">> 1/8", ">> 1/16", ">> 1/24"};
-static char *m_str_sb[] = {"", "<< 1/2", " << 1/4", "<< 1/8", "<< 1/16", "<< 1/24"};
+static char *m_str_ff[] = {"", ">> x2", ">> x4", ">> x8", ">> x16", ">> x24", ">> x32"};
+static char *m_str_fb[] = {"", "<< x2", "<< x4", "<< x8", "<< x16", "<< x24", "<< x32"};
+static char *m_str_sf[] = {"", ">> 1/2", ">> 1/4", ">> 1/8", ">> 1/16", ">> 1/24"};
+static char *m_str_sb[] = {"", "<< 1/2", "<< 1/4", "<< 1/8", "<< 1/16", "<< 1/24"};
 static char *m_str_zi[] = {"", "x2", "x4", "x8"};
 static char *m_str_zo[] = {"", "x1/2", "x1/4", "x1/8"};
 
@@ -1228,7 +1316,7 @@ void ctrlbar_reflesh_speed(void)
 
     if (m_cur_media_hld==NULL)
         return ;
-    play_state = media_get_state(m_cur_media_hld);
+    media_state_t play_state = media_get_state(m_cur_media_hld);
     speed = media_get_speed(m_cur_media_hld);
     Zoom_Param_t* zoom_mode=app_get_zoom_param();
     Zoom_size_e z_size =zoom_mode->zoom_size;
@@ -1254,6 +1342,8 @@ void ctrlbar_reflesh_speed(void)
         }else{
             lv_label_set_text(ui_speed, m_str_zo[abs(zoom_mode->zoom_state)]);
         }
+    }else{
+        lv_label_set_text(ui_speed, "");
     }
 }
 
@@ -1275,9 +1365,12 @@ static void __media_seek_proc(uint32_t key)
 
     if (total_time < jump_interval)
         return ;
+    if(play_time_initial>=total_time){
+        return;
+    }
 
     int64_t cur_op_time = get_sys_clock_time();
-    if ((cur_op_time - m_cur_media_hld->last_seek_op_time) < 1000) {
+    if ((cur_op_time - m_cur_media_hld->last_seek_op_time) < 800) {
         m_cur_media_hld->jump_interval += 10;
     } else {
         m_cur_media_hld->jump_interval = 10;
@@ -1311,10 +1404,9 @@ static int media_msg_handle(uint32_t msg_type)
     switch (msg_type)
     {
     case HCPLAYER_MSG_OPEN_FILE_FAILED:
-
-		win_msgbox_msg_open(STR_FILE_FAIL, 3000, NULL, NULL);
-
-        printf("%s  %d\n",__FUNCTION__,__LINE__);
+        win_msgbox_msg_open(STR_FILE_FAIL, 3000, NULL, NULL);
+        partition_info_t*  p_info=mmp_get_partition_info();
+        api_storage_devinfo_check(p_info->used_dev,m_cur_media_hld->play_name);
         break;
     case HCPLAYER_MSG_STATE_READY:
         break;   
@@ -1410,8 +1502,6 @@ static int media_msg_handle(uint32_t msg_type)
     }
     return ret;
 }
-
-
 image_effect_t*  get_img_effect_mode(void)
 {
     return &img_effect;

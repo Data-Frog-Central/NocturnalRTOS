@@ -95,16 +95,27 @@ static void lvds_set_pwm_backlight_duty(unsigned long duty)
 	}
 }
 
+static void lvds_gpio_set_output(int padctl, bool val)
+{
+	struct lvds_set_gpio pad;
+	if (padctl >= PINPAD_LVDS_DP0 && padctl < PINPAD_LVDS_MAX) {
+		pad.padctl = padctl;
+		pad.value = val;
+		lvds_set_gpio_output(&pad);
+	} else
+		gpio_set_output(padctl, val);
+}
+
 static void lvds_set_gpio_backlight(unsigned long value)
 {
 	u32 i=0;
 	for(i=0;i<lvds_misc.lcd_backlight_num;i++)
 	{
-		gpio_configure(lvds_misc.lcd_backlight[i].padctl, GPIO_DIR_OUTPUT);
 		if(value==LVDS_GPIO_LOW)
-			gpio_set_output(lvds_misc.lcd_backlight[i].padctl, lvds_misc.lcd_backlight[i].active);
+			lvds_gpio_set_output(lvds_misc.lcd_backlight[i].padctl, lvds_misc.lcd_backlight[i].active);
 		else
-			gpio_set_output(lvds_misc.lcd_backlight[i].padctl, !lvds_misc.lcd_backlight[i].active);
+			lvds_gpio_set_output(lvds_misc.lcd_backlight[i].padctl, !lvds_misc.lcd_backlight[i].active);
+		gpio_configure(lvds_misc.lcd_backlight[i].padctl, GPIO_DIR_OUTPUT);
 	}
 }
 
@@ -113,11 +124,11 @@ static void lvds_set_gpio_power(unsigned long value)
 	u32 i=0;
 	for(i=0;i<lvds_misc.lcd_power_num;i++)
 	{
-		gpio_configure(lvds_misc.lcd_power[i].padctl, GPIO_DIR_OUTPUT);
 		if(value==LVDS_GPIO_LOW)
-			gpio_set_output(lvds_misc.lcd_power[i].padctl, lvds_misc.lcd_power[i].active);
+			lvds_gpio_set_output(lvds_misc.lcd_power[i].padctl, lvds_misc.lcd_power[i].active);
 		else
-			gpio_set_output(lvds_misc.lcd_power[i].padctl, !lvds_misc.lcd_power[i].active);
+			lvds_gpio_set_output(lvds_misc.lcd_power[i].padctl, !lvds_misc.lcd_power[i].active);
+		gpio_configure(lvds_misc.lcd_power[i].padctl, GPIO_DIR_OUTPUT);
 	}
 }
 
@@ -254,8 +265,20 @@ static bool is_bootlogo_showing(void)
 	return !!(deshowing || de4kshowing);
 }
 
+static bool is_lvds_working(void)
+{
+	u8 lvds_reg = 0;
+	lvds_reg = lvds_hal_get_lane_clk_bias_en_reserve(1);
+	log_d("%s %d lvds_reg = %d\n", __func__, __LINE__, lvds_reg);
+	if (lvds_reg == 0x0)
+		return 0; // no working
+	else
+		return 1; // working
+}
+
 static void config_lvds(struct hichip_lvds *p, int np,uint8_t ch)
 {
+	u32 temp = 0;
 	T_LVDS_CFG lvds_cfg;
 
 	memset(&lvds_cfg,0,sizeof(T_LVDS_CFG));
@@ -269,24 +292,34 @@ static void config_lvds(struct hichip_lvds *p, int np,uint8_t ch)
 	fdt_get_property_u_32_index(np, "vsync-polarity", 0, (u32 *)&lvds_cfg.vsync_polarity);
 	fdt_get_property_u_32_index(np, "even-odd-adjust-mode", 0, (u32 *)&lvds_cfg.even_odd_adjust_mode);
 	fdt_get_property_u_32_index(np, "even-odd-init-value", 0, (u32 *)&lvds_cfg.even_odd_init_value);
-	fdt_get_property_u_32_index(np, "src-sel", 0, (u32 *)&lvds_cfg.src_sel);
+	temp = E_SRC_SEL_FXDE;
+	fdt_get_property_u_32_index(np, "src-sel", 0, (u32 *)&temp);
+	lvds_cfg.src_sel = temp;
 	fdt_get_property_u_32_index(np, "ch0-clk-gate", 0, (u32 *)&lvds_cfg.ch0_clk_gate);
 	fdt_get_property_u_32_index(np, "ch1-clk-gate", 0, (u32 *)&lvds_cfg.ch1_clk_gate);
+	lvds_cfg.drive_strength = LVDS_LLD_PHY_DRIVE_STRENGTH_NORMAL;
+	fdt_get_property_u_32_index(np, "chx-swap-ctrl", 0, (u32 *)&lvds_cfg.chx_swap_ctrl);
+	fdt_get_property_u_32_index(np, "lvds-drive-strength", 0, (u32 *)&lvds_cfg.drive_strength);
+
 	lvds_lld_set_cfg(&lvds_cfg,ch);
 	lvds_lld_phy_mode_init(ch,lvds_cfg.channel_mode);
+
+	if(lvds_cfg.drive_strength != LVDS_LLD_PHY_DRIVE_STRENGTH_NORMAL)//Only effective when channel 0 or channel 0 and channel 1 are lvds
+		lvds_lld_phy_enhance_driving_ability(ch, (lvds_lld_phy_drive_strength_e)lvds_cfg.drive_strength);
 }
 
 static void config_ttl(struct hichip_lvds *p, int np,const char *pin_type,uint8_t ch)
 {
 	LVDS_IO_TTL_SEL lvds_ttl=LVDS_IO_TTL_SEL_RGB888;
 	E_VIDEO_SRC_SEL src_sel = E_SRC_SEL_FXDE;
-	E_VIDEO_SRC_SEL src_sel2 = E_SRC_2_SEL_FXDE;
+	E_VIDEO_2_SRC_SEL src_sel2 = E_SRC_2_SEL_FXDE;
 	u32 rgb_src_sel=0;
 	int ret;
 	u32 tmpVal = 0;
 	const char *index_temp=pin_type;
 	struct pinmux_setting *active_state;
 	u32 i=0;
+	lvds_lld_phy_drive_strength_e drive_strength = LVDS_TTL_DRIVE_STRENGTH_NORMAL;
 
 	if(index_temp != NULL && strcmp("rgb888", index_temp) == 0) {
 		lvds_ttl= LVDS_IO_TTL_SEL_RGB888;
@@ -310,7 +343,8 @@ static void config_ttl(struct hichip_lvds *p, int np,const char *pin_type,uint8_
 		lvds_ttl= LVDS_IO_TTL_SEL_I2SO;
 	else if(index_temp != NULL && strcmp("gpio", index_temp) == 0)
 		lvds_ttl= LVDS_IO_TTL_SEL_LVDS_GPIO1;
-	else lvds_ttl= LVDS_IO_TTL_SEL_LVDS_GPIO1;
+	else 
+		lvds_ttl= LVDS_IO_TTL_SEL_LVDS_GPIO1;
 
 	if(lvds_ttl<=LVDS_IO_TTL_SEL_RGB565)
 	{
@@ -321,19 +355,18 @@ static void config_ttl(struct hichip_lvds *p, int np,const char *pin_type,uint8_
 		hc_clk_enable(RGB_CLK);
 		ret = fdt_get_property_u_32_index(np, "src-sel", 0, &tmpVal);
 		if (ret == 0) {
-			if (tmpVal == 0) {
+			if (tmpVal == E_SRC_2_SEL_FXDE ||
+			    tmpVal == E_SRC_2_SEL_FXDE_LOW_TO_HIGH ||
+			    tmpVal == E_SRC_2_SEL_PQ_LOW_TO_HIGH) {
 				src_sel = E_SRC_SEL_FXDE;
-				src_sel2 = E_SRC_2_SEL_FXDE;
-			} else if (tmpVal == 1) {
+			} else if (tmpVal == E_SRC_2_SEL_4KDE ||
+				   tmpVal == E_SRC_2_SEL_DE4K_LOW_TO_HIGH) {
 				src_sel = E_SRC_SEL_4KDE;
-				src_sel2 = E_SRC_2_SEL_4KDE;
-			} else if (tmpVal == 2) {
+			} else if (tmpVal == E_SRC_2_SEL_HDMI_RX ||
+				   tmpVal == E_SRC_2_SEL_HDMI_RX_LOW_TO_HIGH) {
 				src_sel = E_SRC_SEL_HDMI_RX;
-				src_sel2 = E_SRC_2_SEL_HDMI_RX;
-			} else {
-				src_sel = E_SRC_SEL_FXDE;
-				src_sel2 = E_SRC_2_SEL_FXDE;
 			}
+			src_sel2 = tmpVal;
 		}
 
 		p->rgb_backlight.padctl = PINPAD_INVALID;
@@ -347,7 +380,10 @@ static void config_ttl(struct hichip_lvds *p, int np,const char *pin_type,uint8_
 			p->rgb_backlight.active = (pinpad_e)tmpVal;
 
 		gpio_configure(p->rgb_backlight.padctl, GPIO_DIR_OUTPUT);
-		gpio_set_output(p->rgb_backlight.padctl, 1);
+		if(p->rgb_backlight.active == GPIO_ACTIVE_LOW)
+			lvds_gpio_set_output(p->rgb_backlight.padctl, 0);
+		else
+		lvds_gpio_set_output(p->rgb_backlight.padctl, 1);
 
 		fdt_get_property_string_index(np, "rgb-src-sel", 0, &index_temp);
 		if(index_temp!=NULL&&strlen(index_temp)==3)
@@ -390,10 +426,14 @@ static void config_ttl(struct hichip_lvds *p, int np,const char *pin_type,uint8_
 			rgb_src_sel=0;
 	}
 
+	if(fdt_get_property_u_32_index(np, "ttl-drive-strength", 0, (u32 *)&tmpVal) == 0)
+		drive_strength = tmpVal;
 	rgb_hal_set_src_video_sel(src_sel, src_sel2);
-	rgb_hal_set_src_sel2((rgb_hal_set_src_e)(rgb_src_sel>>12),(rgb_hal_set_src_e)(rgb_src_sel>>4),(rgb_hal_set_src_e)(rgb_src_sel>>8));
+	rgb_hal_set_src_sel2((rgb_hal_set_src_e)(rgb_src_sel>>12&0x03),(rgb_hal_set_src_e)(rgb_src_sel>>8&0x03),(rgb_hal_set_src_e)(rgb_src_sel>>4&0x03));
 	lvds_io_ttl_sel_set(lvds_ttl);
 	lvds_lld_phy_ttl_mode_init(ch);
+	if(drive_strength != LVDS_TTL_DRIVE_STRENGTH_NORMAL)
+		lvds_ttl_enhance_driving_ability(ch, (lvds_ttl_drive_strength_e)drive_strength);
 
 }
 
@@ -411,6 +451,8 @@ static void config_lvds_ttl(struct hichip_lvds *p, int np)
 		else
 			config_ttl(p, np,screen_type,i);
 	}
+
+	lvds_hal_set_lane_clk_bias_en_reserve(1, 0x2);
 }
 
 static int get_first_standby_status(void)//Get whether the bootloader has entered standby mode 0 no 1 yes
@@ -534,45 +576,49 @@ static int lvds_probe(const char *node)
 
 	// lvds_spi_display_init(NULL);
 
-	/*Turn off the backlight and dev power*/
-	if(get_first_standby_status() == 0)
-	{
-		for(i=0;i<lvds_misc.lcd_backlight_num;i++)
-		{
-			gpio_set_output(lvds_misc.lcd_backlight[i].padctl, lvds_misc.lcd_backlight[i].active);
-			gpio_configure(lvds_misc.lcd_backlight[i].padctl, GPIO_DIR_OUTPUT);
-		}
-		for(i=0;i<lvds_misc.lcd_power_num;i++)
-		{
-			gpio_set_output(lvds_misc.lcd_power[i].padctl, lvds_misc.lcd_power[i].active);
-			gpio_configure(lvds_misc.lcd_power[i].padctl, GPIO_DIR_OUTPUT);
-		}
-		goto lvds_register;
-	}
-
-	if (!is_bootlogo_showing())
+	hc_clk_enable(LVDS_CH1_PIXEL_CLK);
+	hc_clk_enable(LVDS_CLK);
+	lvds_open_phy_clk();
+	if (!is_lvds_working())
 	{
 		/*reg init*/
-		hc_clk_enable(LVDS_CH1_PIXEL_CLK);
-		hc_clk_enable(LVDS_CLK);
 		lvds_hal_reset();
 		config_lvds_ttl(&lvds_misc, np);
 
-		/*Turn off the backlight and turn it on after the logo is displayed*/
-		for(i=0;i<lvds_misc.lcd_backlight_num;i++)
+		/*Turn off the backlight and dev power*/
+		if(get_first_standby_status() == 0)
 		{
-			gpio_set_output(lvds_misc.lcd_backlight[i].padctl, lvds_misc.lcd_backlight[i].active);
-			gpio_configure(lvds_misc.lcd_backlight[i].padctl, GPIO_DIR_OUTPUT);
+			#if 0
+			for(i=0;i<lvds_misc.lcd_backlight_num;i++)
+			{
+				lvds_gpio_set_output(lvds_misc.lcd_backlight[i].padctl, lvds_misc.lcd_backlight[i].active);
+				gpio_configure(lvds_misc.lcd_backlight[i].padctl, GPIO_DIR_OUTPUT);
+			}
+			for(i=0;i<lvds_misc.lcd_power_num;i++)
+			{
+				lvds_gpio_set_output(lvds_misc.lcd_power[i].padctl, lvds_misc.lcd_power[i].active);
+				gpio_configure(lvds_misc.lcd_power[i].padctl, GPIO_DIR_OUTPUT);
+			}
+			#endif
+			goto lvds_register;
 		}
 
+		/*Turn off the backlight and turn it on after the logo is displayed*/
+#if 0
+		for(i=0;i<lvds_misc.lcd_backlight_num;i++)
+		{
+			lvds_gpio_set_output(lvds_misc.lcd_backlight[i].padctl, lvds_misc.lcd_backlight[i].active);
+			gpio_configure(lvds_misc.lcd_backlight[i].padctl, GPIO_DIR_OUTPUT);
+		}
+#endif
 		for(i=0;i<lvds_misc.lcd_power_num;i++)
 		{
-			gpio_set_output(lvds_misc.lcd_power[i].padctl, !lvds_misc.lcd_power[i].active);
+			lvds_gpio_set_output(lvds_misc.lcd_power[i].padctl, !lvds_misc.lcd_power[i].active);
 			gpio_configure(lvds_misc.lcd_power[i].padctl, GPIO_DIR_OUTPUT);
 		}
 
-		if(lvds_misc.lcd_power_num>0)
-			usleep(100*1000);
+		// if(lvds_misc.lcd_power_num>0)
+		// 	usleep(100*1000);
 
 		/*spi lcd init*/
 		// lvds_display_init();

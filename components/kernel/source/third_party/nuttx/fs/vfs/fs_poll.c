@@ -262,7 +262,7 @@ int nx_poll(FAR struct pollfd *fds, unsigned int nfds, int timeout)
 	if ((TickType_t)timeout == portMAX_DELAY) {
 		xTicksToWait = portMAX_DELAY;
 	} else {
-		xTicksToWait = timeout * portTICK_PERIOD_MS;
+		xTicksToWait = timeout / portTICK_PERIOD_MS;
 	}
 
 	for (;;) {

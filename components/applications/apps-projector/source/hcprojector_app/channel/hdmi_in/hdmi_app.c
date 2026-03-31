@@ -20,8 +20,6 @@
 
 #define min(a, b) ((a)<(b) ? (a) : (b))
 #define max(a, b) ((a)<(b) ? (b) : (a))
-#define HDMI_SWITCH_HDMI_STATUS_PLUGOUT		0
-#define HDMI_SWITCH_HDMI_STATUS_PLUGIN		1
 
 lv_obj_t* hdmi_scr;
 lv_group_t *hdmi_g;
@@ -54,7 +52,7 @@ static void timer_err_input_handle(lv_timer_t *e){
 }
 
 static void timer_handle(lv_timer_t *e){
-    if(hdmirx_get_plug_status() == HDMI_SWITCH_HDMI_STATUS_ERR_INPUT){
+    if(hdmirx_get_plug_status() == HDMI_RX_STATUS_ERR_INPUT){
         if(lv_obj_has_flag(hdmi_scr, LV_OBJ_FLAG_HIDDEN)){
             if(timer_err_input == NULL){
                 lv_obj_t* msgbox = lv_msgbox_create(lv_layer_top(), NULL, api_rsc_string_get(STR_HDMI_FORMAT_USPT), NULL, false);
@@ -68,7 +66,7 @@ static void timer_handle(lv_timer_t *e){
         return;
         }
     }
-    if(hdmirx_get_plug_status() == HDMI_SWITCH_HDMI_STATUS_PLUGIN){
+    if(hdmirx_get_plug_status() == HDMI_RX_STATUS_PLUGIN){
         if(!lv_obj_has_flag(hdmi_scr, LV_OBJ_FLAG_HIDDEN)){
              lv_obj_add_flag(hdmi_scr, LV_OBJ_FLAG_HIDDEN);
         }        
@@ -111,7 +109,7 @@ static void timer_handle1(lv_timer_t* timer_){
     timer_start = NULL;
     lv_obj_clean(hdmi_scr);
     hdmi_screen_plugoutin();
-    if ( hdmirx_get_plug_status() == HDMI_SWITCH_HDMI_STATUS_PLUGIN){
+    if ( hdmirx_get_plug_status() == HDMI_RX_STATUS_PLUGIN){
         lv_obj_add_flag(hdmi_scr, LV_OBJ_FLAG_HIDDEN);        
     }
     
@@ -140,8 +138,8 @@ static void hdmi_event_handle(lv_event_t* e){
             lv_timer_del(timer_start);
             timer_start = NULL;
         }
-		// switch hrx quickly, pause instead of rx_leave
-        hdmirx_pause();//hdmi_rx_leave();
+
+        //hdmirx_pause();//hdmi_rx_leave();		// move to sourc change in projector.c
         if(timer_err_input){
             lv_timer_ready(timer_err_input);
         }

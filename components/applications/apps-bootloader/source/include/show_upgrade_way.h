@@ -49,6 +49,7 @@
 #ifdef CONFIG_BOOT_UPGRADE_SHOW_WITH_SCREEN
 void fill_progress_bar(uint32_t len, uint32_t color);
 int init_progress_bar(void);
+int exit_progress_bar(void);
 #endif
 
 #ifdef CONFIG_BOOT_UPGRADE_SHOW_WITH_LED

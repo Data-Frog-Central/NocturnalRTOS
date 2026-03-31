@@ -126,6 +126,14 @@ config CONFIG_CMDS_BLUETOOTH_TEST
 	bool "config bluetooth test"
 	default n
 
+config CONFIG_CMDS_RTWPRIV
+	bool "config rtwpriv"
+	default n
+
+config CONFIG_CMDS_IPERF3
+	bool "config iperf3"
+	default n
+
 config CONFIG_CMDS_WS2811
 	bool "ws2811 test operations"
 	select BR2_PACKAGE_PREBUILTS_LIBWS2811
@@ -141,6 +149,14 @@ menuconfig CONFIG_CMDS_USB
 	default n
 
 if CONFIG_CMDS_USB
+
+config CONFIG_CMDS_USB_4G_RNDIS_NET_DEVICE
+	bool "USB host: support sending AT command to 4G RNDIS network device"
+	depends on BR2_PACKAGE_PREBUILTS_USBDRIVER_SERIAL
+	depends on BR2_PACKAGE_PREBUILTS_USBDRIVER_RNDIS
+	depends on CONFIG_CMDS_USB
+	default n
+
 config CONFIG_CMDS_USB_GADGET_MSC
 	bool "USB gadget: mass-storage device commonds"
 	depends on BR2_PACKAGE_PREBUILTS_USBGADGETDRIVER
@@ -175,6 +191,14 @@ config CONFIG_CMDS_USB_GADGET_HID
 	depends on BR2_PACKAGE_PREBUILTS_USBGADGETDRIVER_HID
 	depends on CONFIG_CMDS_USB
 	default n
+
+config CONFIG_CMDS_USB_GADGET_UVC
+	bool "USB gadget: video device commonds (uvc class)"
+	depends on BR2_PACKAGE_PREBUILTS_USBGADGETDRIVER
+	depends on BR2_PACKAGE_PREBUILTS_USBGADGETDRIVER_UVC
+	depends on CONFIG_CMDS_USB
+	default n
+
 endif
 
 
@@ -214,11 +238,6 @@ config CONFIG_CMD_NETWORK
 	default n
 	depends on BR2_PACKAGE_LIBCURL
 
-config CONFIG_CMD_MIPI_TEST
-	bool "MIPI test commands"
-	default n
-	depends on CONFIG_DRV_MIPI
-
 menuconfig CONFIG_CMD_UNITY
         bool "Unity test entry"
 	depends on BR2_PACKAGE_UNITY
@@ -230,3 +249,10 @@ config CONFIG_CMD_UNITY_DUMMY_CASES
 	default n
 endif
 
+config CONFIG_CMDS_RTC_AT8536
+	bool "rtc at8536 test operations"
+	default n
+
+config CONFIG_CMD_LCD_TEST
+	bool "lcd test"
+	default n

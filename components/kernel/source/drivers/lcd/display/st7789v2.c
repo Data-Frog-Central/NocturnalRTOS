@@ -434,8 +434,7 @@ static int st7789v2_probe(const char *node)
 	fdt_get_property_u_32_index(np, "spi-gpio-stbyb", 	0, &st7789v2dev.lcd_stbyb_num);
 	log_d("st7789v2dev.lcd_stbyb_num = %d %d %d %d\n",st7789v2dev.spi_clk_num,st7789v2dev.spi_mosi_num,st7789v2dev.spi_cs_num,st7789v2dev.lcd_stbyb_num);
 
-	int default_off = 0;
-	fdt_get_property_u_32_index(np, "default-off", 	0, &default_off);
+	int default_off = fdt_property_read_bool(np, "default-off");
 	if(default_off ==0)
 		st7789v2_display_init();
 

@@ -75,6 +75,15 @@ int bluetooth_memory_connection(unsigned char value)
     return 0;
 }
 
+int bluetooth_power_on_to_rx(void)
+{
+	return 0;
+}
+int bluetooth_factory_reset(void)
+{
+	return 0;
+}
+
 #ifdef BR2_PACKAGE_BLUETOOTH_FAKE
 int bluetooth_init(const char *uart_path, bluetooth_callback_t callback)
 {
@@ -134,6 +143,11 @@ int bluetooth_set_cvbs_aux_mode(void)
 int bluetooth_set_cvbs_fiber_mode(void)
 {
     return 0;
+}
+
+int bluetooth_ioctl(int cmd, ...)
+{
+	return 0;
 }
 #else
 #define BT_RET_EXIT     1
@@ -319,7 +333,7 @@ int bluetooth_poweron(void)
     }
     else
         return BT_RET_ERROR;
-    // return BT_RET_SUCCESS;
+    return BT_RET_SUCCESS;
 }
 
 int bluetooth_poweroff(void)
@@ -568,6 +582,25 @@ int bluetooth_set_connection_cvbs_fiber_mode(void)
 {
     return bluetooth_set_connection_cvbs_mode(1);
 }
+
+static int _bluetooth_ioctl_(int cmd, unsigned long arg)
+{
+	int ret = BT_RET_SUCCESS;
+	return ret;
+}
+
+int bluetooth_ioctl(int cmd, ...)
+{
+	unsigned long arg = 0;
+	int ret = BT_RET_SUCCESS;
+	va_list args;
+	va_start(args, cmd);
+	arg = va_arg(args, unsigned long);
+	ret = _bluetooth_ioctl_(cmd, arg);
+	va_end(args);
+	return ret;
+}
+
 static void bt_ac6955f_read_thread(void *args)
 {
     bt_ac6955f_cmd_sends_e *cmds=(bt_ac6955f_cmd_sends_e *)args;
@@ -815,15 +848,15 @@ static void bt_ac6955f_serial_data_judg(bt_ac6955f_cmd_sends_e cmd,char *buf,uns
                     break;
                 }
                 switch(cmd){
-                case BT_CMD_SET_PC7_GPIO_OUT:
-                case BT_CMD_SET_PB11_GPIO_OUT:
-                case BT_CMD_SET_CVBS_MODE:
-                case BT_CMD_SET_CONNECTION_CVBS_MODE:
-                    if(body_m.cmd_id==0x00&&body_m.cmd_value[0]==0x00)
-                    {
-                        gbt->get_dev_status = EBT_DEVICE_STATUS_CMD_ACK_OK;
-                    }
-                    break;
+                // case BT_CMD_SET_PC7_GPIO_OUT:
+                // case BT_CMD_SET_PB11_GPIO_OUT:
+                // case BT_CMD_SET_CVBS_MODE:
+                // case BT_CMD_SET_CONNECTION_CVBS_MODE:
+                //     if(body_m.cmd_id==0x00&&body_m.cmd_value[0]==0x00)
+                //     {
+                //         gbt->get_dev_status = EBT_DEVICE_STATUS_CMD_ACK_OK;
+                //     }
+                //     break;
                 case BT_CMD_SET_BT_POWER_ON:
                         if(gbt->get_dev_status !=EBT_DEVICE_STATUS_WORKING_CONNECTED)
                         {
@@ -890,13 +923,19 @@ static void bt_ac6955f_serial_data_judg(bt_ac6955f_cmd_sends_e cmd,char *buf,uns
                     ret = BT_RET_EXIT;
                     break;
                 default:
-                    ret = BT_RET_EXIT;
+                    // ret = BT_RET_EXIT;
                     break;
                 }
                 if(cmd!=BT_CMD_SET_INQUIRY_START&&ret !=BT_RET_EXIT)
                 {
                     switch (body_m.cmd_id)
                     {
+						case 0x00:
+							if(body_m.cmd_id==0x00&&body_m.cmd_value[0]==0x00)
+							{
+								gbt->get_dev_status = EBT_DEVICE_STATUS_CMD_ACK_OK;
+							}
+							break;
                         case 0x0A:
                             if(body_m.cmd_value[0]==0x01)
                             {

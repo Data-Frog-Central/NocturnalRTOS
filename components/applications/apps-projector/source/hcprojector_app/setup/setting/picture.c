@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <hcuapi/fb.h>
+#include <hcuapi/avsync.h>
 #include <stdlib.h>
 #include "lvgl/lvgl.h"
 #include "factory_setting.h"
@@ -197,3 +198,49 @@ void set_enhance1(int value, uint8_t op){
 
 
 
+
+static void set_video_delay_ms(int v){
+    int fd = open("/dev/avsync0", O_WRONLY);
+    if( fd < 0){
+        printf("open /dev/avsync0 failed, ret=%d\n", fd);
+        return;
+    }
+
+    uint32_t delay = v < 0 ? 0 : v;
+    //printf("video delay: %d ms\n", delay);
+    ioctl(fd, AVSYNC_SET_VIDEO_DELAY_MS, delay);
+    ioctl(fd, AVSYNC_GET_VIDEO_DELAY_MS, &delay);
+    printf("video delay: %d ms\n", delay);
+    if(v >= 0){
+    projector_set_some_sys_param(P_VIDEO_DELAY, v);
+    projector_sys_param_save();
+    }
+
+    close(fd);
+
+
+
+}
+
+void video_delay_ms_turn_down(){
+    int v = projector_get_some_sys_param(P_VIDEO_DELAY);
+    v -= VIDEO_DELAY_MIN_V;
+    set_video_delay_ms(v);
+}
+
+void video_delay_ms_turn_up(){
+    int v = projector_get_some_sys_param(P_VIDEO_DELAY);
+    v += VIDEO_DELAY_MIN_V;
+    if(v > VIDEO_DELAY_MAX_V){
+        v = VIDEO_DELAY_MAX_V;
+    }
+    set_video_delay_ms(v);
+}
+
+void video_delay_ms_zero(){
+    set_video_delay_ms(-1);
+}
+
+void video_delay_ms_set(){
+    set_video_delay_ms(projector_get_some_sys_param(P_VIDEO_DELAY));
+}

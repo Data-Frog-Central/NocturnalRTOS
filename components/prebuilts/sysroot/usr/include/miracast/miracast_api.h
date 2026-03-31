@@ -85,6 +85,8 @@ typedef enum
     WFD_CMD_SET_DSC_FUNC,
     WFD_CMD_SET_MANAGE_FUNC,
     WFD_CMD_DISABLE_AUDIO,
+    WFD_CMD_GET_RTP_ORDER_EN,
+    WFD_CMD_SET_RTP_ORDER_EN,
 } wfd_cmd_e;
 
 typedef struct wfd_configuration
@@ -106,22 +108,22 @@ typedef struct wfd_configuration
 
 typedef struct
 {
-    int (*_video_open)();
-    void (*_video_close)();
+    int (*_video_open)(void);
+    void (*_video_close)(void);
     int (*_video_feed)(unsigned char *data, unsigned int len,
                        unsigned int pts, int last_slice,
                        unsigned int width, unsigned int height);
     int (*_audio_open)(int codec_tag);
-    void (*_audio_close)();
+    void (*_audio_close)(void);
     int (*_audio_feed)(int type, unsigned char *buf, int length, unsigned int pts);
     void (*_av_state)(char *s);
-    void (*_av_reset)();
+    void (*_av_reset)(void);
 } miracast_av_func_t;
 
 typedef struct
 {
-	void* (*dsc_aes_ctr_open)();
-	void* (*dsc_aes_cbc_open)();
+	void* (*dsc_aes_ctr_open)(int mmap_size);
+	void* (*dsc_aes_cbc_open)(int mmap_size);
 	void (*dsc_ctx_destroy)(void*ctx);
 	int (*dsc_aes_decrypt)(void* ctx, unsigned char *key, unsigned char* iv, unsigned char *input, unsigned char *output, int size);
 	int (*dsc_aes_encrypt)(void* ctx, unsigned char *key, unsigned char* iv, unsigned char *input, unsigned char *output, int size);
@@ -135,7 +137,7 @@ typedef struct
 #define CODEC_ID_PCM_S16BE 0x10001
 #endif
 
-typedef unsigned int (*wfd_fn)();
+typedef unsigned int (*wfd_fn)(void);
 typedef unsigned int (*wfd_fn_event)(const wfd_status_t event, const void* data);
 
 typedef struct _wfd_manage_func_t {
@@ -153,14 +155,14 @@ typedef struct _wfd_manage_func_t {
  *
  * @return The return value 0: success; -1: failed.
  */
-int miracast_start();
+int miracast_start(void);
 
 /**
  * It stops the Miracast session
  * 
  * @return The return value 0: success; -1: failed.
  */
-int miracast_stop();
+int miracast_stop(void);
 
 /**
  * It's a function reg a av player callback
@@ -172,13 +174,13 @@ int miracast_stop();
 void miracast_ioctl(wfd_cmd_e cmd, unsigned long para1, unsigned long para2);
 
 int miracast_update_keyset(void* data);
-void miracast_disconnect();
-int miracast_is_player_started();
+void miracast_disconnect(void);
+int miracast_is_player_started(void);
 void miracast_enable_p2p(int stat, int channel);
 
 void miracast_set_resolution(wfd_resolution_t res);
 
-wfd_resolution_t miracast_get_resolution();
+wfd_resolution_t miracast_get_resolution(void);
 
 void miracast_update_p2p_status(E_P2P_STATE status);
 
@@ -187,15 +189,17 @@ void miracast_update_p2p_status(E_P2P_STATE status);
  * 
  * @return The version string of miracast
  */
-char* miracast_get_version();
+char* miracast_get_version(void);
 
 /**
  *  set miracast log leve
  * 
  * @param level, default: LL_NOTICE.
  */
-int miracast_set_log_leve(int level);
+int miracast_set_log_level(int level);
 
-void miracast_player_show_state();
+int miracast_get_log_level(void);
+
+void miracast_player_show_state(void);
 
 #endif

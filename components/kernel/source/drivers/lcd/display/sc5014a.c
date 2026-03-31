@@ -349,8 +349,7 @@ static int sc5014a_probe(const char *node)
 	sc5014adev.lcd_stbyb_polar=0;
 	#endif
 	printf("sc5014adev.lcd_stbyb_num = %d %d %d %d\n",sc5014adev.spi_clk_num,sc5014adev.spi_mosi_num,sc5014adev.spi_cs_num,sc5014adev.lcd_stbyb_num);
-	int default_off = 0;
-	fdt_get_property_u_32_index(np, "default-off", 	0, &default_off);
+	int default_off = fdt_property_read_bool(np, "default-off");
 	if(default_off ==0)
 		sc5014a_display_init();
 

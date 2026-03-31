@@ -28,9 +28,12 @@ obj-$(CONFIG_CMDS_PWM) += pwm/
 obj-$(CONFIG_CMDS_FB_TEST) += fb/
 obj-$(CONFIG_CMDS_WIFI) += wifi/
 obj-$(CONFIG_CMD_NETWORK) += network/
-obj-$(CONFIG_CMD_MIPI_TEST) += mipi/
 obj-$(CONFIG_CMD_UNITY) += unity/
 obj-$(CONFIG_CMD_UART) += uart/
+obj-$(CONFIG_CMDS_RTC_AT8536) += rtc/
+obj-$(CONFIG_CMD_LCD_TEST) += lcd/
+obj-$(CONFIG_CMDS_RTWPRIV) += rtwpriv/
+obj-$(CONFIG_CMDS_IPERF3) += iperf3/
 
 TARGETS := libcmds.a
 

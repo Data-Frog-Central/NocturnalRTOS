@@ -206,7 +206,7 @@ struct dfr_req {
 
 #define DEBOUNCE_MAX 10
 #define DEBOUNCE_REP 5
-#define DEBOUNCE_TOL 10
+#define DEBOUNCE_TOL 100
 #define PENIRQ_RECHECK_DELAY_USECS 1
 #define PRESS_MAX 255
 

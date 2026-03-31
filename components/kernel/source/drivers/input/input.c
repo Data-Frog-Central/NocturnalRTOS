@@ -55,7 +55,9 @@ static ssize_t input_read(struct file *filep, char *buffer, size_t buflen)
 	struct inode *inode = filep->f_inode;
 	struct input_dev *dev = inode->i_private;
 
-	if (kfifo_out(&dev->kfifo, (struct input_event *)buffer, 1))
+	spinlock_t lock;
+
+	if (kfifo_out_spinlocked(&dev->kfifo, (struct input_event *)buffer, 1, &lock))
 		return sizeof(struct input_event);
 	else
 		return 0;
@@ -169,8 +171,9 @@ static void input_pass_event(struct input_dev *dev, unsigned int type, unsigned 
 		 int value)
 {
 	struct input_event event = { type, code, value };
+	spinlock_t lock;
 
-	kfifo_put(&dev->kfifo, event);
+	kfifo_in_spinlocked(&dev->kfifo, &event, 1, &lock);
 	wake_up(&dev->wait);
 }
 
@@ -178,6 +181,7 @@ static void input_pass_events(struct input_dev *dev, struct input_event *vals, u
 {
 	unsigned int i;
 	struct input_event *v = vals;
+	spinlock_t lock;
 
 	if(!count)
 		return;
@@ -186,7 +190,8 @@ static void input_pass_events(struct input_dev *dev, struct input_event *vals, u
 		v = vals + i;
 		// printf("\t==> send [%u] type:%2.2x, code:%2.2x, val:%2.2lx\n", 
 		// 		i, v->type, v->code, v->value);
-		kfifo_put(&dev->kfifo, *v);
+		//kfifo_put(&dev->kfifo, *v);
+		kfifo_in_spinlocked(&dev->kfifo, v, 1, &lock);
 	}
 	wake_up(&dev->wait);
 
@@ -376,7 +381,7 @@ void input_unregister_device(struct input_dev *dev)
 	memset(path, 0, sizeof(path));
 	sprintf(path, "/dev/input/event%d", id);
 	unregister_driver(path);
-	id_bitmap |= ~BIT(id);
+	id_bitmap |= BIT(id);
 }
 
 void input_unregister_mouse_device(struct input_dev *dev)

@@ -51,6 +51,16 @@ __attribute__((weak)) int setup_usbd_hid(int argc, char **argv)
     return -1;
 }
 
+__attribute__((weak)) int setup_usbd_uac1(int argc, char **argv)
+{
+    return -1;
+}
+
+__attribute__((weak)) int setup_usbd_uvc(int argc, char **argv)
+{
+    return -1;
+}
+
 __attribute__((weak)) int hid_gadget_test(int argc, char **argv)
 {
     return -1;
@@ -75,6 +85,18 @@ __attribute__((weak)) int hid_dev_demo_main(int argc, char **argv)
 {
     return -1;
 }
+__attribute__((weak)) int hid_dev_demo2_main(int argc, char **argv)
+{
+    return -1;
+}
+
+__attribute__((weak)) int usb_serial_tty_console(int argc, char **argv)
+{
+    return -1;
+}
+
+
+
 
 extern int libusb_helloworld_demo(int argc, char **argv);
 extern int testlibusb(int argc, char **argv);

@@ -87,6 +87,10 @@ int set_flip_mode(flip_mode_e mode)
     get_rotate_by_flip_mode(mode, &rotate , &h_flip , &v_flip);
     api_transfer_rotate_mode_for_screen(init_rotate , init_h_flip , init_v_flip ,
                                         &rotate , &h_flip , &v_flip , &fbdev_rotate);
+
+    // due to fbdev_flush do not work in lvgl top layer,so invalidate it by user
+    lv_obj_invalidate(lv_layer_top());
+
     fbdev_set_rotate(fbdev_rotate , h_flip , v_flip);
     if(player != NULL)
     {

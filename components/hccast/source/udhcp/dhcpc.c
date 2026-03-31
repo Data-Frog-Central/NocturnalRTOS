@@ -63,6 +63,7 @@ static int dhcpc_fd = -1;
 #define LISTEN_KERNEL 1
 #define LISTEN_RAW 2
 static int listen_mode;
+static pthread_mutex_t g_udhcpc_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 #if RUN_SCRIPT
     #define DEFAULT_SCRIPT  "/usr/share/udhcpc/default.script"
@@ -484,7 +485,7 @@ static void *udhcpc_main(void *arg)
 
     if (!client_config->clientid)
     {
-        client_config->clientid = xmalloc(6 + 3);
+        client_config->clientid = malloc(6 + 3);
         client_config->clientid[OPT_CODE]   = DHCP_CLIENT_ID;
         client_config->clientid[OPT_LEN]    = 7;
         client_config->clientid[OPT_DATA]   = 1;
@@ -898,11 +899,16 @@ EXIT1:
 EXIT2:
     {
         conf->run = 0;
-        conf->pid = 0;
+        //conf->pid = 0;
     }
 
     if (client_config)
     {
+        if (client_config->clientid)
+        {
+            free(client_config->clientid);
+        }
+
         free(client_config);
         client_config = NULL;
     }
@@ -928,27 +934,29 @@ EXIT2:
     return NULL;
 }
 
-pthread_mutex_t g_udhcpc_mutex = PTHREAD_MUTEX_INITIALIZER;
-
 int udhcpc_start(udhcp_conf_t *conf)
 {
+    int ret = -1;
     pthread_mutex_lock(&g_udhcpc_mutex);
-    if (conf && 0 == conf->run && 0 == conf->pid)
+    if (conf && 0 == conf->run)
     {
         conf->run = 1;
-
+        pthread_attr_t attr;
+        pthread_attr_init(&attr);
+        pthread_attr_setstacksize(&attr, 0x4000);
         if (pthread_create((pthread_t *)&conf->pid, NULL, udhcpc_main, conf) != 0)
         {
             perror("udhcpd_main create failed!");
-            pthread_mutex_unlock(&g_udhcpc_mutex);
-            return -1;
+            pthread_attr_destroy(&attr);
+            conf->run = 0;
+            goto EXIT;
         }
-        pthread_detach(conf->pid);
-
-        pthread_mutex_unlock(&g_udhcpc_mutex);
-        return 0;
+        //pthread_detach(conf->pid);
+        ret = 0;
+        pthread_attr_destroy(&attr);
     }
 
+EXIT:
     pthread_mutex_unlock(&g_udhcpc_mutex);
     return -1;
 }
@@ -956,16 +964,18 @@ int udhcpc_start(udhcp_conf_t *conf)
 int udhcpc_stop(udhcp_conf_t *conf)
 {
     pthread_mutex_lock(&g_udhcpc_mutex);
-    if (conf && conf->run && conf->pid)
+    if (conf && conf->run)
     {
         conf->run = 0;
-        conf->pid = 0;
 #ifdef __linux__
         signal_handler(conf->stop_pipe, SIGUSR1);
 #else
         udhcpc_posix_send_signal(conf);
 #endif
         pthread_mutex_unlock(&g_udhcpc_mutex);
+
+        pthread_join(conf->pid, NULL);
+        conf->pid = 0;
         return 0;
     }
 

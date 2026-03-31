@@ -8,6 +8,6 @@ sound_test-y += sound_test.o i2so_test.o \
 	pcm_rec_play.o i2s_rec_play.o \
 	spectrum_test.o aec_test.o \
 	aec_main.o alac_dec.o \
-	dsp_test.o
+	dsp_test.o pcm_dec.o
 
 obj-y += sound_test.o

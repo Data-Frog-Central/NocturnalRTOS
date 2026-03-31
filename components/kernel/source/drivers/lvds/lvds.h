@@ -44,6 +44,7 @@ extern "C" {
 #define LVDS_REG_PHY_0x5                                                                (0x5)
 #define LVDS_REG_PHY_0x08                                                               (0x8)
 #define LVDS_REG_PHY_0xc                                                                (0xc)
+#define LVDS_REG_PHY_0x0E																(0xe)
 
 #define LVDS_REG_PHY_DIG_01                                                             (0x21)
 
@@ -61,7 +62,7 @@ typedef enum _E_VIDEO_2_SRC_SEL_ {
 	E_SRC_2_SEL_FXDE_LOW_TO_HIGH,
 	E_SRC_2_SEL_DE4K_LOW_TO_HIGH,
 	E_SRC_2_SEL_HDMI_RX_LOW_TO_HIGH,
-	E_SRC_2_SEL_FXDE__,
+	E_SRC_2_SEL_PQ_LOW_TO_HIGH,
 } E_VIDEO_2_SRC_SEL;
 
 typedef struct _T_LVDS_CFG_ {
@@ -77,6 +78,8 @@ typedef struct _T_LVDS_CFG_ {
 	uint32_t vsync_polarity;
 	uint32_t even_odd_adjust_mode;
 	uint32_t even_odd_init_value;
+	uint32_t chx_swap_ctrl;
+	uint32_t drive_strength;
 	E_VIDEO_SRC_SEL src_sel;
 } T_LVDS_CFG;
 

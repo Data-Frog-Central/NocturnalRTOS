@@ -889,4 +889,13 @@ void ff_format_set_url(AVFormatContext *s, char *url);
 
 void avpriv_register_devices(const AVOutputFormat * const o[], const AVInputFormat * const i[]);
 
+typedef enum character_encoding {
+    CHAR_ENC_ISO_8859_1 = 1,
+    CHAR_ENC_UTF_8,
+    CHAR_ENC_UTF_16_LE,
+    CHAR_ENC_UTF_16_BE,
+} character_encoding;
+
+void ff_trans_char_enc_to_utf8(character_encoding type, char *src, char *dst, int size);
+int ff_trans_utf16_to_utf8(AVIOContext *src_pb, AVIOContext **dst_pb);
 #endif /* AVFORMAT_INTERNAL_H */

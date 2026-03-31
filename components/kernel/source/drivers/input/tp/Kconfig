@@ -2,11 +2,14 @@ config CONFIG_HC_XPT2046
 	bool "xpt2046"
 	default n
 
-
 config CONFIG_HC_HY46XX
 	bool "hy46xx"
 	default n
 
 config CONFIG_HC_ILITEK
 	bool "ilitek"
+	default n
+
+config CONFIG_HC_BLT1680
+	bool "blt1680"
 	default n

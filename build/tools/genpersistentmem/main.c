@@ -266,12 +266,13 @@ static int node_put(struct persistentmem_node *node)
 
 static void print_usage(const char *prog)
 {
-	printf("Usage: %s [-vpo]\n", prog);
-	puts("  -v --version  firmware version\n"
-	     "  -p --product  product\n"
-	     "  -V --volume   volume\n"
-	     "  -t --tvtype   tvtype\n"
-	     "  -o --output   output file\n");
+	printf("Usage: %s [-vpVtfo]\n", prog);
+	puts("  -v --version      firmware version\n"
+	     "  -p --product      product\n"
+	     "  -V --volume       volume\n"
+	     "  -t --tvtype       tvtype\n"
+	     "  -f --filesystem   persistentmem based on filesystem\n"
+	     "  -o --output       output file\n");
 }
 
 int main(int argc, char *argv[])
@@ -285,6 +286,7 @@ int main(int argc, char *argv[])
 	int size;
 	const char *fout = "persistentmem.bin";
 	FILE *fpout;
+	int is_fs = 0;
 
 	gsize = sizeof(struct vnode);
 	gbuf = malloc(gsize);
@@ -304,12 +306,13 @@ int main(int argc, char *argv[])
 			{ "product", 1, 0, 'p' },
 			{ "volume", 1, 0, 'V' },
 			{ "tvtype", 1, 0, 't' },
+			{ "filesystem", 0, 0, 'f' },
 			{ "output", 1, 0, 'o' },
 			{ NULL, 0, 0, 0 },
 		};
 		int c;
 
-		c = getopt_long(argc, argv, "v:p:V:t:o:", lopts, NULL);
+		c = getopt_long(argc, argv, "v:p:V:t:o:f", lopts, NULL);
 
 		if (c == -1)
 			break;
@@ -327,6 +330,9 @@ int main(int argc, char *argv[])
 		case 'p':
 			memset(sysdata.product_id, 0, sizeof(sysdata.product_id));
 			strncpy(sysdata.product_id, optarg, sizeof(sysdata.product_id));
+			break;
+		case 'f':
+			is_fs = 1;
 			break;
 		case 'o':
 			fout = optarg;
@@ -397,7 +403,7 @@ int main(int argc, char *argv[])
 	printf("\n");
 #endif
 
-	fpout = fopen(fout, "wb+");
+	fpout = fopen(fout, "wb");
 	if (fpout == NULL) {
 		printf("open %s failed\n", fout);
 		free(gbuf);
@@ -405,7 +411,11 @@ int main(int argc, char *argv[])
 		return -EIO;
 	}
 
-	fwrite(buf, 1, size, fpout);
+	if (is_fs) {
+		fwrite(gbuf, 1, gsize, fpout);
+	} else {
+		fwrite(buf, 1, size, fpout);
+	}
 	fflush(fpout);
 	fclose(fpout);
 	return 0;

@@ -416,18 +416,10 @@ static int hc_spim_probe(const char *node)
 
 	fdt_get_property_u_32_index(np, "cs-pin", 0, (u32 *)&priv->cs_padctl);
 
-	priv->clk = 8;
 	fdt_get_property_u_32_index(np, "clk_ratio", 0, (u32 *)&priv->clk);
-	priv->clk = 8;
-
-	priv->dma = 0;
 	fdt_get_property_u_32_index(np, "dma-mode", 0, (u32 *)&priv->dma);
-	priv->dma = 0;
-
-	priv->mode = 0;
 	fdt_get_property_u_32_index(np, "transfer-mode", 0, (u32 *)&priv->mode);
-	priv->mode = 0;
-
+	
 	if (priv->dma) {
 		init_completion(&priv->completion);
 

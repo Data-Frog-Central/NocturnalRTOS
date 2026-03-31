@@ -130,6 +130,14 @@ typedef enum DIS_VIDEO_ENHANCE {
 	DIS_VIDEO_ENHANCE_GAIN_R        = (1 << 5),    // Value[0, 100], default 50
 	DIS_VIDEO_ENHANCE_GAIN_G        = (1 << 6),    // Value[0, 100], default 50
 	DIS_VIDEO_ENHANCE_GAIN_B        = (1 << 7),    // Value[0, 100], default 50
+	DIS_VIDEO_ENHANCE_CONT_PIVOT = (1 << 8),
+	DIS_VIDEO_ENHANCE_CH_PIVOT_R = (1 << 9),
+	DIS_VIDEO_ENHANCE_CH_PIVOT_G = (1 << 10),
+	DIS_VIDEO_ENHANCE_CH_PIVOT_B = (1 << 11),
+	DIS_VIDEO_ENHANCE_CH_BLK_LVL_R = (1 << 12),
+	DIS_VIDEO_ENHANCE_CH_BLK_LVL_G = (1 << 13),
+	DIS_VIDEO_ENHANCE_CH_BLK_LVL_B = (1 << 14),
+	DIS_VIDEO_EHNANCE_FACTORY    = (1 << 15),   // set: factory (consumer invisible) setting,
 } dis_video_enhance_e;
 
 typedef struct video_enhance_param {
@@ -226,6 +234,8 @@ typedef struct dis_rgb_timing_param {
 	uint32_t h_display_len;
 	uint32_t v_display_len;
 	bool active_polarity;
+
+	uint32_t dpll_clock_reg_value;
 } dis_rgb_timing_param_t;
 
 typedef struct dis_rgb_param {
@@ -329,6 +339,47 @@ typedef struct dis_suspend_resume {
 	enum DIS_TYPE distype;
 } dis_suspend_resume_t;
 
+#define DIS_HIST_VEC_N  5
+#define DIS_Q_FROM_FLOAT(x, qp) (int32_t)((x) * (1 << (qp)) + .5)
+#define DIS_DENH_HIST_VEC_QP	8
+#define DIS_DENH_HIST_VEC_FROM_FLOAT(a, b, c, d, e) \
+	{ DIS_Q_FROM_FLOAT(a, DIS_DENH_HIST_VEC_QP), \
+	  DIS_Q_FROM_FLOAT(b, DIS_DENH_HIST_VEC_QP), \
+	  DIS_Q_FROM_FLOAT(c, DIS_DENH_HIST_VEC_QP), \
+	  DIS_Q_FROM_FLOAT(d, DIS_DENH_HIST_VEC_QP), \
+	  DIS_Q_FROM_FLOAT(e, DIS_DENH_HIST_VEC_QP), }
+#define DIS_Q8P8_FROM_FLOAT(x) (int16_t)((x) * (1 << 8) + .5)
+#define DIS_DENH_CONTRAST(x) DIS_Q8P8_FROM_FLOAT(x)
+#define DIS_DENH_CONT_SCALE(x) DIS_Q8P8_FROM_FLOAT(x)
+typedef struct dis_denh_user_scene {
+	int16_t vec[DIS_HIST_VEC_N];
+	int16_t contrast;
+	int16_t pivot;
+	int16_t blk_level;
+	char desc[32];
+} dis_denh_user_scene_t;
+#define DIS_DENH_MAX_N_SCENES  32
+typedef struct dis_dyn_enh_user_scenes {
+	enum DIS_TYPE distype;
+	unsigned n_scenes;
+	int16_t contrast_scale;
+	int16_t hist_bounds[DIS_HIST_VEC_N];
+	struct dis_denh_user_scene scenes[DIS_DENH_MAX_N_SCENES];
+} dis_dyn_enh_user_scenes_t;
+typedef struct dis_dyn_enh_onoff {
+	enum DIS_TYPE distype;
+	int onoff;
+} dis_dyn_enh_onoff_t;
+
+#ifdef __HCRTOS__
+typedef void (*callback_dis_vblank_t)(unsigned long param);
+typedef struct dis_vblank_cb_param {
+	enum DIS_TYPE distype;
+	unsigned long param;
+	callback_dis_vblank_t cb;
+} dis_vblank_cb_param_t;
+#endif
+
 #define DIS_SET_TVSYS			_IOW(DIS_IOCBASE, 0, struct dis_tvsys)
 #define DIS_GET_TVSYS			_IOWR(DIS_IOCBASE, 1, struct dis_tvsys)
 #define DIS_SET_ZOOM			_IOW(DIS_IOCBASE, 2, struct dis_zoom)
@@ -363,6 +414,14 @@ typedef struct dis_suspend_resume {
 #define DIS_SET_SUSPEND			_IOW (DIS_IOCBASE, 27, struct dis_suspend_resume)
 #define DIS_SET_RESUME			_IOW (DIS_IOCBASE, 28, struct dis_suspend_resume)
 #define DIS_GET_KEYSTONE_PARAM		_IOWR(DIS_IOCBASE, 29, struct dis_keystone_param)
+
+#define DIS_DENH_SET_USER_SCENES	_IOW (DIS_IOCBASE, 30, struct dis_dyn_enh_user_scenes)
+#define DIS_DENH_RESTART		_IO (DIS_IOCBASE, 31) //<! enum DIS_TYPE for the argument
+#define DIS_DENH_SET_ONOFF		_IOW (DIS_IOCBASE, 32, struct dis_dyn_enh_onoff)
+#define DIS_DENH_GET_ONOFF		_IOR (DIS_IOCBASE, 33, struct dis_dyn_enh_onoff)
+#ifdef __HCRTOS__
+#define DIS_SET_VBLANK_CB		_IOW (DIS_IOCBASE, 34, struct dis_vblank_cb_param)
+#endif
 
 #define DIS_NOTIFY_VBLANK		_IO (DIS_IOCBASE, 50)
 #define DIS_NOTIFY_MIRACAST_VSRCEEN	_IO (DIS_IOCBASE, 51)

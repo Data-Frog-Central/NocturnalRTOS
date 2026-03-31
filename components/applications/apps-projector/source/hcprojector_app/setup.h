@@ -17,7 +17,8 @@
 
 #define HEAD_H 30
 #define NEW_WIDGET_LINE_NUM 3
-
+#define VIDEO_DELAY_MIN_V 20
+#define VIDEO_DELAY_MAX_V 2000
 
 enum  tab_id {
     TAB_PICTURE = 1,
@@ -53,11 +54,11 @@ typedef struct mode_items_
 
 typedef struct {
     //const char* name;
-    uint8_t name;
+    uint16_t name;
     union {
         //const char* v1;
         int16_t v1;
-        int8_t v2;
+        int16_t v2;
     } value;
     
     
@@ -176,7 +177,11 @@ void focus_list_init(lv_obj_t *parent);
 void turn_to_setup_root(void);
 void turn_to_main_scr();
 int set_color_temperature(int mode);
-
+void video_delay_ms_turn_up();
+void video_delay_ms_turn_down();
+void video_delay_ms_zero();
+void video_delay_ms_set();
+void del_msg_box();
 lv_obj_t* create_widget_head(lv_obj_t* parent, int title, int h);
 void create_widget_foot(lv_obj_t* parent, int h, void* user_data);
 lv_obj_t *create_widget_btnmatrix(lv_obj_t *parent,int w, int h,const int* btn_map, int len);
@@ -186,7 +191,15 @@ lv_obj_t* create_list_obj1(lv_obj_t *parent, int w, int h);
 lv_obj_t* create_list_sub_text_obj3 (lv_obj_t *parent,int w, int h, char* str1);
 lv_obj_t* create_list_sub_text_obj1(lv_obj_t *parent,int w, int h, int str1, int font_id);
 lv_obj_t* create_list_sub_text_obj4(lv_obj_t *parent, int w, int h, int str1);
+
+#ifdef BLUETOOTH_SUPPORT
 void del_bt_wait_anim();
+void setup_bt_control(void *arg1, void *arg2);
+bool app_bt_is_connecting();
+bool app_bt_is_scanning();
+void bt_need_reset_set(bool b);
+#endif
+
 lv_obj_t* create_message_box(char* str);
 lv_obj_t* create_message_box1(int msg_id, int btn_id1, int btn_id2, lv_event_cb_t cb,int w, int h);
 lv_obj_t* loader_with_arc(char* str, lv_anim_exec_xcb_t exec_cb);
@@ -199,7 +212,11 @@ extern int get_cur_osd_h();
 extern int get_cur_osd_v();
 extern int bt_event1(unsigned long event, unsigned long param);
 extern bool app_bt_is_connected();
+int set_auto_sleep(int mode);
+void autosleep_reset_timer(void);
 #ifdef USB_AUTO_UPGRADE
-int sys_upg_usb_check(uint32_t timeout);
+int sys_upg_usb_check_init();
+int sys_upg_usb_check_notify();
+//int sys_upg_usb_check(uint32_t timeout);
 #endif
 #endif //LVGL_SETUP_H

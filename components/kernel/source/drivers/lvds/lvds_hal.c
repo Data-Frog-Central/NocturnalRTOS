@@ -19,6 +19,7 @@
 #define p_lvds_reg_ch0_03  (uint8_t *)(LVDS_REG_PHY_CH0_BASE + 0X3)
 #define p_lvds_reg_ch0_0d  (uint8_t *)(LVDS_REG_PHY_CH0_BASE + 0Xd)
 #define p_lvds_reg_ch0_08  (uint8_t *)(LVDS_REG_PHY_CH0_BASE + LVDS_REG_PHY_0x08)
+#define p_lvds_reg_ch0_0e  (uint8_t *)(LVDS_REG_PHY_CH0_BASE + LVDS_REG_PHY_0x0E)
 
 #define p_lvds_reg_ch1_mode_en  (T_LVDS_MODE_EN *)(LVDS_REG_PHY_CH1_BASE + LVDS_REG_PHY_0x0)
 #define p_lvds_reg_ch1_lvds_lane_clk_bias_en  (T_LVDS_LANE_CLK_BIAS_EN *)(LVDS_REG_PHY_CH1_BASE + LVDS_REG_PHY_0x1)
@@ -30,6 +31,7 @@
 #define p_lvds_reg_ch1_03  (uint8_t *)(LVDS_REG_PHY_CH1_BASE + 0X3)
 #define p_lvds_reg_ch1_0d  (uint8_t *)(LVDS_REG_PHY_CH1_BASE + 0Xd)
 #define p_lvds_reg_ch1_08  (uint8_t *)(LVDS_REG_PHY_CH1_BASE + LVDS_REG_PHY_0x08)
+#define p_lvds_reg_ch1_0e  (uint8_t *)(LVDS_REG_PHY_CH1_BASE + LVDS_REG_PHY_0x0E)
 
 /*#define SYS_RST_CTRL_VAL (*(volatile uint32_t *)(0xB8800080))*/
 /*#define SYS_RST1_CTRL_VAL (*(volatile uint32_t *)(0xB8800084))*/
@@ -56,6 +58,7 @@ typedef struct _T_LVDS_PHY_HAL_ {
 	volatile uint8_t *reg_03;
 	volatile uint8_t *reg_0d;
 	volatile uint8_t *reg_08;
+	volatile uint8_t *reg_0e;
 } T_LVDS_PHY_HAL;
 
 typedef struct _T_LVDS_HAL_ {
@@ -95,10 +98,11 @@ void lvds_hal_init(void *reg_base, void *sys_base)
 	lvds_hal_instant.reg_phy[0].reg_lvds_lane_clk_ttl_mode_en = p_lvds_reg_ch0_lvds_lane_clk_ttl_mode_en;
 	lvds_hal_instant.reg_phy[0].reg_lvds_lane_clk_ttl_data_trans_en = p_lvds_reg_ch0_lvds_lane_clk_data_trans_en;
 	lvds_hal_instant.reg_phy[0].reg_pll_en = p_lvds_reg_ch0_pll_en;
-	lvds_hal_instant.reg_phy[0].reg_phy_digital_en = p_lvds_reg_ch0_phy_digital_en; ;
+	lvds_hal_instant.reg_phy[0].reg_phy_digital_en = p_lvds_reg_ch0_phy_digital_en;
 	lvds_hal_instant.reg_phy[0].reg_03 = p_lvds_reg_ch0_03;
 	lvds_hal_instant.reg_phy[0].reg_0d = p_lvds_reg_ch0_0d;
 	lvds_hal_instant.reg_phy[0].reg_08 = p_lvds_reg_ch0_08;
+	lvds_hal_instant.reg_phy[0].reg_0e = p_lvds_reg_ch0_0e;
 
 	lvds_hal_instant.reg_phy[1].reg_mode_en = p_lvds_reg_ch1_mode_en;
 	lvds_hal_instant.reg_phy[1].reg_lvds_lane_clk_bias_en = p_lvds_reg_ch1_lvds_lane_clk_bias_en;
@@ -110,6 +114,7 @@ void lvds_hal_init(void *reg_base, void *sys_base)
 	lvds_hal_instant.reg_phy[1].reg_03 = p_lvds_reg_ch1_03;
 	lvds_hal_instant.reg_phy[1].reg_0d = p_lvds_reg_ch1_0d;
 	lvds_hal_instant.reg_phy[1].reg_08 = p_lvds_reg_ch1_08;
+	lvds_hal_instant.reg_phy[1].reg_0e = p_lvds_reg_ch1_0e;
 
 	lvds_hal_instant.lvds_reg_phy_sys = sys_base + LVDS_REG_PHY_SYS;
 	lvds_hal_instant.sys_rst1_ctrl_val = sys_base + SYS_RST1_CTRL_VAL;
@@ -251,6 +256,16 @@ uint32_t lvds_hal_get_even_odd_init_value(void)
 	return lvds_hal_instant.reg_cntr->even_odd_init_value;
 }
 
+void lvds_hal_set_chx_swap_ctrl(uint32_t int_value)
+{
+	lvds_hal_instant.reg_cntr->chx_swap_ctrl = int_value;
+}
+
+uint32_t lvds_hal_get_chx_swap_ctrl(void)
+{
+	return lvds_hal_instant.reg_cntr->chx_swap_ctrl;
+}
+
 void lvds_hal_set_lvds_mode_en(uint32_t ch, unsigned char b_enable)
 {
 	lvds_hal_instant.reg_phy[ch].reg_mode_en->lvds_mode_en = b_enable;
@@ -300,6 +315,17 @@ void lvds_hal_set_lane_clk_lvds_mode_en(uint32_t ch, unsigned char b_enable)
 uint32_t lvds_hal_get_lane_clk_lvds_mode_en(uint32_t ch)
 {
 	return lvds_hal_instant.reg_phy[ch].reg_lvds_lane_clk_lvds_mode_en->lane_clk_lvds_mode_en;
+}
+
+void lvds_hal_set_lane_clk_bias_en_reserve(uint32_t ch, unsigned char val)
+
+{
+	lvds_hal_instant.reg_phy[ch].reg_lvds_lane_clk_bias_en->reserve = val;
+}
+
+uint8_t lvds_hal_get_lane_clk_bias_en_reserve(uint32_t ch)
+{
+	return lvds_hal_instant.reg_phy[ch].reg_lvds_lane_clk_bias_en->reserve;
 }
 
 void lvds_hal_set_lane_clk_ttl_mode_en(uint32_t ch, unsigned char b_enable)
@@ -381,6 +407,17 @@ void lvds_hal_set_reg08(uint32_t ch, uint8_t val)
 uint32_t lvds_hal_get_reg08(uint32_t ch)
 {
 	return *(lvds_hal_instant.reg_phy[ch].reg_08);
+}
+
+void lvds_hal_set_reg0e(uint32_t ch, uint8_t val)
+{
+	*(lvds_hal_instant.reg_phy[ch].reg_0e) = val;
+}
+
+
+uint32_t lvds_hal_get_reg0e(uint32_t ch)
+{
+	return *(lvds_hal_instant.reg_phy[ch].reg_0e);
 }
 
 void lvds_hal_power_on(unsigned char b_on)
@@ -501,4 +538,48 @@ void lvds_hal_set_trigger_en(void)
 uint32_t lvds_hal_get_trigger_en(void)
 {
 	return lvds_hal_instant.reg_trigger->trigger_en;
+}
+
+void lvds_lld_phy_enhance_driving_ability(uint8_t ch, lvds_lld_phy_drive_strength_e strength)
+{
+	uint8_t val;
+
+	val = lvds_hal_get_reg08(ch);
+	if(strength == LVDS_LLD_PHY_DRIVE_STRENGTH_WEAKEST)
+	{
+		val &= 0xf3;
+		val |= 00 << 2;
+	}
+	else if(strength == LVDS_LLD_PHY_DRIVE_STRENGTH_NORMAL)
+	{
+		val &= 0xf3;
+		val |= 1 << 2;
+	}
+	else if(strength == LVDS_LLD_PHY_DRIVE_STRENGTH_STRONGEST)
+	{
+		val &= 0xf3;
+		val |= 0x3 << 2;
+	}
+	lvds_hal_set_reg08(ch, val);
+}
+
+void lvds_open_phy_clk(void)
+{
+	REG32_CLR_BIT(0xb8800440, 0x1 << 2);// open lvds phy
+}
+
+void lvds_ttl_enhance_driving_ability(uint8_t ch, lvds_ttl_drive_strength_e strength)
+{
+	uint8_t val = 0;
+
+	if(strength == LVDS_TTL_DRIVE_STRENGTH_WEAKEST)
+		val = 0x88;
+	else if(strength == LVDS_TTL_DRIVE_STRENGTH_NORMAL)
+		val = 0xcc;
+	else if(strength == LVDS_TTL_DRIVE_STRENGTH_ENHANCE)
+		val = 0xee;
+	else if(strength == LVDS_TTL_DRIVE_STRENGTH_STRONGEST)
+		val = 0xff;
+
+	lvds_hal_set_reg0e(ch, val);
 }

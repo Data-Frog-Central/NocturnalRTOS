@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <unistd.h>
 #include <kernel/module.h>
 #include <kernel/completion.h>
 #include <kernel/drivers/spi.h>
@@ -77,7 +78,7 @@ extern unsigned long SF_INTR;
 #define DMA_TRANS_TIMEOUT			msecs_to_jiffies(10000)
 
 
-static struct mutex            sf_lock;
+struct mutex            sf_lock;
 
 struct hc_spi {
 	int			irq;
@@ -103,9 +104,50 @@ enum spi_dma_dir {
 	SPI_DMA_RX
 };
 
+static int hc_spi_set_clk_div(struct hc_spi *hs, u32 rate)
+{
+	int i = 0;
+	uint32_t div = 0;
+	uint32_t clk_reg = 0;
+	uint32_t tmp1 = HC_SPI_CLK, tmp2 = HC_SPI_CLK;
+
+#ifdef CONFIG_SOC_HC16XX
+	if (rate > 54 * 1000 * 1000) {
+		taskENTER_CRITICAL();
+		clk_reg = REG32_READ((uint32_t)&SYSIO0 + 0x7c);
+		clk_reg &= 0xffff3fff;
+		clk_reg |= 0x0000b000;
+		REG32_WRITE((uint32_t)&SYSIO0 + 0x7c, clk_reg);
+		taskEXIT_CRITICAL();
+		return 0;
+	}
+#endif
+
+#ifdef CONFIG_SOC_HC15XX
+	if (hs->dma_mode)
+		i = 1;
+#endif
+	for (; i < 0x10; i++) {
+		tmp1 = HC_SPI_CLK / (2 * i + 2);
+		if (abs(tmp1 - rate) < tmp2) {
+			tmp2 = abs(tmp1 - rate);
+			div = i;
+		}
+	}
+
+#ifdef CONFIG_SOC_HC16XX
+	taskENTER_CRITICAL();
+	clk_reg = REG32_READ((uint32_t)&SYSIO0 + 0x7c);
+	clk_reg &= 0xffff3fff;
+	REG32_WRITE((uint32_t)&SYSIO0 + 0x7c, clk_reg);
+	taskEXIT_CRITICAL();
+#endif
+	return div;
+}
+
 static void hc_spi_set_clk_rate(struct hc_spi *hs, u32 rate)
 {
-	u32 div = DIV_ROUND_UP((HC_SPI_CLK / 2), rate) - 1;
+	u32 div = hc_spi_set_clk_div(hs, rate);
 
 	writeb(SFLASH_CONF3_DEFCONFIG | (div & F_SF_009B_CLK_DIV_M),
 	       hs->iobase + R_SF_CONF3);
@@ -453,8 +495,6 @@ static int hc_spi_transfer_one(struct spi_master *master,
 
 	hs->spi = spi;
 
-	mutex_lock(&sf_lock);
-
 	speed_hz = spi->max_speed_hz;
 	if (xfer->speed_hz)
 		speed_hz = xfer->speed_hz;
@@ -474,8 +514,6 @@ static int hc_spi_transfer_one(struct spi_master *master,
 	if (xfer->rx_buf != NULL && xfer->len != 0) {
 		hc_spi_transfer_rx(hs, xfer->rx_buf, xfer->len);
 	}
-
-	mutex_unlock(&sf_lock);
 
 	return 0;
 }
@@ -536,6 +574,13 @@ static void hc_spi_device_add(struct hc_spi *hs)
 	return;
 }
 
+static void hc_spi_reset(void)
+{
+	REG32_SET_BIT((uint32_t)&MSYSIO0 + 0x80, BIT14);
+	usleep(10);
+	REG32_CLR_BIT((uint32_t)&MSYSIO0 + 0x80, BIT14);
+}
+
 static int hc_spi_probe(const char *node)
 {
 	struct spi_master *master;
@@ -555,6 +600,7 @@ static int hc_spi_probe(const char *node)
 	}
 
 	hc_clk_enable(SFLASH_CLK);
+	hc_spi_reset();
 
 	master->mode_bits = SPI_CPOL | SPI_CPHA | SPI_CS_HIGH | SPI_TX_DUAL |
 			    SPI_TX_QUAD | SPI_RX_DUAL | SPI_RX_QUAD;
@@ -600,7 +646,6 @@ static int hc_spi_probe(const char *node)
 	fdt_get_property_u_32_index(np, "sclk", 0, (u32 *)&hs->sclk);
 	fdt_get_property_u_32_index(np, "dma-mode", 0, (u32 *)&hs->dma_mode);
 	hs->dma_mode = !!hs->dma_mode;
-
 
 	if (get_processor_id() == 0 && REG32_GET_FIELD2((uint32_t)&MSYSIO0 + 0x0, 16, 16) == 0x1600) {
 		hs->dma_mode = 1;

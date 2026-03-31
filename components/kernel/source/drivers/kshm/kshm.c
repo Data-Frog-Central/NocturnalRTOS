@@ -15,6 +15,7 @@
 
 #include <hcuapi/common.h>
 #include <hcuapi/kshm.h>
+#include <hcuapi/mmz.h>
 #include <kernel/module.h>
 #include <kernel/wait.h>
 
@@ -60,9 +61,24 @@ void __attribute__((weak)) dma_wait(uint32_t id , uint8_t mode)
 
 static int kshm_allocate_buffer(struct kshm_cfg *cfg, size_t size)
 {
-	cfg->size = size;
+	int mmz_id = -1;
 
-	cfg->base = memalign(32, cfg->size);
+	cfg->size = size;
+	if (cfg->size > 0x80000) {
+		mmz_id = mmz_name2id("kshm");
+		if(mmz_id >= 0) {
+			cfg->base = mmz_memalign(1, 32, cfg->size);
+		}
+		if (!cfg->base && mmz_id >= 0) {
+			cfg->size = cfg->size * 3 / 4;
+			cfg->base = mmz_memalign(1, 32, cfg->size);
+		}
+	}
+
+	if (!cfg->base)
+		cfg->base = memalign(32, cfg->size);
+	else
+		cfg->alloc_from_mmz = 1;
 	if (!cfg->base){
 		return KSHM_FAIL;
 	}
@@ -74,7 +90,10 @@ static int kshm_free_buffer(struct kshm_cfg *cfg)
 {
 	if (cfg->base) {
 		vPortCacheInvalidate(cfg->base, cfg->size);
-		free(cfg->base);
+		if (cfg->alloc_from_mmz)
+			mmz_free(1, cfg->base);
+		else
+			free(cfg->base);
 		cfg->base = NULL;
 	}
 
@@ -542,4 +561,15 @@ size_t kshm_get_total_size(kshm_handle_t hdl)
 	}
 
 	return info->cfg.size - 1;
+}
+
+int kshm_get_avail_packets(kshm_handle_t hdl)
+{
+	struct kshm_info *info = (struct kshm_info *)hdl;
+
+	if (!info) {
+		return KSHM_FAIL;
+	}
+
+	return ((unsigned)info->desc->wt_times - (unsigned)info->desc->rd_times) / 2;
 }

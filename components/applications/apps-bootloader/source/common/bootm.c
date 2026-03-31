@@ -6,11 +6,10 @@
 #include <freertos/task.h>
 #include <kernel/io.h>
 #include <cpu_func.h>
-#include <upgrade.h>
 bootm_headers_t images;		/* pointers to os/initrd/fdt images */
 
 #define IH_INITRD_ARCH IH_ARCH_MIPS
-#define CONFIG_SYS_BOOTM_LEN		0x1000000
+#define CONFIG_SYS_BOOTM_LEN		0x4000000
 
 extern int reset(void);
 
@@ -171,10 +170,6 @@ static int bootm_find_os(struct cmd_tbl *cmdtp, int flag, int argc,
 			&images, &images.os.image_start, &images.os.image_len);
 	if (images.os.image_len == 0) {
 		printf("ERROR: can't get kernel image!\n");
-		#ifdef CONFIG_BOOT_UPGRADE_FAILED_FORCE_UPGRADE
-		printf("%s %d upgrade force\n",__func__,__LINE__);
-		upgrade_force();
-		#endif
 		return 1;
 	}
 

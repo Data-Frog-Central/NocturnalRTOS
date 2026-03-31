@@ -110,12 +110,8 @@ static void win_um_update_qr_code(qr_um_show_type_t qr_type)
 
     if (str_id)
     {
-        //lv_label_set_text(m_label_qr_msg, msg_txt);
-        win_cast_label_txt_set(m_label_qr_msg, str_id);
-		// lv_label_set_text(m_label_qr_msg, "安卓设备请扫码安装软件\n");
+        lv_label_set_text(m_label_qr_msg, api_rsc_string_get(str_id));
     }
-    // else
-    //     lv_label_set_text(m_label_qr_msg, str_id);
 
     if (strlen(qr_txt))
         lv_qrcode_update(m_cast_qr, qr_txt, strlen(qr_txt));
@@ -153,7 +149,7 @@ static int win_um_play_open(void *arg)
     lv_obj_set_style_text_color(m_msg_show, lv_color_hex(0xffffff), 0);
     lv_obj_set_style_text_font(m_msg_show, osd_font_get(FONT_MID), 0);
 
-    win_cast_label_txt_set(m_msg_show, STR_INSERT_ANDROID_OR_APPLE);
+    lv_label_set_text(m_msg_show, api_rsc_string_get(STR_INSERT_ANDROID_OR_APPLE));
 
 	lv_color_t bg_color = lv_palette_lighten(LV_PALETTE_LIGHT_BLUE, 5);
     lv_color_t fg_color = lv_palette_darken(LV_PALETTE_BLUE, 4);
@@ -231,7 +227,6 @@ static void win_um_play_control(void *arg1, void *arg2)
         win_um_play_stop(false);
 	}else if(ctl_msg->msg_type == MSG_TYPE_CAST_IUSB_START ||
         ctl_msg->msg_type == MSG_TYPE_CAST_AUSB_START){
-            //sleep(2);
         
         set_display_zoom_when_sys_scale();
     	m_playing = true;
@@ -268,7 +263,11 @@ static void win_um_play_control(void *arg1, void *arg2)
         }
     #endif    
     }
-
+    else if(ctl_msg->msg_type == MSG_TYPE_CAST_IUSB_NO_DATA) {
+        win_msgbox_msg_open(STR_IUSB_NO_DATA, 0, NULL, NULL);
+    }else if(ctl_msg->msg_type == MSG_TYPE_CAST_IUSB_DEVICE_REMOVE) {
+        win_msgbox_msg_close();
+    }
 }
 
 static void event_handler(lv_event_t * e)
@@ -327,6 +326,10 @@ void ui_um_play_init(void)
     api_screen_regist_ctrl_handle(&um_play_entry);
 }
 
+bool cast_um_play_state(void)
+{
+    return m_playing;
+}
 #endif
 
 // win_des_t g_win_um_play = 

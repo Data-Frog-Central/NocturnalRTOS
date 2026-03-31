@@ -148,7 +148,7 @@ static inline int IS_SND_OUT_I2SO(void)
         return 0;
 } 
 #define IS_SND_OUT_SPDIF() (hccast_com_media_control(HCCAST_CMD_SND_DEVS_GET, 0) & AUDSINK_SND_DEVBIT_SPO)
-
+static int g_i2so_feeded = 0;
 static int _hccast_snd_dev_open(const char* dev_name, int channels, int bitdepth,int rate, int format, uint32_t pcm_source)
 {
     int snd_fd = -1;
@@ -192,6 +192,9 @@ static int _hccast_snd_dev_open(const char* dev_name, int channels, int bitdepth
         hccast_log(LL_ERROR,"%s %d\n",__func__,__LINE__);
         return -1;
     }
+
+    g_i2so_feeded = 0;
+    
     return snd_fd;
 }
 
@@ -202,18 +205,35 @@ static void _hccast_snd_dev_close(int snd_fd)
         ioctl(snd_fd, SND_IOCTL_DROP, 0);
         ioctl(snd_fd, SND_IOCTL_HW_FREE, 0);
         close(snd_fd);
+        g_i2so_feeded = 0;
     }
 }
-
 
 static int _hccast_snd_dev_feed(int devfd,unsigned char*buf,int size,unsigned int pts)
 {
     int ret = -1;
     struct pollfd pfd = {0};
 
-    pfd.fd = devfd;
-    pfd.events = POLLOUT | POLLWRNORM;
-    while (ret < 0)
+    if(g_i2so_feeded == 0)
+    {
+        pfd.fd = devfd;
+        pfd.events = POLLOUT | POLLWRNORM;
+        while (ret < 0)
+        {
+            struct snd_xfer xfer = {0};
+            xfer.data = buf;
+            xfer.frames = size/4;
+            xfer.tstamp_ms = pts;
+            ret = ioctl(devfd, SND_IOCTL_XFER, &xfer);
+            if (ret < 0) 
+            {
+                usleep(2000);
+            }
+        }
+
+        g_i2so_feeded = 1;
+    }
+    else
     {
         struct snd_xfer xfer = {0};
         xfer.data = buf;
@@ -222,10 +242,13 @@ static int _hccast_snd_dev_feed(int devfd,unsigned char*buf,int size,unsigned in
         ret = ioctl(devfd, SND_IOCTL_XFER, &xfer);
         if (ret < 0) 
         {
-            poll(&pfd, 1, 500);//wait dma has free buf.
+            hccast_log(LL_ERROR,"snd xfer fail\n");
+            ioctl(devfd, SND_IOCTL_DROP, 0);
+            ioctl(devfd, SND_IOCTL_START, 0);
         }
     }
-    return 0;
+
+    return ret;
 }
 
 int hccast_snd_dev_open(int channels, int bitdepth,int rate, int format)
@@ -237,7 +260,7 @@ int hccast_snd_dev_open(int channels, int bitdepth,int rate, int format)
             m_snd_fd_i2so = -1;
         }
         m_snd_fd_i2so = _hccast_snd_dev_open("/dev/sndC0i2so", channels, bitdepth, \
-            rate, format, SND_SPO_SOURCE_I2SODMA);
+            rate, format, SND_PCM_SOURCE_AUDPAD);
         if (m_snd_fd_i2so > 0)
             open_ok ++;
     }
@@ -247,8 +270,17 @@ int hccast_snd_dev_open(int channels, int bitdepth,int rate, int format)
             close(m_snd_fd_spo);
             m_snd_fd_spo = -1;
         }
-        m_snd_fd_spo = _hccast_snd_dev_open("/dev/sndC0spo", channels, bitdepth, \
-            rate, format, SND_SPO_SOURCE_SPODMA);
+
+        if (IS_SND_OUT_I2SO()){
+            //share with I2SO dma buffer. so that can set volume of spdif out by i2so audio.
+            m_snd_fd_spo = _hccast_snd_dev_open("/dev/sndC0spo", channels, bitdepth, \
+                rate, format, SND_SPO_SOURCE_I2SODMA);
+        }else{
+            m_snd_fd_spo = _hccast_snd_dev_open("/dev/sndC0spo", channels, bitdepth, \
+                rate, format, SND_SPO_SOURCE_SPODMA);
+        }
+
+
         if (m_snd_fd_spo > 0)
             open_ok ++;
     }
@@ -280,7 +312,11 @@ int hccast_snd_dev_feed(unsigned char*buf,int size,unsigned int pts)
     }
 
     if (IS_SND_OUT_SPDIF() && m_snd_fd_spo > 0 ){
-        ret != _hccast_snd_dev_feed(m_snd_fd_spo, buf, size, pts);
+        //If enbale I2SO audio, spdif out is shared with I2SO dma buffer. so
+        //do not need to feed data to spdif dma buffer.
+        if (!IS_SND_OUT_I2SO()){
+            ret != _hccast_snd_dev_feed(m_snd_fd_spo, buf, size, pts);
+        }
     }
 
     return ret;

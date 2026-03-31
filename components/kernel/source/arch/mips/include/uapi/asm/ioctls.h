@@ -123,4 +123,11 @@
 #define BIOC_FLUSH 0xa00d
 #define BIOC_PARTINFO 0xa00e
 
+
+#define PORT_NAME_LEN 32
+struct port_info {
+	char name[PORT_NAME_LEN];
+};
+#define BIOCG_PORT_INFO _IOR(0xa0, 0xf, struct port_info)
+
 #endif /* __ASM_IOCTLS_H */

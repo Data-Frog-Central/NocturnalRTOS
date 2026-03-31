@@ -77,6 +77,7 @@ typedef enum {
     P_WINDOW_SCALE,
     P_SYS_ZOOM_DIS_MODE,
     P_SYS_ZOOM_OUT_COUNT,
+	P_VIDEO_DELAY,
 
 } projector_sys_param;
 
@@ -179,6 +180,7 @@ typedef struct optionset{
     uint8_t auto_sleep;
     uint8_t osd_time;
     uint8_t resved[2];
+    uint16_t video_delay;
 }optionset_t;
 
 typedef enum{
@@ -279,6 +281,8 @@ int sysdata_get_saved_wifi_count();
 void sysdata_wifi_ap_set_auto(int index);
 void sysdata_wifi_ap_set_nonauto(int index);
 bool sysdata_wifi_ap_get_auto(int index);
+void sysdata_wifi_ap_resave(hccast_wifi_ap_info_t *wifi_ap);
+void wifi_mutex_init();
 #endif
 
 void sysdata_wifi_ap_delete(int index);

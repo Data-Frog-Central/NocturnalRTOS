@@ -518,6 +518,7 @@ static int wifi_mgr_callback_func(hccast_wifi_event_e event, void *in, void *out
     {
         memset(g_connecting_ssid, 0, sizeof(g_connecting_ssid));
         memset(m_wifi_config.local_ip, 0, sizeof(m_wifi_config.local_ip));
+        hccast_wifi_mgr_udhcpc_stop();
         app_set_wifi_connect_status(0);
         if (hccast_wifi_mgr_p2p_get_connect_stat() == 0)
         {

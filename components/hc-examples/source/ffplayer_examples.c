@@ -88,6 +88,8 @@ static int g_loop_play = 1;
 static AudioOutDev g_snd_devs = 0;
 static double g_time_ms = 0;
 static bool g_buffering_enable = 0;
+static int g_mix_priority = 0;
+static bool g_mix_maximum_weight = 0;
 static bool g_bypass = 0;
 static img_dis_mode_e g_img_dis_mode = 0;
 static rotate_type_e g_rotate_type = 0;
@@ -323,6 +325,8 @@ static int play_uri(char *uri)
 	}
 
 	init_args.uri = uri;
+	init_args.mix_priority = g_mix_priority;
+	init_args.mix_maximum_weight = g_mix_priority;
 	init_args.snd_devs = g_snd_devs;
 	init_args.sync_type = g_sync_mode;
 	init_args.user_data = g_mp;
@@ -824,12 +828,22 @@ static int mp_play(int argc, char *argv[])
 
 	g_time_ms = 0;
 	g_sync_mode = 2;
+	g_mix_priority = 0;
+	g_mix_maximum_weight = 0;
 
-	while ((opt = getopt(argc-1, &argv[1], "b:t:s:d:p:r:m:a:o:e:")) != EOF) {
+	while ((opt = getopt(argc-1, &argv[1], "b:t:s:d:p:r:m:a:o:e:i:v:")) != EOF) {
 		switch (opt) {
 		case 'b':
 			g_buffering_enable = atoi(optarg);
 			printf("buffering_enable %d\n", g_buffering_enable);
+			break;
+		case 'i':
+			g_mix_priority = atoi(optarg);
+			printf("mix_priority %d\n", g_mix_priority);
+			break;
+		case 'v':
+			g_mix_maximum_weight = atoi(optarg);
+			printf("mix_maximum_weight %d\n", g_mix_maximum_weight);
 			break;
 		case 't':
 			g_time_ms = atof(optarg);
@@ -1763,6 +1777,123 @@ static int mp_set_lr_balance(int argc, char *argv[])
 	return 0;
 }
 
+static int mp_set_eq_enable(int argc, char *argv[])
+{
+	int snd_fd = -1;
+	int en = 0;
+	opterr = 0;
+	optind = 0;
+	snd_fd = open("/dev/sndC0i2so", O_WRONLY);
+	if (snd_fd < 0) {
+		printf ("eq_enable open snd_fd %d failed\n", snd_fd);
+		return -1;
+	}
+
+	if (argc != 2) {
+		printf("eq_enable <0 | 1>");
+		return -1;
+	}
+
+	en = atoi(argv[1]);
+
+	ioctl(snd_fd, SND_IOCTL_SET_EQ_ONOFF, !!en);
+	close(snd_fd);
+	return 0;
+}
+
+static int mp_set_eq(int argc, char *argv[])
+{
+	int opt;
+	int snd_fd = -1;
+	struct snd_eq_band_setting setting = { 0 };
+
+	opterr = 0;
+	optind = 0;
+
+	snd_fd = open("/dev/sndC0i2so", O_WRONLY);
+	if (snd_fd < 0) {
+		printf ("lr_balance open snd_fd %d failed\n", snd_fd);
+		return -1;
+	}
+
+	setting.band = -1;
+
+	while ((opt = getopt(argc, &argv[0], "b:c:q:g:")) != EOF) {
+		switch (opt) {
+		case 'b':
+			setting.band = atoi(optarg);
+			break;
+		case 'c':
+			setting.cutoff = atoi(optarg);
+			break;
+		case 'q':
+			setting.q = atoi(optarg);
+			break;
+		case 'g':
+			setting.gain = atoi(optarg);
+			break;
+		default:
+			printf("eq -b <band> -c <cutoff> -q <q> -g <gain>");
+			return -1;
+		}
+	}
+
+	ioctl(snd_fd, SND_IOCTL_SET_EQ_BAND, &setting);
+	close(snd_fd);
+
+	return 0;
+}
+
+static int mp_set_pbe(int argc, char *argv[])
+{
+	int opt;
+	int snd_fd = -1;
+	int val = 0;
+	opterr = 0;
+	optind = 0;
+	snd_fd = open("/dev/sndC0i2so", O_WRONLY);
+	if (snd_fd < 0) {
+		printf ("eq_enable open snd_fd %d failed\n", snd_fd);
+		return -1;
+	}
+
+	if (argc != 2) {
+		printf("pbe <0-100>");
+		return -1;
+	}
+
+	val = atoi(argv[1]);
+
+	ioctl(snd_fd, SND_IOCTL_SET_PBE, val);
+	close(snd_fd);
+	return 0;
+}
+
+static int mp_set_pbe_precut(int argc, char *argv[])
+{
+	int opt;
+	int snd_fd = -1;
+	int val = 0;
+	opterr = 0;
+	optind = 0;
+	snd_fd = open("/dev/sndC0i2so", O_WRONLY);
+	if (snd_fd < 0) {
+		printf ("eq_enable open snd_fd %d failed\n", snd_fd);
+		return -1;
+	}
+
+	if (argc != 2) {
+		printf("pbe_precut <-45 ~ 0>");
+		return -1;
+	}
+
+	val = atoi(argv[1]);
+
+	ioctl(snd_fd, SND_IOCTL_SET_PBE_PRECUT, val);
+	close(snd_fd);
+	return 0;
+}
+
 static int mp_set_audio_eq6(int argc, char *argv[])
 {
 	int opt;
@@ -2518,6 +2649,8 @@ int main (int argc, char *argv[])
 		"-r rotate: 1, 90; 2, 180; 3, 270; 4, only enable rotate\n\t\t\t"
 		"-m mirror:(not support yet)\n\t\t\t"
 		"-e play_subtitle: 1, show subtitle; 0, do not show subtitle\n\t\t\t"
+		"-i set mix volume priority: value is [0,1,2],and 2 is the highest level\n\t\t\t"
+		"-v set mix volume maximum_weight:value is 0 or 1,1 is 100% volume,and 0 is not\n\t\t\t"
 		"-a athresh: i2so will only keep max athresh data, unit is ms\n\n");
 	console_register_cmd(NULL, "memory_play", mp_memory_play, CONSOLE_CMD_MODE_SELF,
 		"memory_play local_file_path\n\t\t\t"
@@ -2571,8 +2704,17 @@ int main (int argc, char *argv[])
 			"twotone -o (1/0) -m 1 -> set twodone on/off & music mode\n\t\t\t");
 	console_register_cmd(NULL, "lr_balance", mp_set_lr_balance, CONSOLE_CMD_MODE_SELF,
 			"lr_balance -o (1/0) -i 1 -> set lr_balance on/off & index 1 \n\t\t\t");
+
 	console_register_cmd(NULL, "eq6", mp_set_audio_eq6, CONSOLE_CMD_MODE_SELF,
 			"eq6 -o (1/0) -m 1 -> set audio eq6 on/off & mode  1 \n\t\t\t");
+
+	console_register_cmd(NULL, "eq_enqble", mp_set_eq_enable, CONSOLE_CMD_MODE_SELF,
+			"eq_enable <0/1>\n");
+	console_register_cmd(NULL, "eq", mp_set_eq, CONSOLE_CMD_MODE_SELF,
+			"eq -b <band 0~9> -c <cutoff> -q <q> -g <gain>\n");
+
+	console_register_cmd(NULL, "pbe", mp_set_pbe, CONSOLE_CMD_MODE_SELF, "pbe <0~100>\n")
+	console_register_cmd(NULL, "pbe_precut", mp_set_pbe_precut, CONSOLE_CMD_MODE_SELF, "pbe_precut <-45 ~ 0>\n")
 
 	console_register_cmd(NULL, "pic_mode", mp_pic_mode, CONSOLE_CMD_MODE_SELF,
 		"picture_mode -i 50 -> set gif interval to 50ms\n\t\t\t"
@@ -2791,6 +2933,15 @@ CONSOLE_CMD(lr_balance, "mp", mp_set_lr_balance, CONSOLE_CMD_MODE_SELF,
 CONSOLE_CMD(eq6, "mp", mp_set_audio_eq6, CONSOLE_CMD_MODE_SELF,
 	"eq6 -o (1/0) -m 1 -> set audio eq6 on/off & mode 1\n")
 
+CONSOLE_CMD(eq_enqble, "mp", mp_set_eq_enable, CONSOLE_CMD_MODE_SELF,
+	"eq_enable <0/1>\n")
+CONSOLE_CMD(eq, "mp", mp_set_eq, CONSOLE_CMD_MODE_SELF,
+	"eq -b <band 0~9> -c <cutoff> -q <q> -g <gain>\n")
+
+CONSOLE_CMD(pbe, "mp", mp_set_pbe, CONSOLE_CMD_MODE_SELF, "pbe <0~100>\n")
+CONSOLE_CMD(pbe_precut, "mp", mp_set_pbe_precut, CONSOLE_CMD_MODE_SELF, "pbe_precut <-45 ~ 0>\n")
+
+
 CONSOLE_CMD(pic_mode, "mp", mp_pic_mode, CONSOLE_CMD_MODE_SELF,
 	"pic_mode -i 50 -> set gif interval to 50ms\n\t\t\t"
 	"pic_mode -d 3000 -> set picture show duration to 3000 ms\n\t\t\t"
@@ -2904,6 +3055,138 @@ CONSOLE_CMD(getbuf , "dis" , dis_get_video_buf_test , CONSOLE_CMD_MODE_SELF ,
                 "get display buf in rgb")
 CONSOLE_CMD(dump , "dis" , dis_dump , CONSOLE_CMD_MODE_SELF ,
                 "y:buf_y c:buf_c s:size)")
+CONSOLE_CMD(get_edid_all_res , "dis" , get_edid_all_video_res , CONSOLE_CMD_MODE_SELF ,
+                "get_edid_all_video_res")
+
 CONSOLE_CMD(dbg , "mp" , mp_debug , CONSOLE_CMD_MODE_SELF ,
 	"show mp info")
+
+struct av_buf {
+	uint8_t *data;
+	uint8_t *ori_data;
+	int size;
+	int ori_size;
+};
+
+static int data_read(void *opaque, uint8_t *buf, int size)
+{
+	struct av_buf *abuf = (struct av_buf *) opaque;
+
+	size = FFMIN(size, abuf->size);
+	if (size == 0)
+		return AVERROR_EOF;
+
+	memcpy(buf, abuf->data, size);
+
+	abuf->data += size;
+	abuf->size -= size;
+
+	return size;
+}
+
+static int64_t data_seek(void *opaque, int64_t offset, int whence)
+{
+	struct av_buf *abuf = (struct av_buf *) opaque;
+
+#ifndef AVSEEK_SIZE
+#define AVSEEK_SIZE 0x10000
+#endif
+
+	if (whence == AVSEEK_SIZE) {
+		return abuf->ori_size;
+	} else {
+		return AVERROR(errno);
+	}
+}
+
+static int transcode(int argc, char *argv[])
+{
+	HCPlayerInitArgs init_args = {0};
+	void *player;
+	AvPktHd hdr = { 0 };
+	int transcode_again = 0;
+	void *jpg_data = NULL;
+	int jpg_size = 0;
+	struct av_buf buf = {0};
+
+	if (argc < 3) {
+		return 0;
+	}
+
+again:
+	if (transcode_again && jpg_data && jpg_size) {
+		init_args.uri = NULL;
+		if (buf.ori_data) {
+			free(buf.ori_data);
+			buf.data = buf.ori_data = NULL;
+		}
+		buf.size = buf.ori_size = jpg_size;
+		buf.data = buf.ori_data = malloc(jpg_size);
+		memcpy(buf.ori_data, jpg_data, jpg_size);
+		free(jpg_data);
+		jpg_data = NULL;
+		init_args.readdata_opaque = &buf;
+		init_args.readdata_callback = data_read;
+		init_args.seekdata_callback = data_seek;
+	} else {
+		init_args.uri = argv[1];
+	}
+	init_args.img_dis_hold_time = 0;
+	init_args.disable_audio = 1;
+	init_args.img_alpha_mode = ALPHA_BLEND_UNIFORM;
+	init_args.transcode_config2.b_enable = 1;
+	init_args.transcode_config2.b_show = 0;
+	init_args.transcode_config2.b_scale = 1;
+	init_args.transcode_config2.b_capture_one = 1;
+	init_args.transcode_config2.dst_w = 80;
+	init_args.transcode_config2.dst_h = 60;
+	init_args.play_attached_file = 1;
+	player = hcplayer_create(&init_args);
+	if (!player) {
+		printf("open player failed\n");
+		return -1;
+	}
+
+	hcplayer_play2(player);
+	transcode_again = hcplayer_transcode_again(player);
+
+	printf("read header\n");
+	if (hcplayer_read_transcoded_picture(player, &hdr, sizeof(AvPktHd))
+			!= sizeof(AvPktHd)) {
+		printf("read header err\n");
+	} else {
+		jpg_size = hdr.size;
+		jpg_data = malloc(jpg_size);
+		if (jpg_data) {
+			if (hcplayer_read_transcoded_picture(player, jpg_data, jpg_size) != jpg_size) {
+				printf ("read data err\n");
+			} else if (!transcode_again) {
+				printf("get a picture, size %d\n", hdr.size);
+				if (argv[2]) {
+					FILE *rec = fopen(argv[2], "wb");
+					if (rec) {
+						fwrite(jpg_data, jpg_size, 1, rec);
+						fclose(rec);
+						printf("write pic success\n");
+					} else {
+						printf("write pic failed\n");
+					}
+				}
+			}
+		} else {
+			printf("no memory");
+		}
+	}
+
+	hcplayer_stop(player);
+	if (transcode_again && jpg_data) {
+		goto again;
+	}
+
+	free(jpg_data);
+	return 0;
+}
+
+CONSOLE_CMD(transcode, NULL,  transcode, CONSOLE_CMD_MODE_SELF, "transcode ipath opath")
+
 #endif

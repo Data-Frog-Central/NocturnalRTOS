@@ -55,5 +55,5 @@ int stop_aec_test(int argc, char *argv[]);
 int aec_main(int argc, char *argv[]);
 int dsp_test (int argc, char *argv[]);
 int stop_dsp_test(int argc, char *argv[]);
-
+int pcm_dec(int argc, char *argv[]);
 #endif /* __SOUND_TEST_H */

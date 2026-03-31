@@ -20,8 +20,20 @@
 #include <poll.h>
 #include <kernel/lib/fdt_api.h>
 #include <kernel/lib/libfdt/libfdt.h>
+#include <sys/types.h>
+#include <sys/time.h>
 #include "usbd_upgrade.h"
 #include "show_upgrade_way.h"
+
+#define max(a, b) ({\
+		typeof(a) _a = a;\
+		typeof(b) _b = b;\
+		_a > _b ? _a : _b; })
+
+#define min(a, b) ({\
+		typeof(a) _a = a;\
+		typeof(b) _b = b;\
+		_a < _b ? _a : _b; })
 
 struct hcfota_upgrade_key{
     int enable;
@@ -38,6 +50,9 @@ static uint32_t HCFOTA_TIMEOUT = CONFIG_BOOT_HCFOTA_TIMEOUT;
 static struct completion upgrade_done;
 static struct completion storage_ready;
 static struct hcfota_upgrade_key upgrade_key = {0};
+#if defined(CONFIG_BOOT_AUTO_UPGRADE_SUPPORT_USBHOST)
+static uint32_t WAIT_MSC_CONNECT_TIMEOUT = CONFIG_BOOT_WAIT_MSC_CONNECT_READY;
+#endif
 
 unsigned int mode;
 int do_hcfota_upgrade(unsigned int ota_mode);
@@ -77,6 +92,7 @@ static int get_upgrade_key(void)
     return 0;
 }
 
+#if 0
 int upgrade_detect_key(void)
 {
 	int fd = 0;
@@ -142,7 +158,181 @@ end:
 
 	return detect;
 }
+#else
+#define UPGRADE_KEY_MAX_NUMBER 10
+#define UPGRADE_KEY_MAX_INPUT_EVENTS 5
+#define UPGRADE_KEY_REPEAT_LONG_KEY_TIME 3
 
+/*
+ * if no key press is detected, then exit
+ * if upgrade key is detected, press and hold the key for 5 seconds
+ */
+int upgrade_detect_key(void)
+{
+    int fds[UPGRADE_KEY_MAX_INPUT_EVENTS] = { 0 };
+    int key_value[UPGRADE_KEY_MAX_NUMBER] = { 0 };
+    int key_code = 0;
+    struct input_event t = {0};
+    u32 nkeys = 0;
+    int i, np, nfd = 0, detect = 0;
+    int retry_ms = 300;
+    struct timeval time_now = {0};
+    double start_time = 0;
+    double cur_time = 0;
+    int res = 0;
+
+    /* key init */
+    nkeys = 0;
+    for (i = 0; i < UPGRADE_KEY_MAX_NUMBER; i++)
+        key_value[i] = -1;
+
+    do {
+        np = fdt_get_node_offset_by_path("/hcrtos/hcfota-upgrade");
+        if (np < 0)
+            break;
+        const char *status = NULL;
+        if (!fdt_get_property_string_index(np, "status", 0, &status) && !strcmp(status, "disabled"))
+            break;
+        if (fdt_get_property_data_by_name(np, "adc_key", &nkeys) == NULL)
+            nkeys = 0;
+        nkeys >>= 2;
+        if (nkeys == 0)
+            break;
+        nkeys = min((int)nkeys, UPGRADE_KEY_MAX_NUMBER);
+        for (i = 0; i < (int)nkeys; i++) {
+            fdt_get_property_u_32_index(np, "adc_key", i, &key_value[i]);
+        }
+    } while (0);
+
+    if (nkeys == 0)
+        return 0;
+
+    for (i = 0; i < UPGRADE_KEY_MAX_INPUT_EVENTS; i++) {
+        char path[64];
+        int fd;
+        memset(path, 0, sizeof(path));
+        snprintf(path, sizeof(path), "/dev/input/event%d", i);
+        fd = open(path, O_RDONLY);
+        if (fd < 0)
+            continue;
+        fds[nfd++] = fd;
+    }
+
+    if (nfd == 0)
+        return 0;
+
+    /* try to read upgrade key */
+    for (i = 0; i < nfd; i++) {
+        if (read(fds[i], &t, sizeof(t)) != sizeof(t))
+            continue;
+
+        if (t.type == EV_SYN || !t.value){
+            continue;
+        }
+
+        /* get key_code, long key's code in t.value */
+        if(t.type == EV_KEY){
+            key_code = t.code;
+        }else if(t.type == EV_MSC){
+            key_code = t.value;
+        }else{
+            key_code = -2;  /* key_value defaut is -1 */
+        }
+
+        for (int j = 0; j < (int)nkeys; j++) {
+            if (key_code == key_value[j]) {
+                detect = 1;
+
+                gettimeofday(&time_now, NULL);
+                start_time = time_now.tv_sec;
+
+                printf("t.code=%u, t.type=%u, t.value=%ld, start_time(%llu, %lu)\n",
+                        t.code, t.type, t.value, time_now.tv_sec, time_now.tv_usec);
+
+                break;
+            }
+        }
+	}
+
+    /* if no key press is detected, then return */
+    if (detect == 0){
+        return 0;
+    }else{
+    /* check is long key? */
+        detect = 0;
+    }
+
+    /* if upgrade key is detected, press and hold the key for 5 seconds */
+    while (1) {
+        for (i = 0; i < nfd; i++) {
+            if (read(fds[i], &t, sizeof(t)) != sizeof(t)){
+                gettimeofday(&time_now, NULL);
+                cur_time = time_now.tv_sec;
+                if((cur_time - start_time) >= UPGRADE_KEY_REPEAT_LONG_KEY_TIME){
+                    printf("wait upgrade key timeout\n");
+                    detect = 0;
+                    goto end;
+                }
+
+                /* the minimum time interval between button sending is 33ms */
+                usleep(10000);
+                continue;
+            }
+
+            if (t.type == EV_SYN){
+                continue;
+            }
+
+            /* get key_code */
+            if(t.type == EV_KEY){
+                key_code = t.code;
+            }else if(t.type == EV_MSC){
+                key_code = t.value;
+            }else{
+                key_code = -2;  /* key_value defaut is -1 */
+            }
+
+            for (int j = 0; j < (int)nkeys; j++) {
+                if (key_code == key_value[j]) {
+                    //printf("t.code=%u, t.type=%u, t.value=%ld, time(%llu, %lu)\n",
+                    //        t.code, t.type, t.value, time_now.tv_sec, time_now.tv_usec);
+
+                    gettimeofday(&time_now, NULL);
+                    cur_time = time_now.tv_sec;
+                    if((cur_time - start_time) >= (UPGRADE_KEY_REPEAT_LONG_KEY_TIME - 1)){
+                        detect = 1;
+                        printf("t.code=%u, t.type=%u, t.value=%ld, end_time(%llu, %lu)\n",
+                                t.code, t.type, t.value, time_now.tv_sec, time_now.tv_usec);
+                        printf("Upgrade button detected Press %ds, enter the upgrade mode\n", UPGRADE_KEY_REPEAT_LONG_KEY_TIME);
+                        goto end;
+                    }else{
+                        /* detected key up, then exit */
+                        if(t.value == 0){
+                            detect = 0;
+                            printf("t.code=%u, t.type=%u, t.value=%ld, end_time(%llu, %lu)\n",
+                                    t.code, t.type, t.value, time_now.tv_sec, time_now.tv_usec);
+                            printf("detected key up, exit detection, time is %fs\n", (cur_time - start_time));
+                            goto end;
+                        }
+                    }
+
+                    break;
+                }
+            }
+        }
+
+        /* the minimum time interval between button sending is 33ms */
+        usleep(10000);
+    }
+
+end:
+    for (i = 0; i < nfd; i++)
+        close(fds[i]);
+
+    return detect;
+}
+
+#endif
 
 int upgrade_force(void)
 {
@@ -238,7 +428,7 @@ static int set_ota_detect_mode(unsigned long mode)
 
 static int usb_mmc_upgrade_main(void *dev)
 {
-	int ret = 0, i = 0;
+	int ret = -1, i = 0;
 	DIR *dirp;
 	struct stat st;
 	char entryp_path[512];
@@ -253,7 +443,7 @@ static int usb_mmc_upgrade_main(void *dev)
 		printf("open dir %s failed\n", dir_path);
 
 	/* Read each directory entry */
-	FAR struct dirent *entryp = readdir(dirp);
+	FAR struct dirent *entryp;
 
 	for (;;) {
 		entryp = readdir(dirp);
@@ -261,6 +451,9 @@ static int usb_mmc_upgrade_main(void *dev)
 			/* Finished with this directory */
 			break;
 		}
+
+		if (entryp->d_type == DT_DIR)
+			continue;
 
 		memset(entryp_path, 0, sizeof(entryp_path));
 		strcat(entryp_path, dir_path);
@@ -273,26 +466,18 @@ static int usb_mmc_upgrade_main(void *dev)
 				tmp_buf[i] = entryp->d_name[dir_name_len - 3 + i];
 			}
 			if (((strncmp(tmp_buf, "bin", 3) == 0) || (strncmp(tmp_buf, "BIN", 3) == 0))) {
+				complete(&storage_ready);
 				printf("==> upgrade from = %s\n", entryp_path);
-#ifdef CONFIG_BOOT_UPGRADE_SHOW_WITH_SCREEN
-				init_progress_bar();
-				fill_progress_bar(1280, 0xffffffff);
-#endif
-#ifdef CONFIG_BOOT_UPGRADE_SHOW_WITH_LED
-				led_init();
-#endif
 				ret = hcfota_from_path(entryp_path, hcfota_report, 0);
-				if (ret == 0)
-					return ret;
-				else
-					return -HCFOTA_ERR_UPGRADE;
+				closedir(dirp);
+				return ret;
 			}
 		}
 	}
 
 	closedir(dirp);
 
-	return -ENOENT;
+	return ret;
 }
 
 static int fs_mount_notify(struct notifier_block *self, unsigned long action,
@@ -307,14 +492,12 @@ static int fs_mount_notify(struct notifier_block *self, unsigned long action,
 		switch (mode) {
 		case HCFOTA_REBOOT_OTA_DETECT_USB_HOST: {
 			if (strncmp((void *)dev, "sd", 2) == 0) {
-				complete(&storage_ready);
 				upgrade = usb_mmc_upgrade_main(dev);
 			}
 			break;
 		}
 		case HCFOTA_REBOOT_OTA_DETECT_SD: {
 			if (strncmp((void *)dev, "mmc", 3) == 0) {
-				complete(&storage_ready);
 				upgrade = usb_mmc_upgrade_main(dev);
 			}
 			break;
@@ -333,6 +516,9 @@ static int fs_mount_notify(struct notifier_block *self, unsigned long action,
 
 			complete(&upgrade_done);
 			reset();
+		} else if (upgrade == HCFOTA_ERR_VERSION) {
+			printf("Version check failed, booting from old system!\n");
+			complete(&upgrade_done);
 		} else {
 			/* No firmware to upgrade */
 			printf("%s:%d:%s No firmware to upgrade\n", __func__, __LINE__, (char *)dev);
@@ -346,7 +532,6 @@ static int fs_mount_notify(struct notifier_block *self, unsigned long action,
 static struct notifier_block fs_mount = {
        .notifier_call = fs_mount_notify,
 };
-
 #endif
 
 int do_hcfota_upgrade(unsigned int ota_mode)
@@ -396,11 +581,17 @@ int do_hcfota_upgrade(unsigned int ota_mode)
 			if (module_init2("all", 2, excludes_usb) != 0) {
 				break;
 			}
-			if (wait_for_completion_timeout(&storage_ready,
-							HCFOTA_TIMEOUT) == 0) {
+#if defined(CONFIG_BOOT_AUTO_UPGRADE_SUPPORT_USBHOST)
+			if (wait_for_completion_timeout(&storage_ready, WAIT_MSC_CONNECT_TIMEOUT) == 0) {
+				printf("usbhost auto upgrade timeout!\n");
+				break;
+			}
+#else
+			if (wait_for_completion_timeout(&storage_ready, HCFOTA_TIMEOUT) == 0) {
 				printf("usbhost upgrade timeout!\n");
 				break;
 			}
+#endif
 			wait_for_completion(&upgrade_done);
 			break;
 		}

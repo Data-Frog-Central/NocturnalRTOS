@@ -97,14 +97,16 @@ int hccast_mira_set_default_resolution(int res)
     return 0;
 }
 
-static void hccast_mira_player_state_timer(int sig)
+static void *hccast_mira_player_state_timer(void *arg)
 {
+    (void) arg;
     while (g_mira_vdec_started)
     {
         miracast_player_show_state();
 
         sleep(2);
     }
+	return NULL;
 }
 
 #define _READ(__data, __idx, __size, __shift) \
@@ -122,20 +124,6 @@ void hccast_mira_restore_audio_sync_thresh()
 {
     hccast_set_audio_sync_thresh(g_audio_sync_thresh);
     g_audio_sync_thresh = 0;
-}
-
-void hccast_mira_set_volume_mute(int flag)
-{
-#ifdef HC_RTOS
-    if(flag)
-    {
-        hccast_set_volume(0);
-    }
-    else
-    {
-        hccast_set_volume(100);
-    }
-#endif    
 }
 
 int hccast_mira_get_mirror_rotation()
@@ -225,12 +213,15 @@ int hccast_mira_get_video_info(int *width, int *heigth)
         mpinfo.info.rotate_mode, mpinfo.info.pic_dis_area.w, mpinfo.info.pic_dis_area.h);    
 
     if (mpinfo.info.rotate_mode == ROTATE_TYPE_90 ||
-        mpinfo.info.rotate_mode == ROTATE_TYPE_270){
-        *width = mpinfo.info.pic_dis_area.h;
-        *heigth = mpinfo.info.pic_dis_area.w;
-    } else {
-        *width = mpinfo.info.pic_dis_area.w;
-        *heigth = mpinfo.info.pic_dis_area.h;
+            mpinfo.info.rotate_mode == ROTATE_TYPE_270)
+    {
+        *width = mpinfo.info.pic_height;//mpinfo.info.pic_dis_area.h;
+        *heigth = mpinfo.info.pic_width;//mpinfo.info.pic_dis_area.w;
+    }
+    else
+    {
+        *width = mpinfo.info.pic_width;//mpinfo.info.pic_dis_area.w;
+        *heigth = mpinfo.info.pic_height;//mpinfo.info.pic_dis_area.h;
     }
 
 #endif    
@@ -304,6 +295,8 @@ static void hccast_mira_handle_event_msg()
 
                         if(vscreen_auto_rotation)
                         {
+                            hccast_set_aspect_mode(DIS_TV_16_9, DIS_NORMAL_SCALE, DIS_SCALE_ACTIVE_NEXTFRAME);
+                            
                             if (flip_rotate == ROTATE_TYPE_0 || flip_rotate == ROTATE_TYPE_180)
                             {
                                 mira_zoom_info.src_rect.x = 0;
@@ -368,6 +361,7 @@ static void hccast_mira_handle_event_msg()
                     {
                         if(vscreen_auto_rotation)
                         {
+                            hccast_set_aspect_mode(DIS_TV_16_9 , DIS_PILLBOX , DIS_SCALE_ACTIVE_NEXTFRAME);
                             mira_zoom_info.dis_active_mode = DIS_SCALE_ACTIVE_NEXTFRAME;
                             hccast_mira_set_dis_zoom_info(&mira_zoom_info);
                         }
@@ -458,7 +452,6 @@ void hccast_mira_rtos_event_video_first_showed(void *arg, unsigned long param)
         if (mira_callback && (g_video_first_showed == 0))
         {
             mira_callback(HCCAST_MIRA_START_FIRST_FRAME_DISP, NULL, NULL);
-            hccast_mira_set_volume_mute(0);
             g_video_first_showed = 1;
         }
     }    
@@ -552,6 +545,8 @@ void hccast_mira_rtos_event_handle(void *arg, unsigned long param)
 
                 if(vscreen_auto_rotation)
                 {
+                    hccast_set_aspect_mode(DIS_TV_16_9, DIS_NORMAL_SCALE, DIS_SCALE_ACTIVE_NEXTFRAME);
+                    
                     if (flip_rotate == ROTATE_TYPE_0 || flip_rotate == ROTATE_TYPE_180)
                     {
                         mira_zoom_info.src_rect.x = 0;
@@ -616,6 +611,7 @@ void hccast_mira_rtos_event_handle(void *arg, unsigned long param)
             {
                 if(vscreen_auto_rotation)
                 {
+                    hccast_set_aspect_mode(DIS_TV_16_9, DIS_PILLBOX, DIS_SCALE_ACTIVE_NEXTFRAME);
                     mira_zoom_info.dis_active_mode = DIS_SCALE_ACTIVE_NEXTFRAME;
                     hccast_mira_set_dis_zoom_info(&mira_zoom_info);
                 }
@@ -684,12 +680,18 @@ static void hccast_mira_set_kumsg_ctrl()
         goto fail;
     }
 
-    if (pthread_create(&g_mira_pid, NULL, hccast_mira_receive_event_func, (void *)NULL) < 0)
+    pthread_attr_t thread_attr;
+    pthread_attr_init(&thread_attr);
+    pthread_attr_setdetachstate(&thread_attr, PTHREAD_CREATE_DETACHED);
+    if (pthread_create(&g_mira_pid, &thread_attr, hccast_mira_receive_event_func, (void *)NULL) < 0)
     {
+        pthread_attr_destroy(&thread_attr);
         hccast_log(LL_ERROR, "%s create hccast_mira_receive_event_func fail.\n", __func__);
         goto fail;
     }
-
+        
+    pthread_attr_destroy(&thread_attr);
+    
     //close(dis_fd);
     g_mira_event_init = 1;
     hccast_log(LL_NOTICE, "%s hccast_mira_set_kumsg_ctrl done.\n", __func__);
@@ -800,6 +802,10 @@ int hccast_mira_process_rotation_change()
         }
         else
         {
+            if (!hccast_mira_get_mirror_vscreen_auto_rotation() || !hccast_mira_get_mirror_full_vscreen())
+            {
+                hccast_set_aspect_mode(DIS_TV_16_9, DIS_PILLBOX, DIS_SCALE_ACTIVE_IMMEDIATELY);
+            }
             hccast_mira_vscreen_detect_enable(0);
             hccast_mira_set_dis_zoom_info(&mira_zoom_info);
             g_mira_enable_vrotation = 0;
@@ -832,6 +838,7 @@ static int hccast_mira_video_open(void)
     struct video_config mvcfg;
     char path[128] = {0};
     int rotate = 0;
+    pthread_attr_t thread_attr;
 
     wfd_resolution_t res = miracast_get_resolution();
 
@@ -935,11 +942,13 @@ static int hccast_mira_video_open(void)
 
     hccast_mira_set_kumsg_ctrl();
     hccast_mira_add_video_listen_event(mvfd);
-    if(hccast_mira_get_mirror_vscreen_auto_rotation())
-    {
-        hccast_set_aspect_mode(DIS_TV_16_9, DIS_NORMAL_SCALE, DIS_SCALE_ACTIVE_IMMEDIATELY);
-    }    
-    pthread_create(&tid, NULL, hccast_mira_player_state_timer, NULL);
+    hccast_set_aspect_mode(DIS_TV_16_9, DIS_PILLBOX, DIS_SCALE_ACTIVE_IMMEDIATELY);
+
+    pthread_attr_init(&thread_attr);
+    pthread_attr_setdetachstate(&thread_attr, PTHREAD_CREATE_DETACHED);
+    pthread_create(&tid, &thread_attr, hccast_mira_player_state_timer, NULL);
+	
+	pthread_attr_destroy(&thread_attr);
 
     if (g_es_dump_en)
     {
@@ -965,6 +974,7 @@ static void hccast_mira_video_close(void)
         g_es_vfp = NULL;
     }
 
+    pthread_mutex_lock(&g_mira_mutex);
     if (mvfd > 0)
     {
         close(mvfd);
@@ -972,7 +982,6 @@ static void hccast_mira_video_close(void)
     }
 
     hccast_mira_restore_audio_sync_thresh();
-    pthread_mutex_lock(&g_mira_mutex);
     hccast_mira_vscreen_detect_enable(0);
     hccast_mira_delete_video_listen_event();
     g_mira_vdec_started = 0;
@@ -1244,19 +1253,12 @@ static int hccast_mira_audio_open(int codec_tag)
         _hccast_mira_audio_open_auddec();
     }
 
-    g_vol = hccast_get_volume();
-    hccast_log(LL_NOTICE, "set vol %d->100\n", g_vol);
-    hccast_set_volume(100);
-    hccast_mira_set_volume_mute(1);
-
     hccast_log(LL_DEBUG, "mafd: %d.\n", mafd);
     return 0;
 }
 
 static void hccast_mira_audio_close()
 {
-    hccast_set_volume(g_vol);
-    
     if (___codec_tag == CODEC_ID_PCM_S16BE)
     {
         _hccast_mira_audio_close_i2so();
@@ -1290,10 +1292,14 @@ void hccast_mira_av_state(char *s)
 {
     int64_t vpts = 0;
 
+    pthread_mutex_lock(&g_mira_mutex);
+
     if (mvfd >= 0)
     {
         ioctl(mvfd, VIDDEC_GET_CUR_TIME, &vpts);
     }
+
+    pthread_mutex_unlock(&g_mira_mutex);
 
     hccast_log(LL_NOTICE, "[FEED] V(%d:%d) A(%d:%d) P(%.8x:%.8x) %s\n",
                g_vfeed_cnt, g_vfeed_len, g_afeed_cnt, g_afeed_len, g_vfeed_pts, (unsigned int)vpts, s);

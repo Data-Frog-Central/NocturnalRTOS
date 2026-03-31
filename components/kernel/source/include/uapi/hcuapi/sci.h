@@ -3,8 +3,8 @@
 
 #include <hcuapi/iocbase.h>
 
-#define SCIIOC_SET_HIGH_SPEED          _IO (SCI_IOCBASE, 0)
-#define SCIIOC_SET_NORMAL_SPEED        _IO (SCI_IOCBASE, 1)
+#define SCIIOC_SET_HIGH_SPEED          _IO (SCI_IOCBASE, 0)  // Useless commands, kept only for compatibility.
+#define SCIIOC_SET_NORMAL_SPEED        _IO (SCI_IOCBASE, 1)  // Useless commands, kept only for compatibility.
 
 #define SCIIOC_SET_BAUD_RATE_115200    _IO (SCI_IOCBASE, 2)
 #define SCIIOC_SET_BAUD_RATE_57600     _IO (SCI_IOCBASE, 3)
@@ -14,6 +14,7 @@
 #define SCIIOC_SET_BAUD_RATE_1125000   _IO (SCI_IOCBASE, 7)
 #define SCIIOC_SET_BAUD_RATE_921600    _IO (SCI_IOCBASE, 8)
 #define SCIIOC_SET_BAUD_RATE_675000    _IO (SCI_IOCBASE, 9)
+#define SCIIOC_SET_BAUD_RATE_843750    _IO (SCI_IOCBASE, 10)
 
 #define SCIIOC_SET_SETTING             _IOW (SCI_IOCBASE, 6, struct sci_setting)
 

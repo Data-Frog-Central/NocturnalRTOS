@@ -20,7 +20,7 @@ extern char *__real_strcpy(char *dest, const char *src);
 extern char *__real_strncat(char *dest, const char *src, size_t n);
 extern char *__real_strncpy(char *dest, const char *src, size_t n);
 
-#define NR_POOL_MMZ		(CONFIG_MEM_NR_MMZ)
+#define NR_POOL_MMZ		(10)
 #define NR_POOL			(NR_POOL_MMZ + 1)
 #define ID_SYSMEM		(NR_POOL - 1)
 #define NODE_MAGIC		(0xA5A5)
@@ -112,6 +112,7 @@ struct pool_head {
 	void		*top;
 	void		*ptr;
 	size_t		size;
+	const char	*name;
 
 	heap_info	*info;
 	void		*info_end;
@@ -1046,6 +1047,17 @@ size_t mmz_total(int id)
 	return gMM[id]->size;
 }
 
+int mmz_name2id(const char *name)
+{
+	int i;
+	for (i = 0; i < NR_POOL_MMZ; i++) {
+		if (gMM[i] != NULL && gMM[i]->name != NULL && !strcmp(gMM[i]->name, name))
+			return i;
+	}
+
+	return -1;
+}
+
 void *mmz_malloc(int id, size_t size)
 {
 	struct pool_head *pool;
@@ -1518,24 +1530,26 @@ int OsKMmzInit(void)
 {
 	char name[128];
 	int i, np;
-	u32 start = 0, size = 0, id = 0, blklog;
+	u32 start = 0, size = 0, blklog;
+	const char *mmz_name = NULL;
 
-	for (i = 0; i < 10; i++) {
+	for (i = 0; i < NR_POOL_MMZ; i++) {
 		blklog = DEFAULT_BLOCKLOG;
 		start = 0;
 		size = 0;
-		id = 0xffffffff;
 		__real_memset(name, 0, sizeof(name));
-		sprintf(name, "/hcrtos/memory-mapping/mmz%d", i);
+		snprintf(name, sizeof(name), "/hcrtos/memory-mapping/mmz%d", i);
 		np = fdt_get_node_offset_by_path(name);
 		if (np < 0)
 			continue;
 		fdt_get_property_u_32_index(np, "reg", 0, &start);
 		fdt_get_property_u_32_index(np, "reg", 1, &size);
-		fdt_get_property_u_32_index(np, "id", 0, &id);
 		fdt_get_property_u_32_index(np, "blocklog", 0, &blklog);
-		if (size > 0 && id < (u32)NR_POOL_MMZ) {
+		//asm volatile ("nop;.word 0x1000ffff;nop;");
+		if (size > 0) {
 			gMM[i] = pool_init(MIPS_CACHED_ADDR((void *)start), size, blklog);
+			if (fdt_get_property_string_index(np, "mmzname", 0, &mmz_name) == 0)
+				gMM[i]->name = strdup(mmz_name);
 		}
 	}
 

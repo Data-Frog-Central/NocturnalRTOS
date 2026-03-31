@@ -7,11 +7,6 @@
 #define PREVIEW_H  360
 #define PREVIEW_X  640
 #define PREVIEW_Y  360
-#define DIS_SOURCE_W  1920
-#define DIS_SOURCE_H  1080
-#define DIS_SOURCE_X  0
-#define DIS_SOURCE_Y  0
-
 
 extern bool is_previwe_open;
 extern lv_timer_t * preview_timer_handle;   /*timer handle */

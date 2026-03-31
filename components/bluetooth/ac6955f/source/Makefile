@@ -5,7 +5,9 @@ TARGETS := libac6955f.a
 
 all : $(TARGETS) FORCE
 
-ac6955f-y := ac6955f.o
+ac6955f-$(BR2_PACKAGE_AC6955F_RT) := ac6955f.o
+ac6955f-$(BR2_PACKAGE_AC6955F_GX) := ac6955fgx.o
+ac6955f-$(BR2_PACKAGE_AC6956C_GX) := ac6956cgx.o
 
 obj-y = ac6955f.o
 
@@ -18,7 +20,7 @@ built-in.o: FORCE
 
 install: FORCE
 	install -D -m 0664 $(TARGETS) $(STAGING_DIR)/usr/lib/$(TARGETS)
-	cp -fr $(srctree)/bluetooth.h $(STAGING_DIR)/usr/include/
+	cp -fr $(srctree)/bluetooth.h $(srctree)/bluetooth_io.h $(STAGING_DIR)/usr/include/
 
 clean: FORCE
 	$(Q)$(MAKE) $(clean)=.

@@ -271,6 +271,8 @@
 #define SIOCGIWESSID	0x8B1B		/* get ESSID */
 #define SIOCSIWNICKN	0x8B1C		/* set node name/nickname */
 #define SIOCGIWNICKN	0x8B1D		/* get node name/nickname */
+#define SIOCGIWCONNECT	0x8B1E		/* get node name/nickname */
+
 /* As the ESSID and NICKN are strings up to 32 bytes long, it doesn't fit
  * within the 'iwreq' structure, so we need to use the 'data' member to
  * point to a string in user space, like it is done for RANGE... */
@@ -644,6 +646,9 @@
 #define IW_ENC_CAPA_CIPHER_TKIP	0x00000004
 #define IW_ENC_CAPA_CIPHER_CCMP	0x00000008
 #define IW_ENC_CAPA_4WAY_HANDSHAKE	0x00000010
+#define IW_ENC_CAPA_DIRECT_CONNECT	0x00000020
+
+
 
 /* Event capability macros - in (struct iw_range *)->event_capa
  * Because we have more than 32 possible events, we use an array of

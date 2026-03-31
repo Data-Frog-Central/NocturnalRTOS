@@ -35,16 +35,11 @@
 #include <hcuapi/vidsink.h>
 #include <libswscale/swscale.h>
 #endif
-#include "mp_thumbnail.h"
 #include "mp_playlist.h"
 #define Music_cover_zoom_w 600
 #define Music_cover_zoom_h 600
 #define Music_cover_zoom_x 1170
 #define Music_cover_zoom_y 150
-#define Dis_source_w 1920
-#define Dis_source_h 1080
-#define Dis_source_x 0
-#define Dis_source_y 0
 
 static int m_ff_speed[] = {1, 2, 4, 8, 16, 24, 32};
 static int m_fb_speed[] = {1, -2, -4, -8, -16, -24, -32};
@@ -322,7 +317,7 @@ static int media_monitor_deinit(media_handle_t *media_hld)
 }
 
 #ifdef RTOS_SUBTITLE_SUPPORT
-static lv_subtitle_t lv_subtitle;
+static lv_subtitle_t lv_subtitle={0};
 static uint16_t last_buf_size = 0;
 
 static void subtitle_callback(HCPlayerCallbackType type,
@@ -516,20 +511,19 @@ void media_close(media_handle_t *media_hld)
 	}
 	media_monitor_deinit(media_hld);
 	pthread_mutex_destroy(&media_hld->api_lock);
+	media_hld->player = NULL;
 	free((void*)media_hld);
 }
 
 int media_play(media_handle_t *media_hld, const char *media_src)
 {
 	ASSERT_API(media_hld && media_src);
-    sys_param_t * psys_param;
 	image_effect_t* g_img_effect;
 	dis_zoom_t musiccover_args={0};
     HCPlayerInitArgs player_args;
-    int rotate = 0 , h_flip = 0 , v_flip = 0;
+    int rotate = 0 , h_flip = 0;
     rotate_type_e rotate_type = ROTATE_TYPE_0;
     mirror_type_e mirror_type = MIRROR_TYPE_NONE;
-    printf("%s:%d: \n" , __func__ , __LINE__);
 
     api_get_flip_info(&rotate , &h_flip);
     rotate_type = rotate;
@@ -560,13 +554,10 @@ int media_play(media_handle_t *media_hld, const char *media_src)
 	player_args.snd_devs = AUDSINK_SND_DEVBIT_SPO | AUDSINK_SND_DEVBIT_I2SO;
 #endif
 
-    psys_param = projector_get_sys_param();
     player_args.rotate_enable = 1;
     player_args.rotate_type = rotate_type;
     player_args.mirror_type = mirror_type;
     musiccover_args = app_reset_mainlayer_param(rotate_type, mirror_type);
-	
-    printf(">>>>rotate_enable: %d, rotate_type: %d, mirror_type:%d\n",player_args.rotate_enable, player_args.rotate_type, player_args.mirror_type);
 
    if(preview_enable == MEDIA_PLAY_PREVIEW){
 		if(media_hld->type==MEDIA_TYPE_PHOTO){
@@ -593,19 +584,26 @@ int media_play(media_handle_t *media_hld, const char *media_src)
 			case MEDIA_TYPE_PHOTO:
 				media_switch_blink(false);
 				player_args.img_dis_mode = IMG_DIS_AUTO;
-				//#ifdef SYS_ZOOM_SUPPORT
+				#ifdef SYS_ZOOM_SUPPORT
+				if(projector_get_some_sys_param(P_SYS_ZOOM_OUT_COUNT)==0){
+					player_args.preview_enable=0;
+				}else{
 					player_args.preview_enable=1;
+				}
 					player_args.dst_area.x = get_display_x();
 					player_args.dst_area.y = get_display_y();
 					player_args.dst_area.h = get_display_v();
 					player_args.dst_area.w = get_display_h();
-					memcpy(&player_args.src_area,&musiccover_args.src_area,sizeof(av_area_t));		
-				//#endif
+					memcpy(&player_args.src_area,&musiccover_args.src_area,sizeof(av_area_t));	
+				#else
+					player_args.preview_enable=0;
+				#endif
 				player_args.img_dis_hold_time = media_hld->time_gap;
 				player_args.gif_dis_interval = 50;
 				player_args.img_alpha_mode = 0;	
 				
-				g_img_effect=get_img_effect_mode(); 
+				g_img_effect=get_img_effect_mode();
+				media_hld->pic_effect_mode=g_img_effect->mode;
 				if (g_img_effect->mode != IMG_SHOW_NULL) {
 					memcpy(&player_args.img_effect, g_img_effect, sizeof(image_effect_t));
 				}
@@ -615,6 +613,7 @@ int media_play(media_handle_t *media_hld, const char *media_src)
 				break;
 		} 
    	}
+	hcplayer_init(LOG_WARNING);
    	media_hld->player = hcplayer_create(&player_args);
     if (!media_hld->player){
         printf("hcplayer_create() fail!\n");
@@ -625,6 +624,8 @@ int media_play(media_handle_t *media_hld, const char *media_src)
 
     media_hld->state = MEDIA_PLAY;
     media_hld->speed = 0;
+    media_hld->pic_rotate=rotate_type;
+	// mainlayer rotate is closewise
 	pthread_mutex_unlock(&media_hld->api_lock);
 	return API_SUCCESS;
 }
@@ -693,10 +694,11 @@ int media_stop(media_handle_t *media_hld)
 	hcplayer_stop2(media_hld->player, m_closevp, m_fillblack);
 	if(m_closevp==false){
 		if(media_hld->type==MEDIA_TYPE_VIDEO){
+			api_pic_effect_enable(false);
+			/*if the video consists of pics,so do it like pic*/ 
 			api_media_pic_backup();
 		}else if(media_hld->type==MEDIA_TYPE_PHOTO){
-			image_effect_t* pic_effect=get_img_effect_mode(); 
-			if(pic_effect->mode == IMG_SHOW_NULL){
+			if(media_hld->pic_effect_mode == IMG_SHOW_NULL){
 				api_pic_effect_enable(false);
 				api_media_pic_backup();
 			}
@@ -1039,7 +1041,3 @@ int media_pic_change_rotate(media_handle_t* media_hld,rotate_type_e type)
 	return 0;
 }
 
-// play next content in media_handle_t -> urls
-int media_play_next_uri(media_handle_t* media_hld)
-{
-}

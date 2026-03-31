@@ -72,7 +72,8 @@ static void notifier_cvbs_in_plugin(void *arg, unsigned long param)
     printf("%s:%d: \n", __func__, __LINE__);
     m_cvbs_in.plug_status = CVBS_SWITCH_HDMI_STATUS_PLUGIN;
 #ifdef CVBS_AUDIO_I2SI_I2SO
-    cvbs_audio_open();
+    if(tv_dec_started)
+        cvbs_audio_open();
 #endif  
     return ;
 }
@@ -457,13 +458,12 @@ int cvbs_rx_start(void)
 
 int cvbs_rx_stop(void)
 {
+    tv_dec_started = false;
     if(tv_dec_fd > 0)
     {
 #ifdef CVBS_AUDIO_I2SI_I2SO
         cvbs_audio_close();
 #endif  
-        tv_dec_started = false;
-
         ioctl(tv_dec_fd , TVDEC_STOP);
         close(tv_dec_fd);
         tv_dec_fd = -1;

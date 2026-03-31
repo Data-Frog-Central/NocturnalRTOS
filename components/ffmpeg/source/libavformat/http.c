@@ -317,7 +317,7 @@ redo:
 
     off = s->off;
     location_changed = http_open_cnx_internal(h, options);
-    if (location_changed < 0) {
+    if (location_changed < 0 && AVERROR_HTTP_FORBID_SEEK != location_changed) {
         if (!http_should_reconnect(s, location_changed) ||
             reconnect_delay > s->reconnect_delay_max)
             goto fail;
@@ -366,7 +366,7 @@ redo:
         location_changed = 0;
         goto redo;
     }
-    return 0;
+    return (AVERROR_HTTP_FORBID_SEEK == location_changed) ? AVERROR_HTTP_FORBID_SEEK : 0;
 
 fail:
     if (s->hd)
@@ -534,7 +534,7 @@ static int http_write_reply(URLContext* h, int status_code)
                  content_type,
                  s->headers ? s->headers : "");
     }
-    av_log(h, AV_LOG_TRACE, "HTTP reply header: \n%s----\n", message);
+    av_log(h, AV_LOG_VERBOSE, "HTTP reply header: \n%s----\n", message);
     if ((ret = ffurl_write(s->hd, message, message_len)) < 0)
         return ret;
     return 0;
@@ -553,7 +553,7 @@ static int http_handshake(URLContext *c)
     URLContext *cl = ch->hd;
     switch (ch->handshake_step) {
     case LOWER_PROTO:
-        av_log(c, AV_LOG_TRACE, "Lower protocol\n");
+        av_log(c, AV_LOG_VERBOSE, "Lower protocol\n");
         if ((ret = ffurl_handshake(cl)) > 0)
             return 2 + ret;
         if (ret < 0)
@@ -562,7 +562,7 @@ static int http_handshake(URLContext *c)
         ch->is_connected_server = 1;
         return 2;
     case READ_HEADERS:
-        av_log(c, AV_LOG_TRACE, "Read headers\n");
+        av_log(c, AV_LOG_VERBOSE, "Read headers\n");
         if ((err = http_read_header(c, &new_location)) < 0) {
             handle_http_errors(c, err);
             return err;
@@ -570,7 +570,7 @@ static int http_handshake(URLContext *c)
         ch->handshake_step = WRITE_REPLY_HEADERS;
         return 1;
     case WRITE_REPLY_HEADERS:
-        av_log(c, AV_LOG_TRACE, "Reply code: %d\n", ch->reply_code);
+        av_log(c, AV_LOG_VERBOSE, "Reply code: %d\n", ch->reply_code);
         if ((err = http_write_reply(c, ch->reply_code)) < 0)
             return err;
         ch->handshake_step = FINISH;
@@ -989,7 +989,7 @@ static int process_line(URLContext *h, char *line, int line_count,
             while (*p && !av_isspace(*p))
                 p++;
             *(p++) = '\0';
-            av_log(h, AV_LOG_TRACE, "Received method: %s\n", method);
+            av_log(h, AV_LOG_VERBOSE, "Received method: %s\n", method);
             if (s->method) {
                 if (av_strcasecmp(s->method, method)) {
                     av_log(h, AV_LOG_ERROR, "Received and expected HTTP method do not match. (%s expected, %s received)\n",
@@ -998,7 +998,7 @@ static int process_line(URLContext *h, char *line, int line_count,
                 }
             } else {
                 // use autodetected HTTP method to expect
-                av_log(h, AV_LOG_TRACE, "Autodetected %s HTTP method\n", auto_method);
+                av_log(h, AV_LOG_VERBOSE, "Autodetected %s HTTP method\n", auto_method);
                 if (av_strcasecmp(auto_method, method)) {
                     av_log(h, AV_LOG_ERROR, "Received and autodetected HTTP method did not match "
                            "(%s autodetected %s received)\n", auto_method, method);
@@ -1015,7 +1015,7 @@ static int process_line(URLContext *h, char *line, int line_count,
             while (*p && !av_isspace(*p))
                 p++;
             *(p++) = '\0';
-            av_log(h, AV_LOG_TRACE, "Requested resource: %s\n", resource);
+            av_log(h, AV_LOG_VERBOSE, "Requested resource: %s\n", resource);
             if (!(s->resource = av_strdup(resource)))
                 return AVERROR(ENOMEM);
 
@@ -1030,7 +1030,7 @@ static int process_line(URLContext *h, char *line, int line_count,
                 av_log(h, AV_LOG_ERROR, "Malformed HTTP version string.\n");
                 return ff_http_averror(400, AVERROR(EIO));
             }
-            av_log(h, AV_LOG_TRACE, "HTTP version string: %s\n", version);
+            av_log(h, AV_LOG_VERBOSE, "HTTP version string: %s\n", version);
         } else {
             if (av_strncasecmp(p, "HTTP/1.0", 8) == 0)
                 s->willclose = 1;
@@ -1046,7 +1046,7 @@ static int process_line(URLContext *h, char *line, int line_count,
                 p++;
             s->http_code = strtol(p, &end, 10);
 
-            av_log(h, AV_LOG_TRACE, "http_code=%d\n", s->http_code);
+            av_log(h, AV_LOG_VERBOSE, "http_code=%d\n", s->http_code);
 
             if ((ret = check_http_code(h, s->http_code, end)) < 0)
                 return ret;
@@ -1226,7 +1226,7 @@ static int http_read_header(URLContext *h, int *new_location)
         if ((err = http_get_line(s, line, sizeof(line))) < 0)
             return err;
 
-        av_log(h, AV_LOG_TRACE, "header='%s'\n", line);
+        av_log(h, AV_LOG_VERBOSE, "header='%s'\n", line);
 
         err = process_line(h, line, s->line_count, new_location);
         if (err < 0)
@@ -1385,7 +1385,7 @@ static int http_connect(URLContext *h, const char *path, const char *local_path,
         av_bprintf(&request, "Proxy-%s", proxyauthstr);
     av_bprintf(&request, "\r\n");
 
-    av_log(h, AV_LOG_DEBUG, "request: %s\n", request.str);
+    av_log(h, AV_LOG_VERBOSE, "request: %s\n", request.str);
 
     if (!av_bprint_is_complete(&request)) {
         av_log(h, AV_LOG_ERROR, "overlong headers\n");
@@ -1430,7 +1430,7 @@ static int http_connect(URLContext *h, const char *path, const char *local_path,
     if (*new_location)
         s->off = off;
 
-    err = (off == s->off) ? 0 : -1;
+    err = (off == s->off) ? 0 : AVERROR_HTTP_FORBID_SEEK;
 done:
     av_freep(&authstr);
     av_freep(&proxyauthstr);
@@ -1457,7 +1457,7 @@ static int http_buf_read(URLContext *h, uint8_t *buf, int size)
 
             s->chunksize = strtoull(line, NULL, 16);
 
-            av_log(h, AV_LOG_TRACE,
+            av_log(h, AV_LOG_VERBOSE,
                    "Chunked encoding data size: %"PRIu64"\n",
                     s->chunksize);
 
@@ -1467,7 +1467,7 @@ static int http_buf_read(URLContext *h, uint8_t *buf, int size)
                 return 0;
             }
             else if (!s->chunksize) {
-                av_log(h, AV_LOG_DEBUG, "Last chunk received, closing conn\n");
+                av_log(h, AV_LOG_VERBOSE, "Last chunk received, closing conn\n");
                 ffurl_closep(&s->hd);
                 return 0;
             }
@@ -1491,13 +1491,14 @@ static int http_buf_read(URLContext *h, uint8_t *buf, int size)
         uint64_t target_end = s->end_off ? s->end_off : s->filesize;
         if ((!s->willclose || s->chunksize == UINT64_MAX) && s->off >= target_end)
             return AVERROR_EOF;
+        if (s->filesize > 0 && size > (s->filesize - s->off) && (s->filesize - s->off) > 0)
+            size = s->filesize - s->off;
         len = ffurl_read_complete(s->hd, buf, size);
         if ((!len || len == AVERROR_EOF) &&
             (!s->willclose || s->chunksize == UINT64_MAX) && s->off < target_end) {
             av_log(h, AV_LOG_ERROR,
                    "Stream ends prematurely at %"PRIu64", should be %"PRIu64"\n",
-                   s->off, target_end
-                  );
+                   s->off, target_end);
             return AVERROR(EIO);
         }
     }
@@ -1568,6 +1569,7 @@ static int http_read_stream(URLContext *h, uint8_t *buf, int size)
 #endif /* CONFIG_ZLIB */
     read_ret = http_buf_read(h, buf, size);
     while (read_ret < 0) {
+        av_log(h, AV_LOG_VERBOSE, "s->off %lld\n", s->off);
         uint64_t target = h->is_streamed ? 0 : s->off;
 
         if (read_ret == AVERROR_EXIT)
@@ -1592,20 +1594,24 @@ static int http_read_stream(URLContext *h, uint8_t *buf, int size)
         if ((seek_ret >= 0 && seek_ret != target)) {
             av_log(h, AV_LOG_ERROR, "Failed to reconnect at %"PRIu64".\n", target);
             return read_ret;
-        } else if (s->read_seek == 1 && seek_ret != target) {
-            int remain = target;
-            int flush_size;
-            seek_ret = http_seek_internal(h, 0, SEEK_SET, 1);
-            if (seek_ret == 0) {
+        } else if ((s->read_seek == 1 && seek_ret != target) || seek_ret == AVERROR_HTTP_FORBID_SEEK) {
+            int64_t remain = target;
+            int64_t flush_size;
+            if (seek_ret != AVERROR_HTTP_FORBID_SEEK)
+                seek_ret = http_seek_internal(h, 0, SEEK_SET, 1);
+            if (seek_ret == 0 || seek_ret == AVERROR_HTTP_FORBID_SEEK) {
                 do {
                     flush_size = (remain > size) ? size : remain;
                     read_ret = http_buf_read(h, buf, flush_size);
                     if (read_ret >= 0) {
                         remain -= read_ret;
                     }
-                    av_log(h, AV_LOG_DEBUG, "read_ret %d, flush_size %d, remain %d\n", read_ret, flush_size, remain);
+                    av_log(h, AV_LOG_VERBOSE, "read_ret %d, flush_size %lld, remain %lld\n", read_ret, flush_size, remain);
                 } while (remain > 0 && read_ret >= 0);
                 if (read_ret < 0) {
+                    av_log(h, AV_LOG_VERBOSE, "s->off %lld, target %lld\n", s->off, target);
+                    if (s->off < target)
+                        s->off = target;
                     continue;
                 }
             }
@@ -1834,12 +1840,17 @@ static int64_t http_seek_internal(URLContext *h, int64_t off, int whence, int fo
 
     /* if it fails, continue on old connection */
     if ((ret = http_open_cnx(h, &options)) < 0) {
-        av_dict_free(&options);
-        memcpy(s->buffer, old_buf, old_buf_size);
-        s->buf_ptr = s->buffer;
-        s->buf_end = s->buffer + old_buf_size;
-        s->hd      = old_hd;
-        s->off     = old_off;
+        if (ret != AVERROR_HTTP_FORBID_SEEK) {
+            av_dict_free(&options);
+            memcpy(s->buffer, old_buf, old_buf_size);
+            s->buf_ptr = s->buffer;
+            s->buf_end = s->buffer + old_buf_size;
+            s->hd      = old_hd;
+            s->off     = old_off;
+        } else {
+            av_dict_free(&options);
+            ffurl_close(old_hd);
+        }
         return ret;
     }
     av_dict_free(&options);

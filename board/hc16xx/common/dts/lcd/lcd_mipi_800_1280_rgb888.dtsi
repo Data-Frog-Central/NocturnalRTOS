@@ -30,7 +30,7 @@
 		 */
 		src-sel = <CONFIG_DE4K_OUTPUT_SUPPORT>;
 		clock-frequency = <500000000>;/*<1137124800>  1680307200 500000000;*/
-		status = "okay";
+		// status = "okay";
 };
 &DE {
 	tvtype = <15>;

@@ -6,7 +6,7 @@
 #include "lvgl/src/font/lv_font.h"
 #include "com_api.h"
 #include "osd_com.h"
-
+#include "../volume/volume.h"
 #ifdef __linux__
 #include <linux/input.h>
 #else
@@ -727,8 +727,9 @@ extern void set_label_text_with_font1(lv_obj_t * label,int  id,char* color,  lv_
 extern lv_font_t select_font_mplist[3];
 void win_msgbox_msg_open(int str_msg_id, uint32_t timeout, msg_timeout_func timeout_func, void *user_data)
 {
-    if(lv_obj_is_valid(m_obj_msg))
-        return;    
+    //if(lv_obj_is_valid(m_obj_msg))
+    //    return;    
+
     if (!m_obj_msg || !lv_obj_is_valid(m_obj_msg)){
         m_obj_msg = lv_obj_create(lv_scr_act());
         lv_obj_set_size(m_obj_msg,LV_PCT(40),LV_PCT(35));
@@ -798,6 +799,91 @@ void win_msgbox_msg_close(void)
     m_timeout_func_data = NULL;
     pthread_mutex_unlock(&m_mutex_msgbox);
 }
+
+void win_msgbox_msg_set_pos(lv_align_t align,lv_coord_t x_ofs, lv_coord_t y_ofs)
+{
+    if(m_obj_msg==NULL||lv_obj_is_valid(m_obj_msg)==false)
+        return;    
+    lv_obj_align(m_obj_msg,align,x_ofs,y_ofs);
+}
+
+
+void win_msgbox_msg_open_on_top(int str_msg_id, uint32_t timeout, msg_timeout_func timeout_func, void *user_data)
+{
+    if(lv_obj_is_valid(m_obj_msg))
+        return;    
+    if (!m_obj_msg || !lv_obj_is_valid(m_obj_msg)){
+        m_obj_msg = lv_obj_create(lv_layer_top());
+        lv_obj_set_size(m_obj_msg,LV_PCT(40),LV_PCT(35));
+        lv_obj_set_x(m_obj_msg, 0);
+        lv_obj_set_y(m_obj_msg, MSGBOX_Y_OFS);
+        lv_obj_set_align(m_obj_msg, LV_ALIGN_CENTER);
+        lv_obj_clear_flag(m_obj_msg, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_style_radius(m_obj_msg, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_bg_color(m_obj_msg, lv_color_hex(0x4D72E0), LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_bg_opa(m_obj_msg, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+    
+        // ui_tip_img
+        ui_tip_img = lv_img_create(m_obj_msg);
+        lv_obj_set_width(ui_tip_img, LV_SIZE_CONTENT);
+        lv_obj_set_height(ui_tip_img, LV_SIZE_CONTENT);
+        lv_obj_set_x(ui_tip_img, 0);
+        lv_obj_set_y(ui_tip_img, 0);
+        lv_img_set_src(ui_tip_img,&IDB_Icon_unsupported);
+        lv_obj_set_align(ui_tip_img, LV_ALIGN_CENTER);
+        lv_obj_add_flag(ui_tip_img, LV_OBJ_FLAG_ADV_HITTEST);
+        lv_obj_clear_flag(ui_tip_img, LV_OBJ_FLAG_SCROLLABLE);
+
+        // ui_tip_lab
+        ui_tip_lab = lv_label_create(m_obj_msg);
+        lv_obj_set_width(ui_tip_lab, LV_SIZE_CONTENT);
+        lv_obj_set_height(ui_tip_lab, LV_SIZE_CONTENT);
+        lv_obj_set_x(ui_tip_lab, 0);
+        lv_obj_set_y(ui_tip_lab, 0);
+        lv_obj_set_align(ui_tip_lab, LV_ALIGN_BOTTOM_MID);
+        lv_label_set_long_mode(ui_tip_lab,LV_LABEL_LONG_SCROLL_CIRCULAR);
+        lv_obj_set_style_text_color(ui_tip_lab, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_text_opa(ui_tip_lab, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_text_font(ui_tip_lab, &lv_font_montserrat_28, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+        if (0 != timeout && INVALID_VALUE_32 != timeout){
+            msgbox_timer = lv_timer_create(msgbox_timer_cb, timeout, NULL);
+        }
+
+    }
+	if (msgbox_timer)
+    {
+		lv_timer_reset(msgbox_timer);
+	    lv_timer_set_period(msgbox_timer, timeout);
+	}
+
+    lv_label_set_text(ui_tip_lab,(char *)api_rsc_string_get(str_msg_id));
+    lv_obj_set_style_text_font(ui_tip_lab, osd_font_get(FONT_MID), 0);        
+
+
+    if (timeout_func){
+        pthread_mutex_lock(&m_mutex_msgbox);
+        m_msg_timeout_func = timeout_func;
+        m_timeout_func_data = user_data;
+        pthread_mutex_unlock(&m_mutex_msgbox);
+    }else{
+        m_msg_timeout_func = NULL;
+        m_timeout_func_data = NULL;
+
+    }
+}
+
+void win_msgbox_msg_close_on_top(void)
+{
+    pthread_mutex_lock(&m_mutex_msgbox);
+	msgbox_msg_clear();
+    m_msg_timeout_func = NULL;
+    m_timeout_func_data = NULL;
+    pthread_mutex_unlock(&m_mutex_msgbox);
+}
+
+
+
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -939,6 +1025,17 @@ void win_data_buffing_close(void)
 #endif    
 }
 
+void win_data_buffing_label_set(char* user_str)
+{
+    lv_label_set_text(m_txt_buffering, user_str);
+}
+bool win_data_buffing_is_open(void)
+{
+    if(m_arc_buffering)
+        return lv_obj_is_valid(m_arc_buffering);
+    else 
+        return false;
+}
 
 static lv_obj_t *m_msgbox_obj = NULL;
 static user_msgbox_cb msgbox_func = NULL;
@@ -1076,7 +1173,8 @@ static void win_open_lvmbox_standby_cb(lv_event_t *e){
 	lv_event_code_t code = lv_event_get_code(e);
 	lv_obj_t *target = lv_event_get_target(e);
 	if(code == LV_EVENT_KEY){
-		uint16_t key = lv_indev_get_key(lv_indev_get_act());
+		uint32_t key = lv_indev_get_key(lv_indev_get_act());
+		uint32_t user_vkey=key_convert_vkey(key);   // other key convert2 user_vkey
 		if(key == LV_KEY_ENTER){
 			if(lv_btnmatrix_get_selected_btn(obj) == 0){
 				enter_standby();
@@ -1090,7 +1188,7 @@ static void win_open_lvmbox_standby_cb(lv_event_t *e){
 				}
 			}
 		}
-		else if(key == V_KEY_POWER)
+		else if(user_vkey == V_KEY_POWER)
 		{
 			standby_count++;
 			if(standby_count > 1)
@@ -1114,6 +1212,7 @@ void win_open_lvmbox_standby(void)
 {
     if(standby_mbox1 == NULL&&btnmatrix_standby == NULL)
     {
+		del_volume2();
 		preview_reset();
 		static const char * btn_txts[3];
 		btn_txts[0] = api_rsc_string_get(STR_RESTORE_OK_1);
@@ -1175,7 +1274,8 @@ static void win_open_lvmbox_standby_cb(lv_event_t *e){
 	lv_event_code_t code = lv_event_get_code(e);
 	lv_obj_t *target = lv_event_get_target(e);
 	if(code == LV_EVENT_KEY){
-		uint16_t key = lv_indev_get_key(lv_indev_get_act());
+		uint32_t key = lv_indev_get_key(lv_indev_get_act());
+		uint32_t user_vkey=key_convert_vkey(key);// other key convert2 user_vkey
 		if(key == LV_KEY_ENTER){
 			if(lv_msgbox_get_active_btn(obj) == 0){
 				enter_standby();
@@ -1193,7 +1293,7 @@ static void win_open_lvmbox_standby_cb(lv_event_t *e){
 				standby_count = 0;
 			}
 		}
-		else if(key == V_KEY_POWER)
+		else if(user_vkey == V_KEY_POWER)
 		{
 			standby_count++;
 			if(standby_count > 1)
@@ -1220,6 +1320,7 @@ static void win_open_lvmbox_standby_cb(lv_event_t *e){
 void win_open_lvmbox_standby(void){
     if(standby_mbox1 == NULL)
     {
+		del_volume2();
 		preview_reset();
         int id = projector_get_some_sys_param(P_OSD_LANGUAGE);
         static const char * btns[3];
@@ -1256,6 +1357,235 @@ void win_open_lvmbox_standby(void){
 }
 #endif
 #endif
+
+typedef enum {
+    UTF8_TYPE=1,
+	UTF16_BE_TYPE,	
+	UTF16_LE_TYPE,
+	TYPE_NULL,
+}str_encoder_fmt_e;
+
+typedef char			INT8;
+typedef unsigned char	UINT8;
+
+typedef short			INT16;
+typedef unsigned short	UINT16;
+
+typedef long			INT32;
+typedef unsigned long	UINT32;
+
+typedef unsigned long long UINT64;
+typedef long long INT64;
+
+typedef signed int INT;
+typedef unsigned int UINT;
+
+#include "../channel/local_mp/gb_2312.h"
+static int ComUniStrCopyChar(UINT8 *dest, UINT8 *src)
+{	
+     unsigned int i;
+
+	if((NULL == dest) || (NULL == src))
+		return 0;
+	
+     for(i=0; !((src[i] == 0x0 && src[i+1] == 0x0)&&(i%2 == 0)) ;i++)
+         dest[i] = src[i];
+     if(i%2)
+     {
+        dest[i] = src[i];
+        i++;
+     }
+     dest[i] = dest[i+1] = 0x0;
+ 
+     return i/2;
+}
+/* Convert UTF-16 to UTF-8.  */
+static uint8_t *utf16_to_utf8_t(uint8_t *dest, const uint16_t *src, size_t size)
+{
+	uint32_t code_high = 0;
+
+	while (size--) {
+		uint32_t code = *src++;
+
+		if (code_high) {
+			if (code >= 0xDC00 && code <= 0xDFFF) {
+				/* Surrogate pair.  */
+				code = ((code_high - 0xD800) << 10) + (code - 0xDC00) + 0x10000;
+
+				*dest++ = (code >> 18) | 0xF0;
+				*dest++ = ((code >> 12) & 0x3F) | 0x80;
+				*dest++ = ((code >> 6) & 0x3F) | 0x80;
+				*dest++ = (code & 0x3F) | 0x80;
+			} else {
+				/* Error...  */
+				*dest++ = '?';
+				/* *src may be valid. Don't eat it.  */
+				src--;
+			}
+
+			code_high = 0;
+		} else {
+			if (code <= 0x007F) {
+				*dest++ = code;
+			} else if (code <= 0x07FF) {
+				*dest++ = (code >> 6) | 0xC0;
+				*dest++ = (code & 0x3F) | 0x80;
+			} else if (code >= 0xD800 && code <= 0xDBFF) {
+				code_high = code;
+				continue;
+			} else if (code >= 0xDC00 && code <= 0xDFFF) {
+				/* Error... */
+				*dest++ = '?';
+			} else if (code < 0x10000) {
+				*dest++ = (code >> 12) | 0xE0;
+				*dest++ = ((code >> 6) & 0x3F) | 0x80;
+				*dest++ = (code & 0x3F) | 0x80;
+			} else {
+				*dest++ = (code >> 18) | 0xF0;
+				*dest++ = ((code >> 12) & 0x3F) | 0x80;
+				*dest++ = ((code >> 6) & 0x3F) | 0x80;
+				*dest++ = (code & 0x3F) | 0x80;
+			}
+		}
+	}
+
+	return dest;
+}
+
+static UINT32 ComUniStrToMB(UINT16* pwStr)
+ {
+ 	if(pwStr == NULL)
+		return 0;
+	UINT32 i=0;
+	while(pwStr[i])
+	{
+		pwStr[i]=(UINT16)(((pwStr[i]&0x00ff)<<8) | ((pwStr[i]&0xff00)>>8));
+		i++;
+	}
+	return i;
+
+ }
+
+static bool IsUTF8(const void* pBuffer, long size)
+{
+    bool IsUTF8 = true;
+	int error_time=0;
+    unsigned char* start = (unsigned char*)pBuffer;
+    unsigned char* end = (unsigned char*)pBuffer + size;
+    while (start < end)
+    {
+    	//printf("%x\n",*start);
+        if (*start < 0x80) // (10000000): 值小于0x80的为ASCII字符
+        {
+            start++;
+        }
+        else if (*start < (0xC0)) // (11000000): 值介于0x80与0xC0之间的为无效UTF-8字符
+        {
+        	error_time++;
+			start++;
+			if(error_time>3)
+			{
+	            IsUTF8 = false;
+	            break;
+			}
+        }
+        else if (*start < (0xE0)) // (11100000): 此范围内为2字节UTF-8字符
+        {
+            if (start >= end - 1)
+            {
+                break;
+            }
+
+
+            if ((start[1] & (0xC0)) != 0x80)
+            {
+                IsUTF8 = false;
+                break;
+            }
+
+
+            start += 2;
+        }
+        else if (*start < (0xF0)) // (11110000): 此范围内为3字节UTF-8字符
+        {
+            if (start >= end - 2)
+            {
+                break;
+            }
+
+            if ((start[1] & (0xC0)) != 0x80 || (start[2] & (0xC0)) != 0x80)
+            {
+                IsUTF8 = false;
+                break;
+            }
+
+            start += 3;
+        }
+        else
+        {
+            IsUTF8 = false;
+            break;
+        }
+    }
+
+
+    return IsUTF8;
+}
+
+
+int string_fmt_conv_to_utf8(unsigned char* buff,char* out_buff)
+{
+    UINT16 * temp_buff=NULL;
+    UINT16 * conv_buff=NULL;
+    int buff_size=strlen(buff);
+    if(!conv_buff){
+        conv_buff=(UINT16* )malloc(buff_size*2);
+    }
+    if(!temp_buff){
+        temp_buff=(UINT16*)malloc(buff_size*2);
+    }
+    memset(conv_buff,0,buff_size*2);
+    memset(temp_buff,0,buff_size*2);
+    memcpy(temp_buff,buff,buff_size);
+    str_encoder_fmt_e str_encoder_fmt=TYPE_NULL;
+    if(buff[0] == 0xef && buff[1] == 0xbb){
+		str_encoder_fmt =  UTF8_TYPE;
+        memcpy(out_buff,buff,buff_size);
+	}else if(buff[0] == 0xff && buff[1] == 0xfe){
+		str_encoder_fmt =  UTF16_LE_TYPE;
+        ComUniStrCopyChar( (UINT8 *)conv_buff, (UINT8 *)temp_buff);
+        memset(temp_buff,0,buff_size*2);
+		utf16_to_utf8_t((UINT8 *)temp_buff,conv_buff,buff_size);
+        memcpy(out_buff,(UINT8 *)temp_buff,buff_size*2);
+	}else if(buff[0] == 0xfe && buff[1] == 0xff){
+		str_encoder_fmt =	UTF16_BE_TYPE;
+		ComUniStrToMB(temp_buff);
+		ComUniStrCopyChar( (UINT8 *)conv_buff, (UINT8 *)temp_buff);
+		memset(temp_buff,0,buff_size*2);
+		utf16_to_utf8_t((UINT8 *)temp_buff,conv_buff,buff_size);        
+        memcpy(out_buff,(UINT8 *)temp_buff,buff_size*2);
+	}else{
+		str_encoder_fmt = TYPE_NULL;
+		if(IsUTF8(buff,buff_size)){
+            memcpy(out_buff,buff,buff_size);
+        }else{
+			convert_gb2312_to_unicode((UINT8 *)temp_buff,buff_size,conv_buff,buff_size*2);
+			ComUniStrToMB((UINT16 *)conv_buff);
+			ComUniStrCopyChar(  (UINT8 *)temp_buff,(UINT8 *)conv_buff);
+			memset(conv_buff,0,buff_size*2);
+			utf16_to_utf8_t((UINT8 *)conv_buff,temp_buff,buff_size);
+            memcpy(out_buff,(UINT8 *)conv_buff,buff_size*2);
+		}
+
+    }
+    free(conv_buff);
+    free(temp_buff);
+    return 0;
+}
+
+
+
+
 
 #if 1
 /**
@@ -1339,3 +1669,12 @@ void set_label_text2(lv_obj_t* obj, uint16_t label_id, uint16_t font_id){
 }
 
 #endif
+
+void win_clear_popup(void)
+{
+#ifdef LVGL_MBOX_STANDBY_SUPPORT
+    win_del_lvmbox_standby();
+#endif    
+    win_data_buffing_close();
+    win_msgbox_msg_close();
+}

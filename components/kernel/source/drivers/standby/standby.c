@@ -13,6 +13,11 @@
 #include <kernel/lib/fdt_api.h>
 #include <hcuapi/pinmux.h>
 #include "standby_priv.h"
+#include <hcuapi/persistentmem.h>
+#include <hcuapi/efuse.h>
+#include <sys/ioctl.h>
+#include <fcntl.h>
+#include <hcuapi/sysdata.h>
 
 #define writeb(value, addr) REG8_WRITE(addr, value)
 #define readb(addr) REG8_READ(addr)
@@ -81,8 +86,6 @@ extern void standby_prepare_exit(void);
 #define	NEC_TRAILER_PULSE	(1  * NEC_UNIT)
 #define	NEC_TRAILER_SPACE	(10 * NEC_UNIT) /* even longer in reality */
 #define NECX_REPEAT_BITS	1
-
-uint32_t upmode_n = 1;
 
 enum nec_state {
 	STATE_INACTIVE,
@@ -343,12 +346,6 @@ int STANDBY_ATTR_TEXT standby_reboot(void)
 {
 	void *wdt_addr = (void *)&WDT0;
 
-	REG32_CLR_BIT(0xb8800064, BIT1);
-	REG32_SET_BIT(0xb8802000, BIT0);
-	REG32_WRITE(0xb8802244, 0x80000000);
-	REG32_WRITE(0xb8802248, 0x1fffffff);
-	REG32_WRITE(0xb8802244, 0x00000000);
-
 	standby_reset_cpu_clock();
 
 	REG32_WRITE(wdt_addr + 4, 0);
@@ -445,6 +442,36 @@ static int standby_gpio_init(void)
 	return 0;
 }
 
+static uint32_t hc_get_def_val_from_efuse(void)
+{
+        struct hc_efuse_bit_map bitmap;
+
+        int fd = open("/dev/efuse", O_RDWR);
+        if (fd < 0) {
+                printf("can't find /dev/efuse\n");
+                return 0;
+        }
+
+        memset(&bitmap, 0, sizeof(struct hc_efuse_bit_map));
+        ioctl(fd, EFUSE_DUMP, (uint32_t)&bitmap);
+
+        return bitmap.customer.content0;
+}
+
+static uint8_t hc_key_adc_adjust_init(void)
+{
+	uint8_t def_val = 0;
+
+        if (sys_get_sysdata_adc_adjust_value(&def_val)) {
+		def_val = hc_get_def_val_from_efuse();
+        }
+
+	if (def_val == 0)
+		def_val = 0xf1;
+
+	return def_val;
+}
+
 #ifdef CONFIG_SOC_HC16XX
 static int standby_saradc_init(void)
 {
@@ -452,33 +479,31 @@ static int standby_saradc_init(void)
 	if (ch > 3)
 		ch += 2;
 
-	REG8_WRITE(0xb8818400 + 0x90 +ch, 0x06);
-	REG8_WRITE(0xb8818400 + 0x96 +ch, 0x02);
-	REG8_WRITE(0xb8818400 + 0xa2 +ch, 0x0a);
-	REG8_WRITE(0xb8818400 + 0xa8 +ch, 0x05);
-	REG32_SET_BIT(0xb8818400 + 0x8c, 0x1 << (16+ch));
-	REG32_SET_BIT(0xb8818400 + 0x88, 0x1 << 6);
-	REG32_SET_BIT(0xb8818400 + 0x8c, 0x1 << 15);
-	REG8_WRITE(0xb8818400 + 0x73, 0x00);
-	REG32_CLR_BIT(0xb8818400 + 0x0c, 0x1 << 0);
+	uint8_t val;
 
-	REG32_SET_BIT(0xb8818400 + 0x74, 1);
-	while (REG8_READ(0xb88184c0 + ch) == 0);
-	//standby_ctrl.saradc_def_val = REG8_READ(0xb88184c0 + ch);
-	standby_ctrl.saradc_def_val = 0xf0;
-	standby_ctrl.saradc_detect_count = 0;
+	standby_ctrl.saradc_def_val = hc_key_adc_adjust_init();
+	REG32_SET_BIT(0xb8818474, BIT0);
+	val = standby_ctrl.saradc_def_val * standby_ctrl.saradc.max / DEF_ADC_VAL;
+	while (REG8_READ(0xb88184d0 + ch) <= val);
+
+	printf("ADC_DEF = 0x%x\n", standby_ctrl.saradc_def_val);
 
 	return 0;
 }
 #elif defined(CONFIG_SOC_HC15XX)
 static int standby_saradc_init(void)
 {
-	REG32_WRITE(0xb8818400 + 0x0c, 0x00000000);
-	REG32_WRITE(0xb8818400 + 0x08, 0x000001ff);
-	REG32_WRITE(0xb8818400 + 0x04, 0x0f000f01);
-	//REG32_SET_BIT(0xb8818400 + 0x04, 0);
-	while (REG8_READ(0xb8818402) == 0);
-	standby_ctrl.saradc_def_val = REG8_READ(0xb8818402);
+	uint8_t val;
+
+	//adc auto update val
+	REG8_WRITE(0xb8818407, 0x00);
+	REG16_WRITE(0xb8818408, 0x00);
+	standby_ctrl.saradc_def_val = hc_key_adc_adjust_init();
+	REG32_SET_BIT(0xb8818404, BIT0);
+	val = standby_ctrl.saradc_def_val * standby_ctrl.saradc.max / DEF_ADC_VAL;
+	while (REG8_READ(0xb8818402) <= val);
+	printf("ADC_DEF = 0x%x\n", standby_ctrl.saradc_def_val);
+
 	return 0;
 }
 #endif
@@ -669,16 +694,20 @@ int STANDBY_ATTR_TEXT standby_saradc_interrupt(struct standby_ctrl *pctrl)
 	int ch = pctrl->saradc.channel;
 	if (ch > 3)
 		ch += 2;
-	uint8_t val = REG8_READ(0xb88184c0 + ch);
-	int min = (0xf1 * pctrl->saradc.min) / DEF_ADC_VAL;
-	int max = (0xf1 * pctrl->saradc.max) / DEF_ADC_VAL;
+	uint8_t val = REG8_READ(0xb88184d0 + ch);
+	int min = (standby_ctrl.saradc_def_val * pctrl->saradc.min) / DEF_ADC_VAL;
+	int max = (standby_ctrl.saradc_def_val * pctrl->saradc.max) / DEF_ADC_VAL;
 
-	if ((val >= min) && (val <= max))
+	if ((val >= min) && (val <= max)) {
 		pctrl->saradc_detect_count++;
-	else
+#ifdef CONFIG_OUT_HC_SCANCODE
+		printf("ADC min:0x%x, max:0x%x, val:0x%x\n", min, max, val);
+#endif
+
+	} else
 		pctrl->saradc_detect_count = 0;
 
-	if (pctrl->saradc_detect_count > 3) {
+	if (pctrl->saradc_detect_count >= 3) {
 		ret = standby_exit();
 		return ret;
 	}
@@ -726,6 +755,21 @@ int STANDBY_ATTR_TEXT standby_wakeup_saradc_monitor(struct standby_ctrl *pctrl)
 	return -1;
 }
 
+int STANDBY_ATTR_TEXT standby_queryadc_st(struct standby_ctrl *pctrl)
+{
+	int ch = pctrl->queryadc.channel;
+	if (ch > 3)
+		ch += 2;
+	uint8_t val = REG8_READ(0xb88184d0 + ch);
+	int min = (standby_ctrl.saradc_def_val * pctrl->queryadc.min) / DEF_ADC_VAL;
+	int max = (standby_ctrl.saradc_def_val * pctrl->queryadc.max) / DEF_ADC_VAL;
+
+	if ((val >= min) && (val <= max))
+		return 1;
+	else
+		return 0;
+}
+
 #if 1
 void STANDBY_ATTR_TEXT standby_clock_usb(uint32_t usb_port)
 {
@@ -766,10 +810,8 @@ void STANDBY_ATTR_TEXT standby_close_clocks(void)
 	REG32_WRITE_SYNC(0xbb8800064, 0x00000000);
 	REG32_WRITE_SYNC(0xbb880008c, 0x00000000);
 
-	REG32_WRITE(0xb8800080, 0x11000000);
-	REG32_WRITE(0xb8800084, 0x00c20000);
-	//REG32_WRITE(0xb8800080, 0xff07ffff);
-	//REG32_WRITE(0xb8800084, 0xa3efffff);
+	//REG32_WRITE(0xb8800080, 0x11000000);
+	//REG32_WRITE(0xb8800084, 0x00c20000);
 
 	REG32_SET_BIT(0xb8800490, 0x1 << 5);
 
@@ -791,29 +833,41 @@ void STANDBY_ATTR_TEXT standby_close_clocks(void)
 
 	REG32_SET_BIT(0xb8800200, 0x1 << 16);
 
+#ifdef CONFIG_CLOSE_SIDO
 	REG32_SET_BIT(0xb8800184, 0x1 << 25);
 	REG32_CLR_BIT(0xb8800184, 0x1 << 23);
 	REG32_CLR_BIT(0xb8800184, 0x1 << 24);
+	REG32_SET_BIT(0xb8800060, 0x1 << 11);
+	REG32_SET_BIT(0xb8800060, 0x1 << 1);
+#endif
 
+#ifdef CONFIG_CLOSE_VDAC
 	REG32_SET_BIT(0xb8804004, 0x1 << 0);
 	REG32_SET_BIT(0xb8804084, 0x07 << 8);
+#endif
 
+#ifdef CONFIG_CLOSE_LVDS
 	REG32_SET_BIT(0xb8800440, 0x1 << 2);
 	REG32_CLR_BIT(0xb886010f, 0x1 << 3);
 	REG32_CLR_BIT(0xb886014f, 0x1 << 3);
+	REG32_SET_BIT(0xb880008c, 0x01 << 8);
+	REG32_SET_BIT(0xb880008c, 0x01 << 7);
+#endif
 
+#ifdef CONFIG_CLOSE_MIPI
 	REG32_SET_BIT(0xb8800064, 0x1 << 28);
+#endif
 
+#ifdef CONFIG_CLOSE_CVBS
 	REG32_SET_BIT(0xb8800180, 0x1 << 24);
 	REG32_SET_BIT(0xb8800180, 0x1 << 25);
 	REG32_CLR_BIT(0xb8800180, 0x1 << 26);
 	REG32_SET_BIT(0xb8800180, 0x1 << 27);
 	REG32_SET_BIT(0xb8800180, 0x1 << 28);
 	REG32_SET_BIT(0xb8800180, 0x1 << 29);
+#endif
 
-	//REG32_SET_BIT(0xb881840c, 0x1 << 0);
-	//REG32_CLR_BIT(0xb881840c, 0x1 << 5);
-
+#ifdef CONFIG_CLOSE_HDRX
 	REG32_SET_BIT(0xb8814030, 0x1 << 3);
 	REG32_SET_BIT(0xb8814030, 0x1 << 4);
 	REG32_SET_BIT(0xb8814010, 0x1 << 20);
@@ -837,15 +891,16 @@ void STANDBY_ATTR_TEXT standby_close_clocks(void)
 	REG32_CLR_BIT(0xb8814010, 0x1 << 9);
 	REG32_CLR_BIT(0xb8814010, 0x1 << 10);
 
+	REG32_SET_BIT(0xb880008c, 0x01 << 11);
+	REG32_SET_BIT(0xb880008c, 0x01 << 12);
+#endif
+
 	REG32_SET_BIT(0xb8800060, 0x1 << 0);
 
 	REG32_SET_BIT(0xb8800060, 0x1 << 2);
-	REG32_SET_BIT(0xb8800060, 0x1 << 1);
 
 	REG32_SET_BIT(0xb8800064, 0x1 << 24);
 	REG32_SET_BIT(0xb8800064, 0x1 << 25);
-
-	REG32_SET_BIT(0xb8800060, 0x1 << 11);
 
 	REG32_SET_BIT(0xb8800060, 0x1 << 13);
 	REG32_SET_BIT(0xb8800063, 0x1 << 1);
@@ -871,14 +926,10 @@ void STANDBY_ATTR_TEXT standby_close_clocks(void)
 	REG32_SET_BIT(0xb880008c, 0x01 << 14);
 	REG32_SET_BIT(0xb880008c, 0x01 << 27);
 
-	REG32_SET_BIT(0xb880008c, 0x01 << 8);
-	REG32_SET_BIT(0xb880008c, 0x01 << 7);
 
 	REG32_SET_BIT(0xb8800064, 0x01 << 30);
 	REG32_SET_BIT(0xb880008c, 0x01 << 10);
 
-	REG32_SET_BIT(0xb880008c, 0x01 << 11);
-	REG32_SET_BIT(0xb880008c, 0x01 << 12);
 
 	REG32_SET_BIT(0xb880008c, 0x01 << 9);
 	REG32_SET_BIT(0xb8800064, 0x01 << 6);
@@ -912,29 +963,26 @@ void STANDBY_ATTR_TEXT standby_close_clocks(void)
 	REG32_SET_BIT(0xb8800060, 0x01 << 8);
 	REG32_SET_BIT(0xb8800060, 0x01 << 7);
 
-#if 0
-	REG8_WRITE(0xb8801004, 0x10);
-	volatile uint32_t i  = 999999;
-	while (i--);
-	*((volatile uint8_t *)0xb8818300) = 0x32;
+#ifdef CONFIG_CLOSE_DDR
+        REG32_WRITE_SYNC(0xb8800060 , 0x0e0f2f8e);
+        REG32_WRITE_SYNC(0xb8800064 , 0x7fffffff);
+        REG32_WRITE_SYNC(0xb880008c , 0xffffffff);
 
-	REG8_WRITE(0xb8801004, 0x00);
-	REG32_CLR_BIT(0xb8801033, 0x1 << 5);
-	REG8_WRITE(0xb883e01b, 0x20);
-	REG32_WRITE(0xb883e038, 0x3bc4011a);
-	REG8_WRITE(0xb883e03c, 0x1c);
-	REG16_WRITE(0xb883e042, 0xf110);
+        REG8_WRITE(0xb8801004 , 0x10);
+        REG8_READ(0xb8801004);
+        REG32_READ(0xa0008000);
+        REG8_READ(0xb8801004);
+        REG8_WRITE(0xb8801004 , 0x00);
+        REG32_CLR_BIT(0xb8801033 , 0x1 << 5);
+        REG8_WRITE(0xb883e01b , 0x20);
+        REG32_WRITE(0xb883e038 , 0x3bc4011a);
+        REG8_WRITE(0xb883e03c , 0x1c);
+        REG16_WRITE(0xb883e042 , 0xf110);
 
-	REG32_WRITE_SYNC(0xbb8800060, 0x0e0f2f8e);
-	REG32_WRITE_SYNC(0xbb8800064, 0x7fffffff);
-	REG32_WRITE_SYNC(0xbb880008c, 0xffffffff);
-
-	/* close ddr clock */
-	REG32_SET_BIT(0xb8800060, 0x1 << 15);
-
-	//REG8_WRITE(0xb8800358, 0x1);
-	standby_ddr_set(&standby_ctrl);
+        /* close ddr clock */
+        REG32_SET_BIT(0xb8800060 , 0x1 << 15);
 #endif
+        standby_ddr_set(&standby_ctrl);
 }
 #else //CONFIG_STANDBY_REAL_MODE
 void STANDBY_ATTR_TEXT standby_close_clocks(void)
@@ -1073,6 +1121,11 @@ int STANDBY_ATTR_TEXT standby_wakeup_monitor(struct standby_ctrl *pctrl)
 #endif
 
 	while (1) {
+		if (pctrl->queryadc_enabled) {
+			if (standby_queryadc_st(pctrl))
+				continue;
+		}
+
 		if (pctrl->ir_enabled)
 			ret = standby_wakeup_ir_monitor(pctrl);
 		if (pctrl->gpio_enabled)
@@ -1141,6 +1194,7 @@ void STANDBY_ATTR_TEXT standby_enter_real(void)
 
 void standby_enter(void) 
 {
+	sys_hcprogrammer_check_timeout();
 	if (!list_empty(&standby_ctrl.locker_list_head.list)) {
 		printf("enter standby fail\n");
 		standby_lock_traverse();
@@ -1243,6 +1297,8 @@ int standby_get_dts_param(void)
 		}
 	}
 
+
+
 	if (fdt_get_property_data_by_name(np, "adc", &num_pins) == NULL)
 		standby_ctrl.saradc_enabled = 0;		
 	else {
@@ -1259,6 +1315,24 @@ int standby_get_dts_param(void)
 		}
 	}	
 
+	if (fdt_get_property_data_by_name(np, "queryadc", &num_pins) == NULL) {
+		standby_ctrl.queryadc_enabled = 0;
+	}
+	else {
+		num_pins >>= 2;
+		if (num_pins == 3) {
+			fdt_get_property_u_32_index(np, "queryadc", 0, (u32 *)&channel);	
+			fdt_get_property_u_32_index(np, "queryadc", 1, (u32 *)&adc_min);	
+			fdt_get_property_u_32_index(np, "queryadc", 2, (u32 *)&adc_max);	
+		}
+
+		standby_ctrl.queryadc.channel = channel;
+		standby_ctrl.queryadc.min = adc_min;
+		standby_ctrl.queryadc.max = adc_max;
+
+		standby_ctrl.queryadc_enabled = 1;
+	}
+
 	return 0;
 }
 
@@ -1269,7 +1343,7 @@ void standby_lock_list_init(void)
 
 int standby_get_bootup_mode(enum standby_bootup_mode *mode)
 {
-	if (upmode_n == 0x1fffffff)
+	if (REG8_READ(0xb8818a70) == STANDBY_FLAG_WARM_BOOT)
 		*mode = STANDBY_BOOTUP_WARM_BOOT;
 	else
 		*mode = STANDBY_BOOTUP_COLD_BOOT;

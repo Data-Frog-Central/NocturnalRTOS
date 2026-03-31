@@ -656,6 +656,10 @@ static int console_find_cmd2(struct console_def *console,
 			}
 			//rc = c->callback(c_words - start_word - 1,
 			//words + start_word + 1);
+			extern int optind;
+			extern int opterr;
+			opterr = 0;
+			optind = 0;
 			rc = c->callback(c_words - start_word,
 					 words + start_word);
 		}

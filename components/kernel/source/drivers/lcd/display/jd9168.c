@@ -647,8 +647,7 @@ static int jd9168_probe(const char *node)
 	fdt_get_property_u_32_index(np, "spi-gpio-stbyb", 	0, &jd9168dev.lcd_stbyb_num);
 	log_d("jd9168dev.lcd_stbyb_num = %d %d %d %d\n",jd9168dev.spi_clk_num,jd9168dev.spi_mosi_num,jd9168dev.spi_cs_num,jd9168dev.lcd_stbyb_num);
 
-	int default_off = 0;
-	fdt_get_property_u_32_index(np, "default-off", 	0, &default_off);
+	int default_off = fdt_property_read_bool(np, "default-off");
 	if(default_off ==0)
 		jd9168_display_init();
 

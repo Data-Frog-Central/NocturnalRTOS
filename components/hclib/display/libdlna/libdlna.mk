@@ -1,4 +1,4 @@
-LIBDLNA_VERSION = c0e273c2aeac46ef0d339b6be7ca4b7f1a5e28c7
+LIBDLNA_VERSION = b0f4f65abb416353c4e53faa94eff7c9216602fb
 LIBDLNA_SITE_METHOD = git
 LIBDLNA_SITE = ssh://git@hichiptech.gitlab.com:33888/hclib/libdlna.git
 LIBDLNA_DEPENDENCIES = kernel newlib pthread
@@ -13,7 +13,14 @@ LIBDLNA_EXTRACT_CMDS = \
 	git -C $(@D) checkout $(LIBDLNA_VERSION) && \
 	cd $(@D) && sh ./gen-version.sh
 
+define LIBDLNA_POST_BUILD
+	$(TARGET_CROSS)strip -g -S -d $(@D)/libdlna.a
+endef
+
+LIBDLNA_POST_BUILD_HOOKS += LIBDLNA_POST_BUILD
+
 define LIBDLNA_INSTALL_PREBUILT
+	$(INSTALL) -D -m 0664 $(@D)/include/hccast/dlna_api.h $(PREBUILT_DIR)/usr/include/dlna/dlna_api.h
 	$(INSTALL) -D -m 0664 $(@D)/libdlna.a $(PREBUILT_DIR)/usr/lib/libdlna.a
 endef
 

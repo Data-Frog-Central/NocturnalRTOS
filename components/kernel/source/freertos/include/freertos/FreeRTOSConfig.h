@@ -97,11 +97,19 @@
 #define configTIMER_RATE_HZ				( ( TickType_t ) CONFIG_TIMER_CLOCK_HZ )
 #define configTICK_RATE_HZ				( CONFIG_TICK_RATE_HZ )
 #define configUSE_16_BIT_TICKS				0
+#if defined(CONFIG_TASK_MAX_PRIORITIES)
 #define configMAX_PRIORITIES				( CONFIG_TASK_MAX_PRIORITIES )
+#else
+#define configMAX_PRIORITIES				( 32 )
+#endif
 #define configMINIMAL_STACK_SIZE			( CONFIG_MINIMAL_TASK_STACK_SIZE )
 #define configISR_STACK_SIZE				( CONFIG_ISR_STACK_SIZE )
 //#define configTOTAL_HEAP_SIZE				( ( size_t ) CONFIG_HEAP_SIZE/2 )
+#if defined(CONFIG_MAX_TASK_NAME_LEN)
 #define configMAX_TASK_NAME_LEN				( CONFIG_MAX_TASK_NAME_LEN )
+#else
+#define configMAX_TASK_NAME_LEN				( 16 )
+#endif
 
 /* Hook functions */
 #define configUSE_IDLE_HOOK				1
@@ -116,6 +124,9 @@
 #define configUSE_MUTEXES 1
 #define configUSE_RECURSIVE_MUTEXES 1
 
+#ifndef CONFIG_TASK_NOTIFICATION_ARRAY_ENTRIES
+#define CONFIG_TASK_NOTIFICATION_ARRAY_ENTRIES		5
+#endif
 #define configTASK_NOTIFICATION_ARRAY_ENTRIES		(CONFIG_TASK_NOTIFICATION_ARRAY_ENTRIES + 3)
 #define configTASK_NOTIFICATION_POLL			(configTASK_NOTIFICATION_ARRAY_ENTRIES - 1)
 #define configTASK_NOTIFICATION_RPC			(configTASK_NOTIFICATION_ARRAY_ENTRIES - 2)

@@ -53,5 +53,6 @@ typedef struct vdec_dis_rect {
 #define VIDDEC_NOTIFY_UNDERRUN              _IO (VIDEO_IOCBASE, 104)
 #define VIDDEC_SET_FRAMERATE                _IO (VIDEO_IOCBASE, 105)
 #define VIDDEC_SET_SHOW_MASAIC_ON_ERR       _IO (VIDEO_IOCBASE, 106)
+#define VIDDEC_SET_SYNC_MODE                _IO (VIDEO_IOCBASE, 107)
 
 #endif /* _HCUAPI_VIDDEC_H_ */

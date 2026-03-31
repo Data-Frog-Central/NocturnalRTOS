@@ -191,6 +191,12 @@ int hccast_aum_ioctl(int cmd, void *param1, void *param2)
                 g_aum_res = res;
             }
             break;
+        case HCCAST_UM_CMD_SET_AUM_VENDOR:
+            aum_api_ioctl(AUM_CMD_SET_AOA_VENDOR, param1, param2);
+            break;
+        case HCCAST_UM_CMD_SET_AUM_MODEL:
+            aum_api_ioctl(AUM_CMD_SET_AOA_MODEL, param1, param2);
+            break;
         default:
             break;
     }

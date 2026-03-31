@@ -119,11 +119,12 @@ config BR2_PACKAGE_PREBUILTS_IMAGEDEC
 	default y if CONFIG_PREBUILT_SUBDIR = ""
 	select BR2_PACKAGE_PREBUILTS_MPEG2DEC if CONFIG_PREBUILT_SUBDIR = ""	
 
-if CONFIG_PREBUILT_SUBDIR = ""
 config BR2_PACKAGE_PREBUILTS_H264DEC
 	bool "h264 dec"
 	depends on BR2_PACKAGE_PREBUILTS_VIDDRIVER
-	default y 
+	default y if CONFIG_PREBUILT_SUBDIR = ""
+
+if CONFIG_PREBUILT_SUBDIR = ""
 
 config BR2_PACKAGE_PREBUILTS_RVDEC
 	bool "rv dec"
@@ -174,8 +175,15 @@ config BR2_PACKAGE_PREBUILTS_USBDRIVER_HID
 	bool "HID"
 	default n
 
-endif
+config BR2_PACKAGE_PREBUILTS_USBDRIVER_SERIAL
+    bool "SERIAL (CDC)"
+    default n
 
+config BR2_PACKAGE_PREBUILTS_USBDRIVER_RNDIS
+    bool "RNDIS (usb network)"
+    default n	
+
+endif
 
 
 menuconfig BR2_PACKAGE_PREBUILTS_USBGADGETDRIVER
@@ -194,26 +202,44 @@ config BR2_PACKAGE_PREBUILTS_USBGADGETDRIVER_MSC
 	  specified as a module parameter or sysfs option.
 
 config BR2_PACKAGE_PREBUILTS_USBGADGETDRIVER_NCM
-	bool "Network Control Model (NCM) support"
+	bool "NCM: Network Control Model support"
 	default n
 	help
-	  NCM is an advanced protocol for Ethernet encapsulation, allows
-	  grouping of several ethernet frames into one USB transfer and
-	  different alignment possibilities.
+		NCM is an advanced protocol for Ethernet encapsulation, allows
+		grouping of several ethernet frames into one USB transfer and
+		different alignment possibilities.
 
 config BR2_PACKAGE_PREBUILTS_USBGADGETDRIVER_SERIAL
 	bool "Serial Gadget (with CDC ACM and CDC OBEX support)"
 	default n
 	help
-	help
-	  The Serial Gadget talks to the Linux-USB generic serial driver.
-	  This driver supports a CDC-ACM module option, which can be used
-	  to interoperate with MS-Windows hosts or with the Linux-USB
+		The Serial Gadget talks to the Linux-USB generic serial driver.
+		This driver supports a CDC-ACM module option, which can be used
+		to interoperate with MS-Windows hosts or with the Linux-USB
 
 config BR2_PACKAGE_PREBUILTS_USBGADGETDRIVER_HID
 	select CONFIG_USB_GADGET_HID_VENDOR
-	bool "HID gadget"
+	bool "HID mouse/keyboard"
 	default n
+
+
+config BR2_PACKAGE_PREBUILTS_USBGADGETDRIVER_UAC1
+	bool "AUDIO USB gadget (uac1)"
+	default n
+	help
+		usb audio gadget driver (uac1)
+
+config BR2_PACKAGE_PREBUILTS_USBGADGETDRIVER_UVC
+	bool "VIDEO USB gadget (uvc)"
+	default n
+	help
+		usb video gadget driver (uvc)
+
+config BR2_PACKAGE_PREBUILTS_USBGADGETDRIVER_IUM
+	bool "IUM USB gadget"
+	default n
+	help
+	  usb ium gadget driver
 endif
 
 

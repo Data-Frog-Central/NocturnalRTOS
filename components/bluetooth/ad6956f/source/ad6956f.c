@@ -95,6 +95,15 @@ int bluetooth_set_connection_cvbs_fiber_mode(void)
     return 0;
 }
 
+int bluetooth_power_on_to_rx(void)
+{
+	return 0;
+}
+int bluetooth_factory_reset(void)
+{
+	return 0;
+}
+
 #ifdef BR2_PACKAGE_BLUETOOTH_FAKE
 int bluetooth_init(const char *uart_path, bluetooth_callback_t callback)
 {
@@ -147,6 +156,10 @@ int bluetooth_memory_connection(unsigned char value)
     return 0;
 }
 
+int bluetooth_ioctl(int cmd, ...)
+{
+	return 0;
+}
 #else
 #define BT_RET_EXIT     1
 #define BT_DATA_AGAIN	2
@@ -330,7 +343,7 @@ int bluetooth_poweron(void)
                     return BT_RET_ERROR;
                 break;
             }
-            if(count++>200)return BT_RET_ERROR;
+            if(count++>35)return BT_RET_ERROR;
             usleep(20 * 1000);
         }
     }
@@ -423,7 +436,7 @@ int bluetooth_is_connected(void)
                 }
                 break;
             }
-            if(count>200)return BT_RET_ERROR;
+            if(count>35)return BT_RET_ERROR;
                 usleep(20 * 1000);
         }
         return BT_RET_SUCCESS;
@@ -470,6 +483,24 @@ int bluetooth_memory_connection(unsigned char value)
     }
     else
         return BT_RET_ERROR;
+}
+
+static int _bluetooth_ioctl_(int cmd, unsigned long arg)
+{
+	int ret = BT_RET_SUCCESS;
+	return ret;
+}
+
+int bluetooth_ioctl(int cmd, ...)
+{
+	unsigned long arg = 0;
+	int ret = BT_RET_SUCCESS;
+	va_list args;
+	va_start(args, cmd);
+	arg = va_arg(args, unsigned long);
+	ret = _bluetooth_ioctl_(cmd, arg);
+	va_end(args);
+	return ret;
 }
 
 static void bt_ad6956f_read_thread(void *args)

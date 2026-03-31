@@ -5,8 +5,16 @@ lcd_main-$(CONFIG_DRV_LCD_GC9505) += 	display/gc9505.o
 lcd_main-$(CONFIG_DRV_LCD_JDI026) += 	display/jdi026.o
 lcd_main-$(CONFIG_DRV_LCD_SC5014A) += 	display/sc5014a.o
 lcd_main-$(CONFIG_DRV_LCD_JD9168)  += 	display/jd9168.o
+lcd_main-$(CONFIG_DRV_LCD_JD9168V2)  += display/jd9168v2.o
 lcd_main-$(CONFIG_DRV_LCD_ST7789V2) += display/st7789v2.o
 lcd_main-$(CONFIG_DRV_LCD_N116BGE)  += 	display/n116bge.o
+lcd_main-$(CONFIG_DRV_LCD_ST7265) += display/st7265.o
+lcd_main-$(CONFIG_DRV_LCD_DSI0) += display/mipi_dsi.o
+lcd_main-$(CONFIG_DRV_LCD_DSI_JJ101L008) += display/mipi_dsi_jj101l008.o
+lcd_main-$(CONFIG_DRV_ECX336CN) += display/ecx336cn.o
+lcd_main-$(CONFIG_DRV_LCD_ST7789V3) += display/st7789v3.o
+lcd_main-$(CONFIG_DRV_ST7701S) += display/st7701s.o
+lcd_main-$(CONFIG_DRV_SONY106) += display/sony106.o
 
 lcd_main-$(CONFIG_DRV_BACKLIGHT) += backlight.o
 obj-y += lcd_main.o

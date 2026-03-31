@@ -68,13 +68,6 @@ static int standby_init(void)
 	size_t bss_sz = (size_t)((void *)&__STANDBY_BSS_START -
 				 (void *)&__STANDBY_BSS_END);
 
-	REG32_CLR_BIT(0xb8800064, BIT1);
-	REG32_SET_BIT(0xb8802000, BIT0);
-	REG32_WRITE(0xb8802244, 0x00000000);
-	upmode_n = REG32_READ(0xb8802248);
-	REG32_WRITE(0xb8802244, 0x80000000);
-	REG32_WRITE(0xb8802248, 0x00000000);
-	REG32_WRITE(0xb8802244, 0x00000000);
 	memset((void *)&__STANDBY_BSS_START, 0, bss_sz);
 	standby_get_dts_param();
 	register_driver("/dev/standby", &g_standbyops , 0666, NULL);

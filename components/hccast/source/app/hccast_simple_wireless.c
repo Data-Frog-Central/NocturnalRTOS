@@ -243,6 +243,7 @@ static void castapp_detect_probed_wifi()
     // start hot-plug detect
     pthread_attr_init(&attr);
     pthread_attr_setstacksize(&attr, 0x2000);
+    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
     if (pthread_create(&tid, &attr, castapp_receive_event_func, (void *)NULL))
     {
         printf("pthread_create receive_event_func fail\n");

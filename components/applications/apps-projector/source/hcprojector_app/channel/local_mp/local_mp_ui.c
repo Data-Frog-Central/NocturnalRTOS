@@ -39,29 +39,29 @@
 #include "mp_spectdis.h"
 ///////////////////// VARIABLES ////////////////////
 #if 1
-lv_obj_t * ui_mainpage;
-lv_obj_t * ui_subpage;
-lv_obj_t * ui_fspage;
-lv_obj_t * ui_ctrl_bar;
+lv_obj_t * ui_mainpage = NULL;
+lv_obj_t * ui_subpage = NULL;
+lv_obj_t * ui_fspage = NULL;
+lv_obj_t * ui_ctrl_bar = NULL;
 
-lv_obj_t * ui_play_bar;
-lv_obj_t * ui_playbar;
-lv_obj_t * ui_winbar;
-lv_obj_t * ui_playname;
-lv_obj_t * ui_playstate;
-lv_obj_t * ui_speed;
+lv_obj_t * ui_play_bar = NULL;
+lv_obj_t * ui_playbar = NULL;
+lv_obj_t * ui_winbar = NULL;
+lv_obj_t * ui_playname = NULL;
+lv_obj_t * ui_playstate = NULL;
+lv_obj_t * ui_speed = NULL;
 
-lv_obj_t * ui_ebook_txt;
-lv_obj_t * ui_ebook_label;
-lv_obj_t * ui_ebook_label_page;
-lv_obj_t *subtitles_obj;
-lv_obj_t *subtitles_obj_pic;
+lv_obj_t * ui_ebook_txt = NULL;
+lv_obj_t * ui_ebook_label = NULL;
+lv_obj_t * ui_ebook_label_page = NULL;
+lv_obj_t *subtitles_obj = NULL;
+lv_obj_t *subtitles_obj_pic = NULL;
 /*some event can not update in sq so user handle in here*/
-lv_group_t * main_group;
-lv_group_t * sub_group;
-lv_group_t * fs_group;
-lv_group_t * play_bar_group;
-lv_group_t * ebook_group;
+lv_group_t * main_group = NULL;
+lv_group_t * sub_group = NULL;
+lv_group_t * fs_group = NULL;
+lv_group_t * play_bar_group = NULL;
+lv_group_t * ebook_group = NULL;
 
 #endif
 ///////////////////// TEST LVGL SETTINGS ////////////////////
@@ -119,15 +119,15 @@ static void ui_event_ctrl_bar(lv_event_t * e)
     // lv_obj_t * ta = lv_event_get_target(e);
     if(event == LV_EVENT_SCREEN_LOAD_START) {
         ctrlbarpage_open();
-        #ifdef RTOS_SUBTITLE_SUPPORT
+    #ifdef RTOS_SUBTITLE_SUPPORT
         create_subtitles_rect();
-        #endif
+    #endif
     }
     if(event == LV_EVENT_SCREEN_UNLOAD_START) {
-        #ifdef RTOS_SUBTITLE_SUPPORT
+    #ifdef RTOS_SUBTITLE_SUPPORT
         del_subtitles_rect();
-        #endif
-        ctrlbarpage_close();
+    #endif
+        ctrlbarpage_close(false);
     }
 }
 static void ui_event_ebook(lv_event_t * e)
@@ -139,7 +139,7 @@ static void ui_event_ebook(lv_event_t * e)
     }
     if(event == LV_EVENT_SCREEN_UNLOAD_START)
     {
-        ebook_close();
+        ebook_close(false);
     }
 
 }
@@ -872,7 +872,7 @@ int create_ctrlbarpage_scr(lv_obj_t *p,lv_event_cb_t cb_func)
     lv_obj_set_style_bg_img_src(ctrlbarbtn[5],&Hint_Stop,0);
     lv_obj_set_style_bg_img_src(ctrlbarbtn[6],&Hint_Rotate,0);
 
-    set_label_text2(lv_obj_get_child(ctrlbarbtn[0],0),STR_PLAY,FONT_MID); 
+    set_label_text2(lv_obj_get_child(ctrlbarbtn[0],0),STR_PAUSE,FONT_MID); 
     set_label_text2(lv_obj_get_child(ctrlbarbtn[1],0),STR_FB,FONT_MID); 
     set_label_text2(lv_obj_get_child(ctrlbarbtn[2],0),STR_FF,FONT_MID); 
     set_label_text2(lv_obj_get_child(ctrlbarbtn[3],0),STR_PREV,FONT_MID); 
@@ -983,7 +983,7 @@ int create_ctrlbar_in_photo(lv_obj_t * parent)
     lv_obj_set_style_bg_img_src(ctrlbarbtn[13],&IDB_Hint_Music_On,0);
     lv_obj_set_style_bg_img_src(ctrlbarbtn[14],&IDB_Hint_CaptureLogo,0);
 
-    set_label_text2(lv_obj_get_child(ctrlbarbtn[0],0),STR_PLAY,FONT_MID); 
+    set_label_text2(lv_obj_get_child(ctrlbarbtn[0],0),STR_PAUSE,FONT_MID); 
     set_label_text2(lv_obj_get_child(ctrlbarbtn[1],0),STR_ROTATE_RIGHT_K,FONT_MID); 
     set_label_text2(lv_obj_get_child(ctrlbarbtn[2],0),STR_ROTATE_LEFT,FONT_MID); 
     set_label_text2(lv_obj_get_child(ctrlbarbtn[7],0),STR_INFO,FONT_MID); 
@@ -1055,7 +1055,7 @@ int create_ctrlbar_in_ebook(lv_obj_t *p)
     set_label_text2(lv_obj_get_child(ctrlbarbtn[2],0),STR_EBOOK_PREV,FONT_MID); 
     set_label_text2(lv_obj_get_child(ctrlbarbtn[3],0),STR_EBOOK_NEXT,FONT_MID); 
     set_label_text2(lv_obj_get_child(ctrlbarbtn[4],0),STR_STOP,FONT_MID); 
-    set_label_text2(lv_obj_get_child(ctrlbarbtn[5],0),STR_MUSIC_OFF,FONT_MID); 
+    set_label_text2(lv_obj_get_child(ctrlbarbtn[5],0),STR_MUSIC_ON,FONT_MID); 
     set_label_text2(lv_obj_get_child(ctrlbarbtn[6],0),STR_LIST,FONT_MID); 
     set_label_text2(lv_obj_get_child(ctrlbarbtn[7],0),STR_INFO,FONT_MID); 
     set_label_text2(lv_obj_get_child(ctrlbarbtn[8],0),STR_MUSIC_SRC,FONT_MID); 

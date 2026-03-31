@@ -69,7 +69,14 @@ void *hccast_mira_wifi_reconnect_thread(void *arg)
 #endif
 
     hccast_mira_service_stop();
-    hccast_wifi_mgr_connect(&g_mira_cur_ap);
+    int ret = hccast_wifi_mgr_connect(&g_mira_cur_ap);
+    if (HCCAST_WIFI_ERR_USER_ABORT == ret)
+    {
+        pthread_mutex_lock(&g_mira_svr_mutex);
+        hccast_wifi_mgr_p2p_set_connect_stat(false);
+        pthread_mutex_unlock(&g_mira_svr_mutex);
+        goto EXIT;
+    }
 
     if (hccast_wifi_mgr_get_connect_status())
     {
@@ -88,8 +95,8 @@ void *hccast_mira_wifi_reconnect_thread(void *arg)
         hccast_wifi_mgr_disconnect();
     }
 
+EXIT:
     g_mira_wifi_stat = MIRA_WIFI_STAT_NONE;
-    pthread_detach(pthread_self());
     return NULL;
 }
 
@@ -122,7 +129,6 @@ void *hccast_mira_hostap_enable_thread(void *arg)
         hccast_mira_service_start();
     }
 
-    pthread_detach(pthread_self());
     return NULL;
 }
 
@@ -170,56 +176,56 @@ int hccast_mira_wfd_event_cb(const wfd_status_t event, const void *data)
 
     switch (event)
     {
-    case WFD_SET_SSID_DONE:
-        if (hccast_wifi_mgr_p2p_get_connect_stat())
-        {
-            hccast_wifi_mgr_p2p_set_enable(true);
+        case WFD_SET_SSID_DONE:
+            if (hccast_wifi_mgr_p2p_get_connect_stat())
+            {
+                hccast_wifi_mgr_p2p_set_enable(true);
 
+                if (mira_callback)
+                {
+                    mira_callback(HCCAST_MIRA_SSID_DONE, NULL, NULL);
+                }
+            }
+            break;
+
+        case WFD_CONNECTED:
+        {
             if (mira_callback)
             {
-                mira_callback(HCCAST_MIRA_SSID_DONE, NULL, NULL);
+                mira_callback(HCCAST_MIRA_CONNECTED, NULL, NULL);
             }
+            break;
         }
-        break;
 
-    case WFD_CONNECTED:
-    {
-        if (mira_callback)
+        case WFD_DISCONNECTED:
         {
-            mira_callback(HCCAST_MIRA_CONNECTED, NULL, NULL);
+            if (mira_callback)
+            {
+                mira_callback(HCCAST_MIRA_DISCONNECT, NULL, NULL);
+            }
+            break;
         }
-        break;
-    }
 
-    case WFD_DISCONNECTED:
-    {
-        if (mira_callback)
+        case WFD_START_PLAYER:
         {
-            mira_callback(HCCAST_MIRA_DISCONNECT, NULL, NULL);
+            if (mira_callback)
+            {
+                mira_callback(HCCAST_MIRA_START_DISP, NULL, NULL);
+            }
+            break;
         }
-        break;
-    }
 
-    case WFD_START_PLAYER:
-    {
-        if (mira_callback)
+        case WFD_STOP_PLAYER:
         {
-            mira_callback(HCCAST_MIRA_START_DISP, NULL, NULL);
+            if (mira_callback)
+            {
+                mira_callback(HCCAST_MIRA_STOP_DISP, NULL, NULL);
+            }
+            break;
         }
-        break;
-    }
 
-    case WFD_STOP_PLAYER:
-    {
-        if (mira_callback)
-        {
-            mira_callback(HCCAST_MIRA_STOP_DISP, NULL, NULL);
-        }
-        break;
-    }
-
-    default:
-        break;
+        default:
+            break;
     }
 
     return 0;
@@ -237,7 +243,7 @@ static wfd_manage_func_t func =
     ._p2p_device_get_rtsp_port = (void *)hccast_wifi_mgr_p2p_get_rtsp_port,
 };
 
-int hc_miracast_wfd_manage_init()
+int hccast_miracast_wfd_manage_init()
 {
     miracast_ioctl(WFD_CMD_SET_MANAGE_FUNC, (unsigned long)&func, (unsigned long)0);
 
@@ -256,121 +262,156 @@ int hccast_mira_update_p2p_state(hccast_p2p_state_e state)
 
     switch (state)
     {
-    case HCCAST_P2P_STATE_NONE:
-        miracast_update_p2p_status(P2P_STATE_NONE);
-        break;
-
-    case HCCAST_P2P_STATE_LISTEN:
-        hccast_net_ifconfig(HCCAST_P2P_INF, "128.0.0.1", "255.0.0.0", NULL);
-        hccast_net_set_if_updown(HCCAST_P2P_INF, HCCAST_NET_IF_UP);
-        if (HCCAST_SCENE_MIRACAST == hccast_get_current_scene())
-        {
-            hccast_net_ifconfig(HCCAST_WIFI_INF, HCCAST_HOSTAP_IP, HCCAST_HOSTAP_MASK, HCCAST_HOSTAP_GW);
-
-            bool connected = hccast_wifi_mgr_p2p_get_connect_stat();
-            hccast_log(LL_NOTICE, "mira connected: %d, last ssid: \"%s\"\n", connected, g_mira_cur_ap.ssid);
-            if (connected)
+        case HCCAST_P2P_STATE_NONE:
+            miracast_update_p2p_status(P2P_STATE_NONE);
+            break;
+ 
+        case HCCAST_P2P_STATE_LISTEN:
+            hccast_net_ifconfig(HCCAST_P2P_INF, "128.0.0.1", "255.0.0.0", NULL);
+            hccast_net_set_if_updown(HCCAST_P2P_INF, HCCAST_NET_IF_UP);
+            if (HCCAST_SCENE_MIRACAST == hccast_get_current_scene())
             {
-                if (MIRA_WIFI_STAT_PREVIOUS == g_mira_wifi_stat)
+                hccast_net_ifconfig(HCCAST_WIFI_INF, HCCAST_HOSTAP_IP, HCCAST_HOSTAP_MASK, HCCAST_HOSTAP_GW);
+
+                bool connected = hccast_wifi_mgr_p2p_get_connect_stat();
+                hccast_log(LL_INFO, "mira connected: %d, last ssid: \"%s\"\n", connected, g_mira_cur_ap.ssid);
+
+                if (connected)
                 {
-                    pthread_t tid = 0;
-                    if (pthread_create(&tid, NULL, (void *)hccast_mira_wifi_reconnect_thread, NULL) != 0)
+                    bool valid = false;
+
+                    if (mira_callback)
                     {
-                        hccast_log(LL_ERROR, "create hccast_mira_wifi_reconnect_thread failed!\n");
+                        mira_callback(HCCAST_MIRA_RESET, &g_mira_wifi_stat, &valid);
                     }
 
-                    g_mira_wifi_stat = MIRA_WIFI_STAT_ONGOING;
-                }
-                else if (MIRA_WIFI_STAT_NONE == g_mira_wifi_stat)
-                {
-                    pthread_t tid = 0;
-                    if (pthread_create(&tid, NULL, (void *)hccast_mira_hostap_enable_thread, NULL) != 0)
+                    if (!valid)
                     {
-                        hccast_log(LL_ERROR, "create hccast_mira_wifi_reconnect_thread failed!\n");
+                        if (MIRA_WIFI_STAT_PREVIOUS == g_mira_wifi_stat)
+                        {
+                            pthread_t tid = 0;
+                            pthread_attr_t thread_attr;
+
+                            pthread_attr_init(&thread_attr);
+                            pthread_attr_setdetachstate(&thread_attr, PTHREAD_CREATE_DETACHED);
+
+                            if (pthread_create(&tid, &thread_attr, (void *)hccast_mira_wifi_reconnect_thread, NULL) != 0)
+                            {
+                                hccast_log(LL_ERROR, "create hccast_mira_wifi_reconnect_thread failed!\n");
+                            }
+
+                            pthread_attr_destroy(&thread_attr);
+                            g_mira_wifi_stat = MIRA_WIFI_STAT_ONGOING;
+                        }
+                        else if (MIRA_WIFI_STAT_NONE == g_mira_wifi_stat)
+                        {
+                            pthread_t tid = 0;
+                            pthread_attr_t thread_attr;
+
+                            pthread_attr_init(&thread_attr);
+                            pthread_attr_setdetachstate(&thread_attr, PTHREAD_CREATE_DETACHED);
+
+                            if (pthread_create(&tid, &thread_attr, (void *)hccast_mira_hostap_enable_thread, NULL) != 0)
+                            {
+                                hccast_log(LL_ERROR, "create hccast_mira_wifi_reconnect_thread failed!\n");
+                            }
+
+                            pthread_attr_destroy(&thread_attr);
+                        }
+                    }
+                    else
+                    {
+                        hccast_wifi_mgr_p2p_set_connect_stat(false);
+                    }
+
+                    if ((hccast_get_current_scene() == HCCAST_SCENE_IUMIRROR) || (hccast_get_current_scene() == HCCAST_SCENE_AUMIRROR))
+                    {
+                        hccast_log(LL_WARNING, "Cur scene is doing USB MIRROR\n");
+                    }
+                    else
+                    {
+                        hccast_scene_switch(HCCAST_SCENE_NONE);
                     }
                 }
 
-                if ((hccast_get_current_scene() == HCCAST_SCENE_IUMIRROR) || (hccast_get_current_scene() == HCCAST_SCENE_AUMIRROR))
+            }
+
+            hccast_scene_set_mira_is_restarting(0);
+            miracast_update_p2p_status(P2P_STATE_LISTEN);
+            break;
+
+        case HCCAST_P2P_STATE_CONNECTING:
+            if (HCCAST_SCENE_MIRACAST != hccast_get_current_scene())
+            {
+                hccast_net_ifconfig(HCCAST_WIFI_INF, "129.0.0.1", "255.0.0.0", NULL);
+                hccast_net_ifconfig(HCCAST_P2P_INF, HCCAST_P2P_IP, NULL, NULL);
+
+                pthread_mutex_lock(&g_mira_svr_mutex);
+                hccast_wifi_mgr_p2p_set_connect_stat(true);
+                pthread_mutex_unlock(&g_mira_svr_mutex);
+
+                memset(&g_mira_cur_ap, 0, sizeof(g_mira_cur_ap));
+                if (mira_callback)
                 {
-                    hccast_log(LL_WARNING, "Cur scene is doing USB MIRROR\n");
+                    mira_callback(HCCAST_MIRA_GET_CUR_WIFI_INFO, (void *)&g_mira_cur_ap, NULL);
+                }
+
+                hccast_log(LL_INFO, "%d: cur wifi connect ssid %s.\n", __LINE__, g_mira_cur_ap.ssid);
+                if (strlen(g_mira_cur_ap.ssid) > 0)
+                {
+                    g_mira_wifi_stat = MIRA_WIFI_STAT_PREVIOUS;
+#ifdef HC_RTOS
+                    pthread_t tid = 0;
+                    pthread_attr_t thread_attr;
+
+                    pthread_attr_init(&thread_attr);
+                    pthread_attr_setdetachstate(&thread_attr, PTHREAD_CREATE_DETACHED);
+                    if (pthread_create(&tid, &thread_attr, (void *)hccast_mira_stop_services_thread, NULL) != 0)
+                    {
+                        hccast_log(LL_ERROR, "create hccast_mira_stop_services_thread failed!\n");
+                    }
+
+                    pthread_attr_destroy(&thread_attr);
+#endif
+                    hccast_wifi_mgr_udhcpc_stop();
+                    hccast_wifi_mgr_disconnect();
                 }
                 else
                 {
-                    hccast_scene_switch(HCCAST_SCENE_NONE);
-                }
-            }
-        }
-
-        hccast_scene_set_mira_is_restarting(0);
-        miracast_update_p2p_status(P2P_STATE_LISTEN);
-        break;
-
-    case HCCAST_P2P_STATE_CONNECTING:
-        if (HCCAST_SCENE_MIRACAST != hccast_get_current_scene())
-        {
-            hccast_net_ifconfig(HCCAST_WIFI_INF, "129.0.0.1", "255.0.0.0", NULL);
-            hccast_net_ifconfig(HCCAST_P2P_INF, HCCAST_P2P_IP, NULL, NULL);
-
-            pthread_mutex_lock(&g_mira_svr_mutex);
-            hccast_wifi_mgr_p2p_set_connect_stat(true);
-            pthread_mutex_unlock(&g_mira_svr_mutex);
-
-            memset(&g_mira_cur_ap, 0, sizeof(g_mira_cur_ap));
-            if (mira_callback)
-            {
-                mira_callback(HCCAST_MIRA_GET_CUR_WIFI_INFO, (void *)&g_mira_cur_ap, NULL);
-            }
-
-            hccast_log(LL_INFO, "%d: cur wifi connect ssid %s.\n", __LINE__, g_mira_cur_ap.ssid);
-            if (strlen(g_mira_cur_ap.ssid) > 0)
-            {
-                g_mira_wifi_stat = MIRA_WIFI_STAT_PREVIOUS;
-#ifdef HC_RTOS
-                pthread_t tid = 0;
-                if (pthread_create(&tid, NULL, (void *)hccast_mira_stop_services_thread, NULL) != 0)
-                {
-                    hccast_log(LL_ERROR, "create hccast_mira_stop_services_thread failed!\n");
-                }
-#endif
-                hccast_wifi_mgr_udhcpc_stop();
-                hccast_wifi_mgr_disconnect();
-            }
-            else
-            {
-                g_mira_wifi_stat = MIRA_WIFI_STAT_NONE;
+                    g_mira_wifi_stat = MIRA_WIFI_STAT_NONE;
 #ifdef __linux__
-                hccast_wifi_mgr_hostap_stop();
+                    hccast_wifi_mgr_hostap_stop();
 #else
-                hccast_wifi_mgr_udhcpd_stop();
-                hccast_wifi_mgr_hostap_disenable();
+                    hccast_wifi_mgr_udhcpd_stop();
+                    hccast_wifi_mgr_hostap_disenable();
 #endif
-                hccast_mira_stop_services();
+                    hccast_mira_stop_services();
+                }
+
+                hccast_scene_switch(HCCAST_SCENE_MIRACAST);
+
+                if (mira_callback)
+                {
+                    mira_callback(HCCAST_MIRA_CONNECT, NULL, NULL);
+                }
             }
 
-            hccast_scene_switch(HCCAST_SCENE_MIRACAST);
+            miracast_update_p2p_status(P2P_STATE_GONEGO_OK);
+            break;
 
-            if (mira_callback)
-            {
-                mira_callback(HCCAST_MIRA_CONNECT, NULL, NULL);
-            }
-        }
+        case HCCAST_P2P_STATE_CONNECTED:
+            miracast_update_p2p_status(P2P_STATE_PROVISIONING_DONE);
+            break;
 
-        miracast_update_p2p_status(P2P_STATE_GONEGO_OK);
-        break;
+        case HCCAST_P2P_STATE_CONNECT_FAILED:
+            miracast_update_p2p_status(P2P_STATE_IDLE);
+            break;
 
-    case HCCAST_P2P_STATE_CONNECTED:
-        miracast_update_p2p_status(P2P_STATE_PROVISIONING_DONE);
-        break;
+        case HCCAST_P2P_STATE_DISCONNECTED:
+            break;
 
-    case HCCAST_P2P_STATE_CONNECT_FAILED:
-        miracast_update_p2p_status(P2P_STATE_IDLE);
-        break;
-
-    case HCCAST_P2P_STATE_DISCONNECTED:
-        break;
-
-    default:
-        break;
+        default:
+            break;
     }
 
     return state;
@@ -476,7 +517,7 @@ int hccast_mira_service_init(hccast_mira_event_callback func)
 {
     hccast_log(LL_NOTICE, "%s\n", miracast_get_version());
 
-    hc_miracast_wfd_manage_init();
+    hccast_miracast_wfd_manage_init();
     hccast_mira_player_init();
 
     mira_callback = func;
@@ -493,34 +534,34 @@ int hccast_mira_service_ioctl(int cmd, void *arg)
 {
     switch (cmd)
     {
-    case HCCAST_MIRA_CMD_SET_RESOLUTION:
-    {
-        if (arg == NULL)
+        case HCCAST_MIRA_CMD_SET_RESOLUTION:
         {
-            return -1;
-        }
+            if (arg == NULL)
+            {
+                return -1;
+            }
 
-        int *res = (int *)arg;
-        if (HCCAST_MIRA_RES_1080P30 == *res)
-        {
-            hccast_mira_set_default_resolution(WFD_1080P30);
+            int *res = (int *)arg;
+            if (HCCAST_MIRA_RES_1080P30 == *res)
+            {
+                hccast_mira_set_default_resolution(WFD_1080P30);
+            }
+            else if (HCCAST_MIRA_RES_720P30 == *res)
+            {
+                hccast_mira_set_default_resolution(WFD_720P30);
+            }
+            else if (HCCAST_MIRA_RES_480P60 == *res)
+            {
+                hccast_mira_set_default_resolution(WFD_480P60);
+            }
+            else if (HCCAST_MIRA_RES_VESA1400 == *res)
+            {
+                hccast_mira_set_default_resolution(WFD_VESA_1400);
+            }
+            break;
         }
-        else if (HCCAST_MIRA_RES_720P30 == *res)
-        {
-            hccast_mira_set_default_resolution(WFD_720P30);
-        }
-        else if (HCCAST_MIRA_RES_480P60 == *res)
-        {
-            hccast_mira_set_default_resolution(WFD_480P60);
-        }
-        else if (HCCAST_MIRA_RES_VESA1400 == *res)
-        {
-            hccast_mira_set_default_resolution(WFD_VESA_1400);
-        }
-        break;
-    }
-    default:
-        break;
+        default:
+            break;
     }
 
     return 0;
@@ -543,6 +584,10 @@ int hccast_mira_service_set_resolution(hccast_mira_res_e res)
     else if (HCCAST_MIRA_RES_VESA1400 == res)
     {
         hccast_mira_set_default_resolution(WFD_VESA_1400);
+    }
+    else if (HCCAST_MIRA_RES_1080P60 == res)
+    {
+        hccast_mira_set_default_resolution(WFD_1080P60);
     }
 
     return 0;

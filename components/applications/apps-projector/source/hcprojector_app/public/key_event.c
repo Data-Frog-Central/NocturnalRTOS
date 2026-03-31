@@ -588,7 +588,7 @@ static INPUT_DEV_s m_input_dev[] = {
 };
 */
 
-#define INTERVAL_FIRST_KEY		350 //ms
+#define INTERVAL_FIRST_KEY		150//350 //150 ms
 #define INTERVAL_NORMAL_KEY		80 //ms
 static bool _key_event_is_valid(struct input_event *t)
 {

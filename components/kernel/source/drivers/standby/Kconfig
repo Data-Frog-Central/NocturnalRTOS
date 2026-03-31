@@ -1,0 +1,41 @@
+choice
+        prompt "Mode"
+        default CONFIG_CLOSE_IP
+
+        config CONFIG_OUT_HC_SCANCODE
+        bool "Debug output hichip scancode"
+
+        config CONFIG_CLOSE_IP
+        bool "Enable close ip"
+endchoice
+
+if CONFIG_CLOSE_IP
+
+config CONFIG_CLOSE_SIDO
+        bool "close sdio"
+        default y
+
+config CONFIG_CLOSE_VDAC
+        bool "close vdac"
+        default y
+
+config CONFIG_CLOSE_LVDS
+        bool "close lvds"
+        default y
+
+config CONFIG_CLOSE_MIPI
+        bool "close mipi"
+        default y
+
+config CONFIG_CLOSE_CVBS
+        bool "close cvbs"
+        default y
+
+config CONFIG_CLOSE_HDRX
+        bool "close hdrx"
+        default y
+
+config CONFIG_CLOSE_DDR
+        bool "close ddr"
+        default n
+endif

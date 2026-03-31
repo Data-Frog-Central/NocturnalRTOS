@@ -1137,9 +1137,9 @@ static int dis_get_display_info(struct dis_display_info *display_info )
     display_info->distype = DIS_TYPE_HD;
     ioctl(fd , DIS_GET_DISPLAY_INFO , display_info);
     close(fd);
-    //printf("w:%lu h:%lu\n", display_info->info.pic_width, display_info->info.pic_height);
-    //printf("y_buf:0x%lx size = 0x%lx\n" , (long unsigned int)display_info->info.y_buf , (long unsigned int)display_info->info.y_buf_size);
-    //printf("c_buf:0x%lx size = 0x%lx\n" , (long unsigned int)display_info->info.c_buf , (long unsigned int)display_info->info.c_buf_size);
+    printf("w:%lu h:%lu\n", display_info->info.pic_width, display_info->info.pic_height);
+    printf("y_buf:0x%lx size = 0x%lx\n" , (long unsigned int)display_info->info.y_buf , (long unsigned int)display_info->info.y_buf_size);
+    printf("c_buf:0x%lx size = 0x%lx\n" , (long unsigned int)display_info->info.c_buf , (long unsigned int)display_info->info.c_buf_size);
 
     return 0;
 }
@@ -1405,6 +1405,41 @@ int dis_dump(int argc , char *argv[])
         fsync((int)c_fd);
         fclose(c_fd);
     }
+
+    return 0;
+}
+
+int get_edid_all_video_res(int argc , char *argv[])
+{
+    int hdmi_fd = -1;
+    struct hdmi_edidinfo edidinfo= { 0 };
+    int i = 0;
+    int ret = -1;
+
+    hdmi_fd = open("/dev/hdmi" , O_RDWR);
+    if(hdmi_fd < 0)
+    {
+        printf("open hdmi error\n");
+        return -1;
+    }
+    else
+    {
+        ret = ioctl(hdmi_fd , HDMI_TX_GET_EDIDINFO , &edidinfo);
+        if(ret < 0)
+        {
+            printf("HDMI_TX_GET_EDID_TVSYS error\n");
+            close(hdmi_fd);
+            return -1;
+        }
+        for(i = 0; i < edidinfo.num_tvsys; i++)
+        {
+            printf("i:%d\n" , edidinfo.tvsys[i]);
+        }
+        printf("num_tvsys:%d\n", edidinfo.num_tvsys);
+        printf("best res:%d\n", edidinfo.best_tvsys);
+    }
+
+    close(hdmi_fd);
 
     return 0;
 }

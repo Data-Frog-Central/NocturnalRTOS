@@ -5,6 +5,11 @@
 #include <hcuapi/kshm.h>
 #include <hcuapi/tvtype.h>
 
+typedef enum TVDEC_TRAINING_STATUS {
+	TVDEC_TRAINING_STATUS_SUCCESS,
+	TVDEC_TRAINING_STATUS_FAIL,
+} tvdec_training_status_e;
+
 typedef enum TVDEC_VIDEO_DATA_PATH {
 	TVDEC_VIDEO_TO_DE,
 	TVDEC_VIDEO_TO_DE_ROTATE,
@@ -21,6 +26,11 @@ typedef struct tvdec_video_info {
 	int b_progressive;
 } tvdec_video_info_t;
 
+typedef struct tvdec_training_result {
+    tvdec_training_status_e status;
+    uint8_t dc_offset_val;
+} tvdec_training_result_t;
+
 #define TVDEC_START			_IO (TVDEC_IOCBASE, 0)
 #define TVDEC_STOP			_IO (TVDEC_IOCBASE, 1)
 #define TVDEC_SET_VIDEO_DATA_PATH	_IO (TVDEC_IOCBASE, 2)
@@ -31,5 +41,12 @@ typedef struct tvdec_video_info {
 #define TVDEC_NOTIFY_DISCONNECT		_IO (TVDEC_IOCBASE, 7)
 #define TVDEC_GET_VIDEO_INFO		_IOR(TVDEC_IOCBASE, 8, struct tvdec_video_info)
 #define TVDEC_SET_VIDEO_STOP_MODE	_IO (TVDEC_IOCBASE, 9) //<! param: Keep last frame: 1, Black screen: 0
+#define TVDEC_SET_TRAINING_START	_IO (TVDEC_IOCBASE, 10)
+#define TVDEC_NOTIFY_TRAINING_FINISH	_IO (TVDEC_IOCBASE, 11)
+#define TVDEC_GET_TRAINING_RESULT	_IOR(TVDEC_IOCBASE, 12, struct tvdec_training_result)
+#define TVDEC_SET_DC_OFFSET		_IO (TVDEC_IOCBASE, 13) //<! param: 0x1-0xFE
+#define TVDEC_SET_BRIGHTNESS		_IO (TVDEC_IOCBASE, 14) //<! param: 0-100
+
+
 
 #endif /* __HCUAPI_TVDEC_H_ */

@@ -243,6 +243,7 @@ static int backlight_probe(const char *node)
 		}
 		else
 		{
+			pbldev->scale = 100;//pbldev->max_brightness;
 			pbldev->levels = NULL;
 		}
 		ret = fdt_get_property_u_32_index(np, "default-brightness-level", 0, &tmpVal);

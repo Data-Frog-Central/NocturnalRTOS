@@ -213,4 +213,4 @@ err:
 	return ret;
 }
 
-module_driver(hc_rc, hc_rc_init, NULL, 1)
+module_system(hc_rc, hc_rc_init, NULL, 1)

@@ -93,4 +93,4 @@ static int init_rc_map_projector_c1_wjv6(void)
 	return rc_map_register(&projector_c1_wjv6_map);
 }
 
-module_driver(rc_map_projector_c1_wjv6, init_rc_map_projector_c1_wjv6, NULL, 0)
+module_system(rc_map_projector_c1_wjv6, init_rc_map_projector_c1_wjv6, NULL, 0)

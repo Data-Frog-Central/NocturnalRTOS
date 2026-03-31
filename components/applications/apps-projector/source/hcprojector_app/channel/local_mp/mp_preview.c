@@ -145,8 +145,8 @@ void win_preview_create(lv_obj_t* parent)
 {
 #if 1   //ui draw
     ui_win_zoom = lv_obj_create(parent);
-    lv_obj_set_size(ui_win_zoom,LV_PCT(PREVIEW_WIN_W_PCT), LV_PCT(PREVIEW_WIN_H_PCT));
-    lv_obj_align(ui_win_zoom, LV_ALIGN_CENTER,-1,-1);
+    lv_obj_set_size(ui_win_zoom,PREVIEW_WIN_W_PCT, PREVIEW_WIN_H_PCT);
+    lv_obj_align(ui_win_zoom, LV_ALIGN_CENTER,0,-1);
     lv_obj_clear_flag(ui_win_zoom, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
     lv_obj_set_style_radius(ui_win_zoom, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_color(ui_win_zoom, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -157,7 +157,7 @@ void win_preview_create(lv_obj_t* parent)
     lv_obj_set_style_border_side(ui_win_zoom, LV_BORDER_SIDE_FULL, LV_PART_MAIN | LV_STATE_DEFAULT);
 
     ui_win_name = lv_obj_create(parent);
-    lv_obj_set_size(ui_win_name,LV_PCT(33),LV_PCT(7));
+    lv_obj_set_size(ui_win_name,PREVIEW_WIN_W_PCT,LV_PCT(7));
     lv_obj_align_to(ui_win_name,ui_win_zoom,LV_ALIGN_OUT_BOTTOM_MID,0,PREVIEW_WINNAME_Y_OFS);
     lv_obj_clear_flag(ui_win_name, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
     lv_obj_set_style_bg_color(ui_win_name, lv_color_hex(0xAD31F9), LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -179,7 +179,7 @@ void win_preview_create(lv_obj_t* parent)
     lv_obj_set_style_text_font(ui_name,&LISTFONT_3000,0);
     lv_label_set_text(ui_name,"");
     ui_file_info = lv_obj_create(parent);
-    lv_obj_set_size(ui_file_info,LV_PCT(21),LV_PCT(41));
+    lv_obj_set_size(ui_file_info,LV_PCT(24),LV_PCT(42));
     lv_obj_align_to(ui_file_info,ui_win_zoom,LV_ALIGN_OUT_RIGHT_TOP,5,0);
     lv_obj_clear_flag(ui_file_info, LV_OBJ_FLAG_SCROLLABLE);      /// Flags
     lv_obj_set_style_radius(ui_file_info, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -254,23 +254,23 @@ void app_set_de_dismode(media_play_mode_t mode)
     if(mode==MEDIA_PLAY_NORMAL)
     {
         mp_set_preview_layer_order(0);
-        dis_rect.src_rect.x = DIS_SOURCE_X;
-        dis_rect.src_rect.y = DIS_SOURCE_Y;
-        dis_rect.src_rect.w = DIS_SOURCE_W;
-        dis_rect.src_rect.h = DIS_SOURCE_H;
-        dis_rect.dst_rect.x = DIS_SOURCE_X;
-        dis_rect.dst_rect.y = DIS_SOURCE_Y;
-        dis_rect.dst_rect.w = DIS_SOURCE_W;
-        dis_rect.dst_rect.h = DIS_SOURCE_H;
+        dis_rect.src_rect.x = DIS_SOURCE_FULL_X;
+        dis_rect.src_rect.y = DIS_SOURCE_FULL_Y;
+        dis_rect.src_rect.w = DIS_SOURCE_FULL_W;
+        dis_rect.src_rect.h = DIS_SOURCE_FULL_H;
+        dis_rect.dst_rect.x = DIS_SOURCE_FULL_X;
+        dis_rect.dst_rect.y = DIS_SOURCE_FULL_Y;
+        dis_rect.dst_rect.w = DIS_SOURCE_FULL_W;
+        dis_rect.dst_rect.h = DIS_SOURCE_FULL_H;
         media_set_play_mode(mode, &dis_rect);
     }
     else if(mode==MEDIA_PLAY_PREVIEW)
     {
         mp_set_preview_layer_order(1);
-        dis_rect.src_rect.x = DIS_SOURCE_X;
-        dis_rect.src_rect.y = DIS_SOURCE_Y;
-        dis_rect.src_rect.w = DIS_SOURCE_W;
-        dis_rect.src_rect.h = DIS_SOURCE_H;
+        dis_rect.src_rect.x = DIS_SOURCE_FULL_X;
+        dis_rect.src_rect.y = DIS_SOURCE_FULL_Y;
+        dis_rect.src_rect.w = DIS_SOURCE_FULL_W;
+        dis_rect.src_rect.h = DIS_SOURCE_FULL_H;
         dis_rect.dst_rect.x = get_display_x() + get_display_h()/3;
         dis_rect.dst_rect.y = get_display_y() + get_display_v()/3;
         dis_rect.dst_rect.w = get_display_h()/3;
@@ -303,8 +303,8 @@ int preview_deinit(void)
         preview_timer_handle=NULL;
     }
     //reset dis dev 
-    api_set_display_zoom(DIS_SOURCE_X,DIS_SOURCE_Y,DIS_SOURCE_W,DIS_SOURCE_H,
-    DIS_SOURCE_X,DIS_SOURCE_Y,DIS_SOURCE_W,DIS_SOURCE_H);
+    api_set_display_zoom(DIS_SOURCE_FULL_X,DIS_SOURCE_FULL_Y,DIS_SOURCE_FULL_W,DIS_SOURCE_FULL_H,
+    DIS_SOURCE_FULL_X,DIS_SOURCE_FULL_Y,DIS_SOURCE_FULL_W,DIS_SOURCE_FULL_H);
 }
 
 

@@ -10,6 +10,7 @@
 #define HS_CTRL_IFACE_NAME      "wlan0"
 #define P2P_CTRL_IFACE_NAME     "p2p0"
 
+#define WIFI_RECONNECT_TIMEOUT  (60)
 
 //// * ############################################## * ////
 
@@ -99,6 +100,7 @@ int wifi_ctrl_do_remove_net_all(char* ifname);
 int wifi_ctrl_is_connecting();
 int wifi_ctrl_is_disconnecting();
 int wifi_ctrl_is_scanning();
+int wifi_ctrl_is_busy();
 
 /**
  * Set the global variable g_wifi_is_connecting or  g_wifi_is_disconnecting to the value of the flag parameter.
@@ -109,6 +111,7 @@ int wifi_ctrl_is_scanning();
  */
 int wifi_ctrl_set_connecting_by_user(bool flag);
 int wifi_ctrl_set_disconnecting_by_user(bool flag);
+int wifi_ctrl_set_scanning_by_user(bool flag);
 
 /**
  * It connects to a WiFi AP
@@ -122,36 +125,36 @@ int wifi_ctrl_do_ap_connect(const hccast_wifi_ap_info_t *ap_info);
 /**
  * This function is used to disconnect APs
  */
-int wifi_ctrl_do_ap_disconnect();
+int wifi_ctrl_do_ap_disconnect(void);
 
 /**
  * This function is used to scan the available APs
  */
-int wifi_ctrl_do_scan();
+int wifi_ctrl_do_scan(void);
 
 /**
  * Used to abort the current wifi block operation (include scanning or connecting).
  */
-void wifi_ctrl_do_op_abort();
+void wifi_ctrl_do_op_abort(void);
 
 /**
  * Used to abort the current wifi scanning block operation.
  */
-void wifi_ctrl_do_op_scanning_abort();
+void wifi_ctrl_do_op_scanning_abort(void);
 
 /**
  * Used to abort the current wifi connecting block operation.
  */
-void wifi_ctrl_do_op_connecting_abort();
+void wifi_ctrl_do_op_connecting_abort(void);
 
 /**
  * Used to reset the current wifi operation stat for HCCAST_WIFI_STAT_IDLE.
  */
-void wifi_ctrl_do_op_reset();
+void wifi_ctrl_do_op_reset(void);
 
-int wifi_ctrl_p2p_lock();
-int wifi_ctrl_p2p_unlock();
-int wifi_ctrl_signal();
+int wifi_ctrl_p2p_lock(void);
+int wifi_ctrl_p2p_unlock(void);
+int wifi_ctrl_signal(void);
 
 /**
  * This function is wait scan end.
@@ -263,7 +266,7 @@ int wifi_ctrl_hostap_thread_start(void);
 int wifi_ctrl_hostap_thread_stop(void);
 int wifi_ctrl_sta_thread_start(void);
 int wifi_ctrl_sta_thread_stop(void);
-int wifi_ctrl_p2p_wps_pbc();
+int wifi_ctrl_p2p_wps_pbc(void);
 int wifi_ctrl_hostap_set_best_channel(int ch24G, int ch5G);
 #endif // HC_RTOS
 

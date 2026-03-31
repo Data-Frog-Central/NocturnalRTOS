@@ -20,6 +20,7 @@
 #include <kernel/drivers/spi.h>
 #include <kernel/lib/fdt_api.h>
 #include <hcuapi/pinmux.h>
+#include <unistd.h>
 
 #include "spi_bitbang.h"
 #include "spi_gpio.h"
@@ -121,7 +122,19 @@ static inline int getmiso(const struct spi_device *spi)
 
 #undef pdata
 
-#define spidelay(nsecs) do {} while (0)
+//#define spidelay(nsecs) do {} while (0)
+
+void spidelay(uint32_t nsecs)
+{
+	if (nsecs < 1000)
+		return;
+
+	nsecs /= 1000;
+
+	usleep(nsecs);
+
+	return;
+}
 
 #include "spi-bitbang-txrx.h"
 
@@ -301,7 +314,7 @@ static int spi_gpio_probe_dt(const char *node, struct spi_gpio_platform_data *pd
 	ret = fdt_get_property_u_32_index(np, "gpio-mosi", 0, (u32 *)&pdata->mosi);
 	if (ret < 0) {
 		printf("spi-gpio: gpio-mosi property not found, switching to no-rx mode\n");
-		pdata->miso = SPI_GPIO_NO_MOSI;
+		pdata->mosi = SPI_GPIO_NO_MOSI;
 	}
 
 	ret = fdt_get_property_u_32_index(np, "num-chipselects", 0, (u32 *)&tmp);

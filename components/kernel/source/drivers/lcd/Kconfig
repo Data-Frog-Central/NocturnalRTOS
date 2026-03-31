@@ -22,6 +22,10 @@ config CONFIG_DRV_LCD_JD9168
 	bool "lcd jd9168 support"
 	default n
 
+config CONFIG_DRV_LCD_JD9168V2
+	bool "lcd jd9168v2 support"
+	default n
+
 config CONFIG_DRV_LCD_ST7789V2
 	bool "lcd st7789v2 support"
 	default n
@@ -29,6 +33,36 @@ config CONFIG_DRV_LCD_ST7789V2
 config CONFIG_DRV_LCD_N116BGE
 	bool "lcd n116bge support"
 	default n
+
+config CONFIG_DRV_LCD_ST7265
+	bool "lcd st7265 support"
+	default n
+
+config CONFIG_DRV_LCD_ST7789V3
+	bool "lcd st7789v3"
+	default n
+
+config CONFIG_DRV_ECX336CN
+	bool "lcd ecx336cn"
+	default n
+
+config CONFIG_DRV_ST7701S
+	bool "lcd st7701s"
+	default n
+
+config CONFIG_DRV_SONY106
+	bool "lcd sony106"
+	default n
+
+config CONFIG_DRV_LCD_DSI0
+	bool "lcd mipi dsi0 init"
+	default n
+	depends on CONFIG_DRV_MIPI
+
+config CONFIG_DRV_LCD_DSI_JJ101L008
+	bool "lcd mipi dsi jj101l008"
+	default n
+	depends on CONFIG_DRV_MIPI
 
 config CONFIG_DRV_BACKLIGHT
 	bool "backlight support"

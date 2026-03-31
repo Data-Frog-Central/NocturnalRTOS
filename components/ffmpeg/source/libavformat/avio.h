@@ -771,6 +771,9 @@ int avio_closep(AVIOContext **s);
  */
 int avio_open_dyn_buf(AVIOContext **s);
 
+int avio_open_dyn_buf_len(AVIOContext **s, int len);
+
+
 /**
  * Return the written size and a pointer to the buffer.
  * The AVIOContext stream is left intact.

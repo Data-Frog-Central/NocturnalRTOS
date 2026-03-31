@@ -741,6 +741,7 @@ static void showlogo_thread(void *args)
 					vcfg->pic_height = 720;
 				}
 				vcfg->frame_rate = frame_rate;
+				vcfg->kshm_size = 0x200000;
 
 				vcfg->pixel_aspect_x = 1;
 				vcfg->pixel_aspect_y = 1;
@@ -790,6 +791,7 @@ static void showlogo_thread(void *args)
 				}
 				memset(acfg, 0, sizeof(struct audio_config));
 
+				acfg->kshm_size = 0x80000;
 				acfg->codec_id = codec_id;
 				acfg->sync_mode = 2;
 				acfg->bits_per_coded_sample = bitdepth;

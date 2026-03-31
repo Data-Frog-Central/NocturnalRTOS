@@ -171,8 +171,7 @@ static int n116bge_probe(const char *node)
 	fdt_get_property_u_32_index(np, "enbaled", 	0, &n116bgedev.enbaled);
 	printf("%s %d rstb = %d pwd = %d enbaled =%d n116bgedev.i2c_devpath = %s\n",__func__,__LINE__,n116bgedev.rstb,n116bgedev.pwd,n116bgedev.enbaled,n116bgedev.i2c_devpath);
 
-	int default_off = 0;
-	fdt_get_property_u_32_index(np, "default-off", 	0, &default_off);
+	int default_off = fdt_property_read_bool(np, "default-off");
 	if(default_off ==0)
 		n116bge_display_init();
 

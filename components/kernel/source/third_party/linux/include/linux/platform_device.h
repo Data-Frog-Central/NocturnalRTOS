@@ -191,6 +191,7 @@ extern int platform_device_add_data(struct platform_device *pdev,
 extern int platform_device_add(struct platform_device *pdev);
 extern void platform_device_del(struct platform_device *pdev);
 extern void platform_device_put(struct platform_device *pdev);
+extern struct platform_device *of_find_device_by_node(struct device_node *np);
 
 struct platform_driver {
 	int (*probe)(struct platform_device *);

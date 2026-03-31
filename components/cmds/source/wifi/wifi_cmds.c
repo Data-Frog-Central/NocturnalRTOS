@@ -236,6 +236,9 @@ static int get_best_channel(int argc, char **argv)
 
 	return 0;
 }
+#ifdef CONFIG_CMDS_RTWPRIV
+extern int rtwpriv_main(int argc, char *argv[]);
+#endif
 
 CONSOLE_CMD(wifi, NULL, wifi_entry, CONSOLE_CMD_MODE_SELF, "enter wifi test utilities")
 CONSOLE_CMD(wpa_supplicant, "wifi", wpa_supplicant_cmd, CONSOLE_CMD_MODE_SELF, "wpa_supplicant daemon")
@@ -247,3 +250,8 @@ CONSOLE_CMD(iwconfig, "wifi", iwconfig_cmd, CONSOLE_CMD_MODE_SELF, "iwconfig com
 CONSOLE_CMD(iwlist, "wifi", iwlist_cmd, CONSOLE_CMD_MODE_SELF, "iwconfig command")
 CONSOLE_CMD(log_level, "wifi", log_level, CONSOLE_CMD_MODE_SELF, "set log level")
 CONSOLE_CMD(get_best_channel, "wifi", get_best_channel, CONSOLE_CMD_MODE_SELF, "set log level")
+#ifdef CONFIG_CMDS_RTWPRIV
+CONSOLE_CMD(rtwpriv, NULL, rtwpriv_main, CONSOLE_CMD_MODE_SELF, "rtwpriv tool")
+#endif
+
+

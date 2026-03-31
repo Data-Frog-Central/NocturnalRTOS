@@ -17,6 +17,7 @@
 #include "decoder.h"
 #include <netinet/tcp.h>
 #include <sys/select.h>
+#include <crc32.h>
 
 #ifdef __HCRTOS__
 #include <kernel/module.h>
@@ -60,17 +61,20 @@ static int create_socket(int16_t port)
 		return -1;
 	}
 
-	{
-		int opt = 1;
-		setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-	}
+	int opt = 1;
+	setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
-	int defRcvBufSize = -1;
-	socklen_t optlen = DATA_BUFFER_SIZE;
+	opt = DATA_BUFFER_SIZE;
+	setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &opt, sizeof(opt));
+
+
+	int defRcvBufSize = 0;
+	socklen_t optlen = sizeof(defRcvBufSize);
 	if (getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &defRcvBufSize, &optlen) < 0) {
 		printf("getsockopt error=%d(%s)!!!\n", errno, strerror(errno));
 		goto fail;
 	}
+	printf("defRcvBufSize: %d\n", defRcvBufSize);
 
 #ifndef USE_UDP_PROTOCOL
 	int keepAlive = 1;    // 非0值，开启keepalive属性
@@ -180,6 +184,7 @@ void *audio_data_thread(void *argv)
 	socklen_t len = sizeof(client_addr);
 	data_header_t header;
 	void *adec_handle = NULL;
+	uint32_t crc_val = 0;
 	if(audio_data_sock <=0) {
 		printf("audio_data_sock = %d\n", audio_data_sock);
 		exit(-1);
@@ -222,6 +227,17 @@ void *audio_data_thread(void *argv)
 				printf("%s:%d\n", __func__, __LINE__);
 				break;
 			}
+
+			crc_val = crc32(0, (uint8_t *)&header, sizeof(data_header_t) - sizeof(uint32_t));
+
+			if(crc_val != header.crc_val){
+				printf("crc check error. correct val: %08lx, error val: %08lx\n", crc_val, header.crc_val);
+				close(client_sock);
+				client_sock = -1;
+				printf("%s:%d\n", __func__, __LINE__);
+				break;
+			}
+
 			if(recv_data(client_sock, buffer, header.size) != 0) {
 				close(client_sock);
 				client_sock = -1;
@@ -260,6 +276,7 @@ void *video_data_thread(void *argv)
 	socklen_t len = sizeof(client_addr);
 	data_header_t header;
 	void *vdec_handle = NULL;
+	uint32_t crc_val = 0;
 	if(video_data_sock <=0) {
 		printf("video_data_sock = %d\n", video_data_sock);
 		exit(-1);
@@ -305,6 +322,16 @@ void *video_data_thread(void *argv)
 				printf("%s:%d\n", __func__, __LINE__);
 				break;
 			}
+
+			crc_val = crc32(0, (uint8_t *)&header, sizeof(header) - sizeof(uint32_t));
+			if(crc_val != header.crc_val){
+				printf("crc check error. correct val: %08lx, error val: %08lx\n", crc_val, header.crc_val);
+				close(client_sock);
+				client_sock = -1;
+				printf("%s:%d\n", __func__, __LINE__);
+				break;
+			}
+
 
 			if(recv_data(client_sock, buffer, header.size) != 0) {
 				close(client_sock);
@@ -355,6 +382,7 @@ static int udp_recv_v1(int sockfd, uint8_t *data, int len)
 	uint8_t *payload = &packet[0] + sizeof(udp_header); 
 	int data_len;
 	uint32_t seg_nums = 0;
+	uint32_t crc_val = 0;
 
 	h = (udp_header *)&packet[0];
 
@@ -366,12 +394,23 @@ static int udp_recv_v1(int sockfd, uint8_t *data, int len)
 		}
 		/*printf("%ld:%lu\n", h->seg_nums, h->seg_id);*/
 		if(h->magic == 0xdeadbeef && h->seg_id < h->seg_nums){
+			crc_val = crc32(0, (uint8_t *)h, sizeof(udp_header) - sizeof(uint32_t));
+			if(crc_val != h->crc_val){
+				printf("crc check error. correct val: %08lx, error val: %08lx\n", crc_val, h->crc_val);
+				continue;
+			}
 			if(h->seg_id == 0){
 				if(seg_nums != 0){
 					printf("abandon data\n");
 				}
 				seg_nums = 0;
 			}
+
+			if(h->seg_id > 1000){
+				printf("h->sed_id too large: %ld\n", h->seg_id);
+				continue;
+			}
+
 			memcpy(data + h->seg_id * UDP_MAX_PAYLOAD_LEN, payload, UDP_MAX_PAYLOAD_LEN);
 			/*printf("%02x %02x %02x %02x\n", payload[0], payload[1], payload[2],payload[3]);*/
 			seg_nums++;
@@ -446,6 +485,7 @@ void *audio_data_thread(void *argv)
 	data_header_t *header;
 	void *adec_handle = NULL;
 	int ret = 0;
+	uint32_t crc_val = 0;
 	if(audio_data_sock <=0) {
 		printf("audio_data_sock = %d\n", audio_data_sock);
 		exit(-1);
@@ -484,8 +524,9 @@ void *audio_data_thread(void *argv)
 				audio_flush_flag = 0;
 			}
 
-			if(strcmp(header->magic, DATA_HEADER_MAGIC)){
-				printf("recv data header\n");
+			crc_val = crc32(0, (uint8_t *)header, sizeof(data_header_t) - sizeof(uint32_t));
+			if(strcmp(header->magic, DATA_HEADER_MAGIC) || crc_val != header->crc_val){
+				printf("recv data header, crc_val: %08lx, header->crc_val: %08lx\n", crc_val, header->crc_val);
 				close(client_sock);
 				client_sock = -1;
 				printf("%s:%d\n", __func__, __LINE__);
@@ -518,6 +559,7 @@ void *video_data_thread(void *argv)
 	data_header_t *header;
 	void *vdec_handle = NULL;
 	int ret = 0;
+	uint32_t crc_val;
 	if(video_data_sock <=0) {
 		printf("video_data_sock = %d\n", video_data_sock);
 		exit(-1);
@@ -551,9 +593,9 @@ void *video_data_thread(void *argv)
 				break;
 			}
 			header = (data_header_t *)buffer;
-
-			if(strcmp(header->magic, DATA_HEADER_MAGIC)){
-				printf("recv data header\n");
+			crc_val = crc32(0, (uint8_t *)header, sizeof(data_header_t) - sizeof(uint32_t));
+			if(strcmp(header->magic, DATA_HEADER_MAGIC) || crc_val != header->crc_val){
+				printf("recv data header, crc_val: %08lx, header->crc_val: %08lx\n", crc_val, header->crc_val);
 				close(client_sock);
 				client_sock = -1;
 				printf("%s:%d\n", __func__, __LINE__);

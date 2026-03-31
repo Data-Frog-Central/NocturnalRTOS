@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 #ifndef __LITTLE_ENDIAN
 #define __LITTLE_ENDIAN 1234

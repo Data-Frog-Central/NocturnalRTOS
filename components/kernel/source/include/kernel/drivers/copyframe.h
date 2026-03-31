@@ -4,6 +4,8 @@
 #include <stdint.h>
 #include <hcuapi/snd.h>
 
+void audsink_copy_to_s16lep(void *dst, void *src, snd_pcm_uframes_t frames, int ipitch,
+    uint8_t channels_in, snd_pcm_format_t format, snd_pcm_access_t access, int align);
 void audsink_copy_raw(void *dst, void *src, snd_pcm_uframes_t frames);
 void audsink_copy_s8(void *dst, void *src, snd_pcm_uframes_t frames,
 		     snd_pcm_uframes_t pitch, uint8_t channels_in,

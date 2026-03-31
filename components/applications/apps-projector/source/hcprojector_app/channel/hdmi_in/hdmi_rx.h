@@ -15,9 +15,15 @@
 #endif
 
 
-#define HDMI_SWITCH_HDMI_STATUS_PLUGOUT		0
-#define HDMI_SWITCH_HDMI_STATUS_PLUGIN		1
-#define HDMI_SWITCH_HDMI_STATUS_ERR_INPUT   2
+#define HDMI_RX_STATUS_PLUGOUT		0 //  plugout, disconnect
+#define HDMI_RX_STATUS_PLUGIN		1 // plugin , connect, playing
+#define HDMI_RX_STATUS_ERR_INPUT    2  // this hrx device not support
+
+#define HDMI_RX_STATUS_STOP   		3
+#define HDMI_RX_STATUS_START   		4
+#define HDMI_RX_STATUS_PAUSE 		5
+#define HDMI_RX_STATUS_PLAYING   	6
+
 #define HDMI_SWITCH_BOOTLOGO_LAYER			DIS_LAYER_MAIN
 #define HDMI_SWITCH_HDMI_RX_LAYER           DIS_LAYER_AUXP
 
@@ -45,6 +51,7 @@ struct hdmi_info{
     int kumsg_id;
 #endif
     char plug_status;
+    char status;
     char enable;
 };
 

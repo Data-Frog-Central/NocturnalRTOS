@@ -21,11 +21,14 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <hcuapi/snd.h>
 
 #include "com_api.h"
 #include "osd_com.h"
 #include "cast_api.h"
 #include "data_mgr.h"
+
+#include "network_api.h"
 
 #define CAST_SERVICE_NAME               "HCcast"
 #define CAST_AIRCAST_SERVICE_NAME       "HCcast"
@@ -166,6 +169,33 @@ int hccast_aum_stop(void)
 
 #endif
 
+void cast_api_set_volume(int vol)
+{
+    int snd_fd = open("/dev/sndC0i2so", O_WRONLY);
+    if (snd_fd < 0)
+    {
+        printf("Open /dev/sndC0i2so fail.\n");
+        return;
+    }
+    ioctl(snd_fd, SND_IOCTL_SET_VOLUME, &vol);
+    close(snd_fd);
+}
+
+int cast_api_get_volume(void)
+{
+    int snd_fd = open("/dev/sndC0i2so", O_WRONLY);
+    uint8_t vol = 0;
+    if (snd_fd < 0)
+    {
+        return 0;
+    }
+    ioctl(snd_fd, SND_IOCTL_GET_VOLUME, &vol);
+    //printf("get vol: %d\n", vol);
+    close(snd_fd);
+
+    return vol;
+}
+
 int cast_get_service_name(cast_type_t cast_type, char *service_name, int length)
 {
     unsigned char mac_addr[6] = {0};
@@ -206,6 +236,7 @@ static char m_ium_uuid[40] = {0};
 static void ium_event_process_cb(int event, void *param1, void *param2)
 {
     control_msg_t ctl_msg = {0};
+    static int g_vol = 0;
 
     if (event != HCCAST_IUM_EVT_GET_FLIP_MODE)
         printf("ium event: %d\n", event);
@@ -223,6 +254,11 @@ static void ium_event_process_cb(int event, void *param1, void *param2)
             ctl_msg.msg_type = MSG_TYPE_CAST_IUSB_START;
             api_osd_off_time(5000);
             api_logo_off();
+            
+            g_vol = cast_api_get_volume();
+            cast_api_set_volume(100);
+            printf("%s set vol %d->100\n", __func__, g_vol);
+            
             break;
         case HCCAST_IUM_EVT_MIRROR_STOP:
             printf("%s(), line:%d. HCCAST_IUM_EVT_MIRROR_STOP\n", __func__, __LINE__);
@@ -231,6 +267,9 @@ static void ium_event_process_cb(int event, void *param1, void *param2)
                 hccast_scene_reset(HCCAST_SCENE_IUMIRROR,HCCAST_SCENE_NONE);
             }
             ctl_msg.msg_type = MSG_TYPE_CAST_IUSB_STOP;
+            
+            cast_api_set_volume(g_vol);
+            
             break;
         case HCCAST_IUM_EVT_SAVE_PAIR_DATA: //param1: buf; param2: length
             break;
@@ -521,6 +560,7 @@ int hccast_dlna_callback_func(hccast_dlna_event_e event, void* in, void* out)
     log(DEMO, INFO, "[%s] event: %d", __func__,event);
     char *str_tmp = NULL;
     control_msg_t ctl_msg = {0};
+    sys_data_t* sys_data = data_mgr_sys_get();
 
     switch (event)
     {
@@ -547,6 +587,9 @@ int hccast_dlna_callback_func(hccast_dlna_event_e event, void* in, void* out)
             break;
         case HCCAST_DLNA_HOSTAP_MODE_SKIP_URL:
             ctl_msg.msg_type = MSG_TYPE_DLNA_HOSTAP_SKIP_URL;
+            break;
+        case HCCAST_DLNA_GET_SAVE_AUDIO_VOL:
+            *(int*)in = sys_data->volume;
             break;
         default:
             break;
@@ -581,6 +624,7 @@ int hccast_mira_callback_func(hccast_mira_event_e event, void* in, void* out)
     app_data_t * app_data = data_mgr_app_get();
     static int vdec_first_show = 0;
     static int ui_logo_close = 0;
+    static uint8_t g_vol = 100;
 
 #if 0
     if(event != HCCAST_MIRA_GET_MIRROR_ROTATION)
@@ -613,14 +657,17 @@ int hccast_mira_callback_func(hccast_mira_event_e event, void* in, void* out)
         case HCCAST_MIRA_GET_CUR_WIFI_INFO:
         {
             log(DEMO, DEBUG, "[%s]HCCAST_MIRA_GET_CUR_WIFI_INFO\n",__func__);
-            char cur_ssid[WIFI_MAX_SSID_LEN] = {0};
             hccast_wifi_ap_info_t *cur_ap;
-            hccast_wifi_mgr_get_connect_ssid(cur_ssid, sizeof(cur_ssid));
+            char* cur_ssid = app_get_connecting_ssid();
             cur_ap = data_mgr_get_wifi_info(cur_ssid);
             if(cur_ap)
-                memcpy(in,cur_ap,sizeof(hccast_wifi_ap_info_t));
+            {
+                memcpy(in, cur_ap, sizeof(hccast_wifi_ap_info_t));
+            }
             else
-                memcpy(in, cur_ssid,sizeof(hccast_wifi_ap_info_t));
+            {
+                snprintf(((hccast_wifi_ap_info_t*)in)->ssid, sizeof(WIFI_MAX_SSID_LEN), "%s", cur_ssid);
+            }
             break;
         }
         case HCCAST_MIRA_CONNECT:
@@ -648,11 +695,16 @@ int hccast_mira_callback_func(hccast_mira_event_e event, void* in, void* out)
         {
             //miracast start
             printf("[%s] HCCAST_MIRA_START_DISP [%d:%d]\n",__func__, vdec_first_show, ui_logo_close);
+            g_vol = cast_api_get_volume();
+            cast_api_set_volume(100);
+            printf("%s set vol %d->100\n", __func__, g_vol);
+            
 #ifdef __linux__            
             ctl_msg.msg_type = MSG_TYPE_CAST_MIRACAST_START;
 #else 
             ui_logo_close = 1;
             api_logo_off2(0,0);
+            cast_api_set_volume(0);//set to mute until recv HCCAST_MIRA_START_FIRST_FRAME_DISP event.
 #endif            
             break;
         }
@@ -662,6 +714,7 @@ int hccast_mira_callback_func(hccast_mira_event_e event, void* in, void* out)
 #ifndef __linux__    
             vdec_first_show = 1;
             ctl_msg.msg_type = MSG_TYPE_CAST_MIRACAST_START;
+            cast_api_set_volume(100);
 #endif            
             break;
         }
@@ -669,6 +722,9 @@ int hccast_mira_callback_func(hccast_mira_event_e event, void* in, void* out)
         {
             //miracast stop
             printf("[%s] HCCAST_MIRA_STOP_DISP [%d:%d]\n",__func__, vdec_first_show, ui_logo_close);
+
+            cast_api_set_volume(g_vol);
+            printf("%s reset vol 100->%d\n", __func__, g_vol);
             if((vdec_first_show == 0) && (ui_logo_close == 1))
             {   
                 api_logo_show(NULL);
@@ -744,6 +800,7 @@ int hccast_air_callback_event(hccast_air_event_e event, void* in, void* out)
 {
     control_msg_t ctl_msg = {0};
     app_data_t * app_data = data_mgr_app_get();
+    int vol = 0;
 
     switch (event)
     {
@@ -842,6 +899,12 @@ int hccast_air_callback_event(hccast_air_event_e event, void* in, void* out)
         case HCCAST_AIR_GET_MIRROR_FULL_VSCREEN:
             *(int*)in = 1;
             break;
+        case HCCAST_AIR_SET_AUDIO_VOL:
+            vol = (int)in;
+            printf("%s set vol:%d\n", __func__, vol);
+            cast_api_set_volume(vol);
+            data_mgr_volume_set(vol);     
+            break;			
         default:
             break;
     }

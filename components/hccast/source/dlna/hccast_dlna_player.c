@@ -40,6 +40,7 @@
 #include <hccast/dlna_api.h>
 #endif
 #include <hccast_media.h>
+#include <hccast_scene.h>
 #include "hccast_dlna_player.h"
 #include <hccast_log.h>
 #include <hccast_wifi_mgr.h>
@@ -471,8 +472,12 @@ static int output_ffplayer_play(void* callback)
 
 static int output_ffplayer_stop(void)
 {
-    hccast_log(LL_NOTICE,"[DLNA][STOP]\n");
-    hccast_media_stop();
+    if (hccast_get_current_scene() == HCCAST_SCENE_DLNA_PLAY)
+    {
+        hccast_log(LL_NOTICE,"[DLNA][STOP]\n");
+        hccast_media_stop();
+    }
+     
     return 0;
 }
 
@@ -538,7 +543,7 @@ static int output_ffplayer_get_position(uint64_t *track_duration,
 
 static int output_ffplayer_get_volume(int *v)
 {
-    m_volume = hccast_media_get_volume();
+    m_volume = hccast_get_volume();
     //DLNA_AP_DEBUG("[DLNA]Query volume fraction: %d\n", m_volume);
     *v = (int)m_volume;
     return 0;
@@ -549,39 +554,67 @@ static int output_ffplayer_set_volume(int value)
     hccast_log(LL_INFO,"[DLNA]Pre volume fraction to %d\n", m_volume);
     hccast_log(LL_INFO,"[DLNA]Set volume fraction to %d\n", value);
 
+    //LOCK();
     //if (m_volume != value)
     {
         m_volume = (uint8_t)value;
         hccast_media_set_volume((int)value);
     }
+    //UNLOCK();
 
     return 0;
 }
 
 static int output_ffplayer_get_mute(int *m)
 {
+    int vol = hccast_get_volume();
+
+    if(vol <= 0)
+    {
+        m_mute = false;
+    }
+    else
+    {
+        m_mute = true;
+    }
+
     hccast_log(LL_INFO,"[DLNA]m_mute: %d\n", m_mute);
     *m = m_mute;
+    
     return 0;
 }
 
 static int output_ffplayer_set_mute(int m)
 {
-    hccast_log(LL_NOTICE,"[DLNA]Set mute to %s\n", m ? "on" : "off");
-
-    //if (m_mute != m)
+    //LOCK();
+    if (m_mute != m)
     {
+        hccast_log(LL_NOTICE,"[DLNA]Set mute to %s\n", m ? "on" : "off");
         m_mute = m;
 
         if (m)
         {
+            m_volume = hccast_get_volume();
             output_ffplayer_set_volume(0);
         }
         else
         {
+            int volume = 0;
+            if(dlna_callback)
+            {
+                dlna_callback (HCCAST_DLNA_GET_SAVE_AUDIO_VOL, (void*)&volume, NULL);
+            }
+
+            if (m_volume != volume)
+            {
+                volume = m_volume;
+            }
+
+            hccast_log(LL_NOTICE, "save_vol: %d\n", m_volume);
             output_ffplayer_set_volume(m_volume);
         }
     }
+    //UNLOCK();
 
     return 0;
 }
@@ -620,18 +653,6 @@ static int output_ffplayer_init(void)
     int minenum = sizeof(mime_support_list) / sizeof(mime_support_list[0]);
 
     dlna_init_mime_list(minenum, mime_support_list);
-
-    m_volume = hccast_get_volume();//get system volume.
-    hccast_log(LL_INFO,"[DLNA]m_volume %d\n", m_volume);
-
-    if(m_volume <= 0)
-    {
-        m_mute = true;
-    }
-    else
-    {
-        m_mute = false;
-    }
 
     return 0;
 }

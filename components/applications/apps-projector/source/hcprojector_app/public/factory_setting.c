@@ -4,7 +4,7 @@
 #include <sys/ioctl.h>
 #include <stdint.h> //uint32_t
 #include <stdlib.h>
-
+#include <pthread.h>
 #include "app_config.h"
 //#include <hcuapi/sysdata.h>
 #include <hcuapi/persistentmem.h>
@@ -121,6 +121,7 @@ void projector_factory_init(void)
 	sys_param.app_data.optset.auto_sleep = AUTO_SLEEP_OFF;
 	sys_param.app_data.optset.osd_time = OSD_TIME_15S;
 
+	sys_param.app_data.optset.video_delay = 500;
 
     //sys_param.sys_data.tvtype = TV_LINE_1080_60;
     //sys_param.sys_data.volume = 70;
@@ -473,6 +474,9 @@ char* projector_get_version_info(){
 			return sys_param.app_data.scale_setting.zoom_out_count;
 			break;
 #endif
+		case P_VIDEO_DELAY:
+			return sys_param.app_data.optset.video_delay;
+			break;
 		default:
 			break;
 	}
@@ -611,6 +615,9 @@ void projector_set_some_sys_param(projector_sys_param param, int v){
 			sys_param.app_data.scale_setting.zoom_out_count = v;
 			break;
 #endif
+        case P_VIDEO_DELAY:
+        	sys_param.app_data.optset.video_delay = v;
+        	break;
 		default:
 			break;
 	}
@@ -620,6 +627,9 @@ void projector_set_some_sys_param(projector_sys_param param, int v){
 
 #ifdef WIFI_SUPPORT
 
+static pthread_mutex_t wifi_mutex;
+static pthread_mutex_t *wifi_mutex_p=NULL;
+
 static int8_t save_flag = 0;// save_flag == 1, mean called func sysdata_wifi_ap_save(hccast_wifi_ap_info_t *)
 
 void set_save_wifi_flag_zero(){
@@ -628,6 +638,13 @@ void set_save_wifi_flag_zero(){
 
 int8_t get_save_wifi_flag(){
 	return save_flag;
+}
+
+void wifi_mutex_init(){
+	if(!wifi_mutex_p){
+		pthread_mutex_init(&wifi_mutex, NULL);
+		wifi_mutex_p = &wifi_mutex;
+	}
 }
 
 
@@ -666,6 +683,22 @@ void sysdata_wifi_ap_save(hccast_wifi_ap_info_t *wifi_ap)
     memcpy(sys_param.app_data.cast_setting.wifi_ap, wifi_ap, sizeof(hccast_wifi_ap_info_t));
 	save_flag = 1;
 	printf("auto_conn save: %x\n", sys_param.app_data.cast_setting.wifi_auto_conn);
+}
+
+void sysdata_wifi_ap_resave(hccast_wifi_ap_info_t *wifi_ap){
+	pthread_mutex_lock(wifi_mutex_p);
+    int index = sysdata_check_ap_saved(wifi_ap);
+    printf("ssid index: %d\n",index);
+    if(index >= 0)//set the index ap to first.
+    {
+        sysdata_wifi_ap_delete(index);
+    }
+
+    sysdata_wifi_ap_save(wifi_ap);
+    projector_sys_param_save();
+    pthread_mutex_unlock(wifi_mutex_p);
+    sleep(1);
+
 }
 
 void sysdata_wifi_ap_set_auto(int index){
@@ -714,16 +747,17 @@ void sysdata_wifi_ap_delete(int index)
 
 hccast_wifi_ap_info_t *sysdata_get_wifi_info(char* ssid)
 {
+	pthread_mutex_lock(wifi_mutex_p);
 	int i = 0;
-	
 	for(i = 0; i < MAX_WIFI_SAVE; i++)
 	{
 		if(strcmp(ssid, sys_param.app_data.cast_setting.wifi_ap[i].ssid) == 0)
 		{
+			pthread_mutex_unlock(wifi_mutex_p);
 			return &sys_param.app_data.cast_setting.wifi_ap[i];
 		}
 	}
-	
+	pthread_mutex_unlock(wifi_mutex_p);
 	return NULL;
 }
 

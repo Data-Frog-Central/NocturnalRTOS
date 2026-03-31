@@ -393,16 +393,15 @@ static int update_search_all_entryp_num(void)
     if(dirp == NULL)
         printf("open dir %s failed\n", mnt_path);
 
-    FAR struct dirent *entryp = readdir(dirp);
+    FAR struct dirent *entryp;
 
     for (; ; )
     {
-        
         entryp = readdir(dirp);
         if (entryp == NULL)
-        {
             break;
-        }
+        else if (entryp->d_type == DT_DIR) 
+			continue;
         
         total_dnum++;
 
@@ -426,7 +425,7 @@ static int update_main(void)
         printf("open dir %s failed\n", mnt_path);
       /* Read each directory entry */
 
-    FAR struct dirent *entryp = readdir(dirp);
+    FAR struct dirent *entryp;
 
     for (; ; )
     {
@@ -435,7 +434,8 @@ static int update_main(void)
         {
             /* Finished with this directory */
             break;
-        }
+        }else if (entryp->d_type == DT_DIR) 
+			continue;
 
         memset(path, 0, sizeof(path));
         strcat(path, mnt_path);
@@ -605,7 +605,7 @@ static int file_exist(const char *filename_path)
         printf("open dir %s failed\n", mnt_path);
       /* Read each directory entry */
 
-    FAR struct dirent *entryp = readdir(dirp);
+    FAR struct dirent *entryp;
 
     for (; ; )
     {
@@ -615,6 +615,9 @@ static int file_exist(const char *filename_path)
             /* Finished with this directory */
             break;
         }
+
+		if (entryp->d_type == DT_DIR) 
+			continue;
 
         memset(entryp_path, 0, sizeof(entryp_path));
         strcat(entryp_path, mnt_path);
@@ -634,16 +637,20 @@ static int file_exist(const char *filename_path)
 
 static int usbd_upgrade_stop(int argc, char *argv[]);
 
+static void reset_usb_mode(void)
+{
+	int usb_port = CONFIG_BOOT_USBD_UPGRADE_USBD_PORT_NUM;
+	hcusb_gadget_msg_deinit();
+	/* reset usb mode usbdevice to usbhost */
+	hcusb_set_mode(usb_port, MUSB_HOST);
+}
+
 static int execute_from_ram_main(void)
 {
     int ret = 0;
     char devpath[64];
     struct stat st;
     char tmp_buf[256];
-
-#if defined(CONFIG_BOOT_BACKLIGHT)
-	open_lcd_backlight(1,((char *[]){"backlight"}));
-#endif
 
 #if defined(CONFIG_BOOT_HCRTOS)
 
@@ -684,7 +691,7 @@ static int execute_from_ram_main(void)
         umount(mnt_path);
         msleep(2000);
         mount(ram_path, mnt_path, "vfat", 0, NULL);
-
+        reset_usb_mode();
         mtdloaduImage(2, ((char *[]){ "mtdloaduImage", path }));
         bootm(NULL, 0, 1, ((char *[]){ "bootm" }));
     }
@@ -710,6 +717,7 @@ static int execute_from_ram_main(void)
         if ((!file_exist("/mnt/ram0/avp.uImage"))&&(!file_exist("/mnt/ram0/vmlinux.uImage"))) 
         {
             usbd_refresh(1000);
+            reset_usb_mode();
             mtdloaduImage(2, ((char *[]){ "mtdloaduImage", "/mnt/ram0/avp.uImage" }));
             bootm(NULL, 0, 1, ((char *[]){ "bootm" }));
 
@@ -744,6 +752,7 @@ static int execute_from_ram_main(void)
         if(!file_exist("/mnt/ram0/vmlinux.uImage"))
         {
             usbd_refresh(1000);
+            reset_usb_mode();
             mtdloaduImage(2, ((char *[]){ "mtdloaduImage", "/mnt/ram0/vmlinux.uImage" }));
             sprintf(loadaddr, "0x%08lx", image_load_addr);
             bootm(NULL, 0, 4, ((char *[]){ "bootm", loadaddr, "-", dtbaddr }));

@@ -148,16 +148,13 @@ hccast_um_param_t *hccast_um_param_get()
 
 int hccast_um_ioctl(int cmd, void *param1, void *param2)
 {
-    switch (cmd)
+    if (cmd < HCCAST_UM_CMD_SET_AUM_RESOLUTION)
     {
-        case HCCAST_UM_CMD_SET_IUM_RESOLUTION:
-            hccast_ium_ioctl(cmd, param1, param2);
-            break;
-        case HCCAST_UM_CMD_SET_AUM_RESOLUTION:
-            hccast_aum_ioctl(cmd, param1, param2);
-            break;
-        default:
-            break;
+        hccast_ium_ioctl(cmd, param1, param2);
+    }
+    else
+    {
+        hccast_aum_ioctl(cmd, param1, param2);
     }
 
     return 0;

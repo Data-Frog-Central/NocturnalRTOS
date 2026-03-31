@@ -14,6 +14,7 @@ typedef enum
 	HCCAST_MIRA_RES_1080P30,
 	HCCAST_MIRA_RES_480P60,
 	HCCAST_MIRA_RES_VESA1400,
+	HCCAST_MIRA_RES_1080P60,
 } hccast_mira_res_e;
 
 typedef enum
@@ -41,6 +42,8 @@ typedef enum
     HCCAST_MIRA_GET_MIRROR_FULL_VSCREEN,
     HCCAST_MIRA_START_FIRST_FRAME_DISP,
     HCCAST_MIRA_SET_DIS_ZOOM_INFO,
+    HCCAST_MIRA_GET_MIRROR_QUICK_MODE_NUM,
+    HCCAST_MIRA_RESET,
     HCCAST_MIRA_MAX,
 } hccast_mira_event_e;
 typedef int (*hccast_mira_event_callback)(hccast_mira_event_e event, void* in, void* out);
@@ -71,28 +74,28 @@ extern "C" {
  * 
  * @return 0: success; <0: failed.
  */
-int hccast_mira_service_start();
+int hccast_mira_service_start(void);
 
 /**
  * It stops the Miracast service.
  * 
  * @return 0
  */
-int hccast_mira_service_stop();
+int hccast_mira_service_stop(void);
 
 /**
  * It disconnects the Miracast connection.
  * 
  * @return 0
  */
-int hccast_mira_disconnect();
+int hccast_mira_disconnect(void);
 
-int hccast_mira_player_init();
+int hccast_mira_player_init(void);
 int hccast_mira_get_stat(void);
 int hccast_mira_service_init(hccast_mira_event_callback func);
-int hccast_mira_service_uninit();
+int hccast_mira_service_uninit(void);
 int hccast_mira_es_dump_start(char *folder);
-int hccast_mira_es_dump_stop();
+int hccast_mira_es_dump_stop(void);
 int hccast_mira_service_set_resolution(hccast_mira_res_e res);
 
 // DEPRECATED. DO NOT USE THIS API PLEASE.

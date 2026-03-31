@@ -34,4 +34,5 @@ int miracast_vscreen_cb_test(int argc , char *argv[]);
 int dis_get_display_info_test(int argc , char *argv[]);
 int dis_dump(int argc , char *argv[]);
 int dis_get_video_buf_test(int argc , char *argv[]);
+int get_edid_all_video_res(int argc , char *argv[]);
 #endif

@@ -3,7 +3,7 @@
 # libefuse
 #
 ################################################################################
-LIBEFUSE_VERSION = e476c29cdb0dab3068c3be5caa77c4e6a0ed057f
+LIBEFUSE_VERSION = 3499ec95616c93bf6e292c6d3622895985203af4
 LIBEFUSE_SITE_METHOD = git
 LIBEFUSE_SITE = ssh://git@hichiptech.gitlab.com:33888/hcrtos_sdk/libefuse.git
 LIBEFUSE_DEPENDENCIES = kernel

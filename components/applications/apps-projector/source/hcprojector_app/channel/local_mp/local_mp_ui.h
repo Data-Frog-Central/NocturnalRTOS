@@ -134,8 +134,8 @@ LV_IMG_DECLARE(IDB_Icon_unsupported);
     #define BARBTN_OUTLINE 2
     #define BARBTN_PAD_BOTTOM   0
     #define CTRLBARLAT_H    5
-	#define PREVIEW_WIN_W_PCT   33
-    #define PREVIEW_WIN_H_PCT   34
+	#define PREVIEW_WIN_W_PCT   118
+    #define PREVIEW_WIN_H_PCT   81
     #define PREVIEW_WIN_BORDER 3
     #define PREVIEW_WINNAME_Y_OFS   3
     #define MPLIST_WIN_X_OFS -15 
@@ -186,7 +186,7 @@ LV_IMG_DECLARE(IDB_Icon_unsupported);
     #define PLAYTIME_Y_OFS    -5
     #define PLAYNAME_Y_OFS    10
     #define PLAYSTA_X_OFS    30
-    #define PLAYSPD_X_OFS    10
+    #define PLAYSPD_X_OFS    60
     #define BTNLAB_Y_OFS    -10
     #define CTRLBAR_SMY_SIZE    &lv_font_montserrat_36
     #define CTRLBAR_PCT_H   31 
@@ -195,8 +195,8 @@ LV_IMG_DECLARE(IDB_Icon_unsupported);
     #define BARBTN_OUTLINE 5
     #define BARBTN_PAD_BOTTOM   1
     #define CTRLBARLAT_H    10
-    #define PREVIEW_WIN_W_PCT   34
-    #define PREVIEW_WIN_H_PCT   34
+    #define PREVIEW_WIN_W_PCT   440
+    #define PREVIEW_WIN_H_PCT   250
     #define PREVIEW_WIN_BORDER 5
     #define PREVIEW_WINNAME_Y_OFS   3
     #define MPLIST_WIN_X_OFS -50 

@@ -20,7 +20,6 @@ int standby_request(struct standby_locker *locker);
 void standby_lock_list_init(void);
 int standby_get_bootup_mode(enum standby_bootup_mode *mode);
 
-extern uint32_t upmode_n;
 /* Define the max number of pulse/space transitions to buffer */
 #define	MAX_IR_EVENT_SIZE	512
 
@@ -103,16 +102,19 @@ struct standby_ctrl {
 	struct standby_ir_setting ir;
 	struct standby_gpio_setting gpio;
 	struct standby_saradc_setting saradc;
+	struct standby_saradc_setting queryadc;
 	struct standby_pwroff_ddr_setting ddr;
 	struct locker_list locker_list_head;
 	int gpio_detect_count;
 	int saradc_detect_count;
+	int queryadc_detect_conut;
 	uint8_t saradc_def_val;
 	int ir_enabled : 1;
 	int gpio_enabled : 1;
 	int saradc_enabled : 1;
 	int hdmi_dts_status : 1;
 	int ddr_enabled : 1;
+	int queryadc_enabled: 1;
 
 	struct rc_dev {
 		bool idle;

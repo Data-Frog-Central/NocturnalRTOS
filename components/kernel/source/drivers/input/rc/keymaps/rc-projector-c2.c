@@ -166,4 +166,4 @@ static int init_rc_map_hcdemo(void)
 	return rc_map_register(&hcdemo_map);
 }
 
-module_driver(rc_map_hcdemo, init_rc_map_hcdemo, NULL, 0)
+module_system(rc_map_hcdemo, init_rc_map_hcdemo, NULL, 0)

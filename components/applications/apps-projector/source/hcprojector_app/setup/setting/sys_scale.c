@@ -21,7 +21,7 @@
 
 
 
-#define ZOOM_OUT_COUNT_MAX 16
+#define ZOOM_OUT_COUNT_MAX 22
 #define SYS_SCALE_MIN_RATIO 3
 #define DIS_ZOOM_FULL_W 1920
 #define DIS_ZOOM_FULL_H 1080
@@ -32,14 +32,16 @@ static dis_tv_mode_e zoom_mode = DIS_TV_16_9;//16:9或4:3
 static dis_tv_mode_e dis_mode = DIS_TV_AUTO;//16:9或4:3或auto
 static struct dis_screen_info screen = { 0 };
 dis_screen_info_t lcd_area={0};
-static int scale_max_hor = 0;
-static int ui_adjust_w_v = 0;
-static int ui_adjust_h_v = 0;
+//static int scale_max_hor = 0;
+static double ui_adjust_w_v = 0;
+static double ui_adjust_h_v = 0;
 static int zoom_out_count = 0;
-static int x_amendment = 0;
-static int y_amendment = 0;
+static int x_amendment = 2;
+static int y_amendment = 1;
+static int dis_zoom_full_w = DIS_ZOOM_FULL_W;
+static int dis_zoom_full_h = DIS_ZOOM_FULL_H;
 extern lv_timer_t *timer_setting;
-
+static bool is_vertical_screen = false;
 typedef struct scale_param_{
     int x;
     int y;
@@ -64,32 +66,32 @@ int get_display_x(){
     if(dis_mode == DIS_TV_AUTO){
         return 0;
     }
-    return scale_param.x*DIS_ZOOM_FULL_W/((double)lcd_area.area.w)+x_amendment;
+    return scale_param.x*dis_zoom_full_w/((double)lcd_area.area.w)+x_amendment;
 }
 
 int get_display_y(){
     if(dis_mode == DIS_TV_AUTO){
         return 0;
     }
-    return scale_param.y*DIS_ZOOM_FULL_H/((double)lcd_area.area.h)+y_amendment;
+    return scale_param.y*dis_zoom_full_h/((double)lcd_area.area.h)+y_amendment;
 }
 
 int get_display_h(){
     if(dis_mode == DIS_TV_AUTO){
-        return DIS_ZOOM_FULL_W;
+        return dis_zoom_full_w;
     }
-    return scale_param.w*DIS_ZOOM_FULL_W/((double)lcd_area.area.w);
+    return scale_param.w*dis_zoom_full_w/((double)lcd_area.area.w)-x_amendment;
 }
 
 int get_display_v(){
     if(dis_mode == DIS_TV_AUTO){
-        return DIS_ZOOM_FULL_H;
+        return dis_zoom_full_h;
     }
-    return scale_param.h*DIS_ZOOM_FULL_H/((double)lcd_area.area.h);
+    return scale_param.h*dis_zoom_full_h/((double)lcd_area.area.h)-y_amendment;
 }
 
 
-int get_cur_osd_h(){
+int get_cur_dis_zoom_full_h(){
     return scale_param.w;
 }
 
@@ -98,8 +100,8 @@ int get_cur_osd_v(){
 }
 
 static void mainlayer_zoom(int x, int y, int w, int h){
-    int w1 = w*1920/((double)lcd_area.area.w);
-    int h1 = h*1080/((double)lcd_area.area.h);
+    int w1 = w*1920/((double)lcd_area.area.w)-x_amendment;
+    int h1 = h*1080/((double)lcd_area.area.h)-y_amendment;
     int x1 = x*1920/((double)lcd_area.area.w)+x_amendment;
     int y1 = y*1080/((double)lcd_area.area.h)+y_amendment;
     api_set_display_zoom(0,0, 1920, 1080, x1, y1, w1, h1);
@@ -112,9 +114,12 @@ static void osd_zoom(int x, int y, int w, int h){
 			__func__, __LINE__, DEV_FB);
 		return;
 	}
-    hcfb_scale_t scale_param1 = { OSD_MAX_WIDTH, OSD_MAX_HEIGHT, w, h};
-    int x1 = x*OSD_MAX_WIDTH/(double)scale_param.w;
-    int y1 = y*OSD_MAX_HEIGHT/(double)scale_param.h;
+
+    int factor1 = w > h ? OSD_MAX_WIDTH : OSD_MAX_HEIGHT;
+    int factor2 = w > h ? OSD_MAX_HEIGHT : OSD_MAX_WIDTH;
+    hcfb_scale_t scale_param1 = { factor1, factor2, w, h};    
+    int x1 = x*factor1/(double)scale_param.w;
+    int y1 = y*factor2/(double)scale_param.h;
     hcfb_lefttop_pos_t start_pos1 ={x1,y1};    
     if(dis_mode == DIS_TV_AUTO){
         start_pos1.left = 0;
@@ -131,7 +136,8 @@ static void osd_zoom(int x, int y, int w, int h){
 void set_display_zoom_when_sys_scale(){
     media_handle_t* hdl = (media_handle_t*)mp_get_cur_player_hdl();
     if(hdl && hdl->type == MEDIA_TYPE_MUSIC){
-        mainlayer_zoom(MUSIC_COVER_ZOOM_X*get_display_h()/DIS_ZOOM_FULL_W+get_display_x(),
+        api_set_display_zoom(0,0,1920,1080,
+                        MUSIC_COVER_ZOOM_X*get_display_h()/DIS_ZOOM_FULL_W+get_display_x(),
                         MUSIC_COVER_ZOOM_Y*get_display_v()/DIS_ZOOM_FULL_H+get_display_y(),
                         MUSIC_COVER_ZOOM_W*get_display_h()/DIS_ZOOM_FULL_W,
                         MUSIC_COVER_ZOOM_H*get_display_v()/DIS_ZOOM_FULL_H);
@@ -165,6 +171,12 @@ static void get_scr_h_v_by_ratio(int *h, int *v, int ratio){
         ratio_v = 3;
     }
 
+    if(*h < *v){
+        int temp = ratio_v;
+        ratio_v = ratio_h;
+        ratio_h = temp;
+    }
+
     if((*h)*ratio_v > (*v)*ratio_h){
         *h = (*v)*ratio_h/ratio_v;
     }else if((*h)*ratio_v < (*v)*ratio_h){
@@ -178,32 +190,35 @@ int sys_scala_init(){
     zoom_out_count = projector_get_some_sys_param(P_SYS_ZOOM_OUT_COUNT); 
     printf("zoom_out_count: %d\n", zoom_out_count);  
 
-
-
     api_get_screen_info(&lcd_area);//ui宽和高
     printf("lcd.area.w:%d, lcd.area.h:%d\n",lcd_area.area.w, lcd_area.area.h);
+    if(lcd_area.area.w < lcd_area.area.h){
+        is_vertical_screen = true;
+        dis_zoom_full_h = DIS_ZOOM_FULL_W;
+        dis_zoom_full_w = DIS_ZOOM_FULL_H;//竖屏
+    }
 
-    scale_param.w = lcd_area.area.w;
-    scale_param.h = lcd_area.area.h;
-    int a=scale_param.w, b=scale_param.h;
+    int a=lcd_area.area.w, b=lcd_area.area.h;
     get_scr_h_v_by_ratio(&a, &b, zoom_mode);
     scale_param.w = a;
     scale_param.h = b;
     printf("scale_param.h_mul:%d, scale_param.v_mul:%d\n", scale_param.w, scale_param.h);
-    scale_max_hor = scale_param.w;
-    ui_adjust_w_v = scale_param.w/60;
-    ui_adjust_h_v = scale_param.h/60;  
-
+    ui_adjust_w_v = scale_param.w/100.0;
+    ui_adjust_h_v = scale_param.h/100.0;  
+    if(zoom_mode == DIS_TV_4_3){
+        ui_adjust_w_v*3/4;
+    }
 
     if(zoom_out_count>0 && zoom_out_count<=ZOOM_OUT_COUNT_MAX){
-        scale_param.w -= zoom_out_count*ui_adjust_w_v;
-        scale_param.h -= zoom_out_count*ui_adjust_h_v;
+        scale_param.w -= (int)(zoom_out_count*ui_adjust_w_v);
+        scale_param.h -= (int)(zoom_out_count*ui_adjust_h_v);
     }
     scale_param.x = (lcd_area.area.w-scale_param.w)/2.0;
     scale_param.y = (lcd_area.area.h-scale_param.h)/2.0;
 
     set_sys_scale();
 }
+
 
 
 void set_sys_scale(){
@@ -215,9 +230,7 @@ int do_sys_scale(scale_type_t scale_type_v){
     switch (scale_type_v)
     {
     case SCALE_ZOOM_OUT:
-        if(zoom_out_count<ZOOM_OUT_COUNT_MAX){
-            scale_param.w -=ui_adjust_w_v;
-            scale_param.h -= ui_adjust_h_v;   
+        if(zoom_out_count<ZOOM_OUT_COUNT_MAX){  
             zoom_out_count++;
         } 
         if(dis_mode == DIS_TV_AUTO){
@@ -226,9 +239,9 @@ int do_sys_scale(scale_type_t scale_type_v){
         break;
     case SCALE_ZOOM_IN:
         if(zoom_out_count>0){
-            scale_param.w +=ui_adjust_w_v;
-            scale_param.h += ui_adjust_h_v;
             zoom_out_count--; 
+        }else{
+            return 0;
         }
         if(dis_mode == DIS_TV_AUTO){
             dis_mode = DIS_TV_16_9;
@@ -244,18 +257,20 @@ int do_sys_scale(scale_type_t scale_type_v){
         get_scr_h_v_by_ratio(&a, &b, zoom_mode);
         scale_param.w = a;
         scale_param.h = b;
-        scale_max_hor = scale_param.w;
-        ui_adjust_w_v = scale_param.w/60;
-        ui_adjust_h_v = scale_param.h/60;
+        ui_adjust_w_v = scale_param.w/100.0;
+        ui_adjust_h_v = scale_param.h/100.0;
 
         zoom_out_count = 0;
         break; 
     case SCALE_4_3:
         if(dis_mode == DIS_TV_16_9 || dis_mode == DIS_TV_AUTO){
             if(zoom_mode == DIS_TV_16_9){
-                scale_param.w = scale_param.w*3/4;
-                scale_max_hor = scale_max_hor*3/4;
-                ui_adjust_w_v = ui_adjust_w_v*3/4;
+                if(is_vertical_screen){
+                    ui_adjust_h_v = ui_adjust_h_v*3/4;
+                }else{
+                    ui_adjust_w_v = ui_adjust_w_v*3/4;
+                }
+                
             }            
         }
         dis_mode = DIS_TV_4_3;
@@ -264,9 +279,11 @@ int do_sys_scale(scale_type_t scale_type_v){
     case SCALE_16_9:
         if(dis_mode == DIS_TV_4_3){
             if(zoom_mode == DIS_TV_4_3){
-                scale_param.w = scale_param.w*4/3;
-                scale_max_hor = scale_max_hor*4/3;
-                ui_adjust_w_v = ui_adjust_w_v*4/3;
+                if(is_vertical_screen){
+                    ui_adjust_h_v = ui_adjust_h_v*4/3;
+                }else{
+                    ui_adjust_w_v = ui_adjust_w_v*4/3;
+                }
             }            
         }
         dis_mode = DIS_TV_16_9;
@@ -275,6 +292,12 @@ int do_sys_scale(scale_type_t scale_type_v){
     default:
         break;
     }
+    int a=lcd_area.area.w, b=lcd_area.area.h;
+    get_scr_h_v_by_ratio(&a, &b, zoom_mode);
+    scale_param.w = a;
+    scale_param.h = b;
+    scale_param.w -= (int)(zoom_out_count*ui_adjust_w_v);
+    scale_param.h -= (int)(zoom_out_count*ui_adjust_h_v);    
     save_sys_scale_param();    
     scale_param.x = (lcd_area.area.w-scale_param.w)/2.0;//与下层转换fbdev->sx = x * h_mul / h_div相反
     scale_param.y = (lcd_area.area.h-scale_param.h)/2.0;
@@ -393,7 +416,7 @@ int get_display_v(){
     return DIS_ZOOM_FULL_H;
 }
 
-int get_cur_osd_h(){
+int get_cur_dis_zoom_full_h(){
     dis_screen_info_t lcd_area = {0};
     api_get_screen_info(&lcd_area);
     return lcd_area.area.w;

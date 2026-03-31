@@ -65,6 +65,10 @@ struct audsink_init_params {
 	struct snd_pcm_params pcm;
 
 	int audio_flush_thres;
+	/* mix_priority set audio volume priority,value is [0,1,2],0: lowest priority,2: highest priority */
+	int mix_priority;
+	/* mix_maximum_weight:value is "0" or "1"; set "1" means one audio monopolize 100% volume */
+	int mix_maximum_weight;
 };
 
 /* Invalid parameters */

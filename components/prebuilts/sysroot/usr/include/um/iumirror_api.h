@@ -55,7 +55,7 @@ typedef struct
     int (*_audio_open)();
     void (*_audio_close)();
     int (*_audio_feed)(int type, unsigned char *buf, int length, unsigned long long pts);
-    void (*_set_timebase)(unsigned int time_ms);
+    void (*_set_timebase)(unsigned int time_ms, unsigned int speed);
     void (*_av_reset)();
     void (*_video_pause)(int pause);
     void (*_set_fps)(unsigned int fps);

@@ -20,7 +20,8 @@ typedef struct _T_LVDS_CNTR_ {
 	uint32_t vsync_polarity : 1;
 	uint32_t even_odd_adjust_mode : 2;
 	uint32_t even_odd_init_value : 1;
-	uint32_t reserved_4 : 11;
+	uint32_t chx_swap_ctrl : 2;
+	uint32_t reserved_4 : 9;
 } T_LVDS_CNTR;
 
 typedef struct _T_LVDS_TRIGGER_ {
@@ -98,6 +99,21 @@ typedef enum RGB_HAL_SET_SRC_SELECT
 	RGB_HAL_SET_SRC_SELECT_b,
 }rgb_hal_set_src_e;
 
+typedef enum LVDS_LLD_PHY_DRIVE_STRENGTH
+{
+	LVDS_LLD_PHY_DRIVE_STRENGTH_WEAKEST = 0,
+	LVDS_LLD_PHY_DRIVE_STRENGTH_NORMAL,
+	LVDS_LLD_PHY_DRIVE_STRENGTH_STRONGEST,
+}lvds_lld_phy_drive_strength_e;
+
+typedef enum LVDS_TTL_DRIVE_STRENGTH
+{
+	LVDS_TTL_DRIVE_STRENGTH_WEAKEST,
+	LVDS_TTL_DRIVE_STRENGTH_NORMAL,
+	LVDS_TTL_DRIVE_STRENGTH_ENHANCE,
+	LVDS_TTL_DRIVE_STRENGTH_STRONGEST,
+}lvds_ttl_drive_strength_e;
+
 void lvds_hal_reset(void);
 void lvds_io_ttl_sel_set(LVDS_IO_TTL_SEL lvds_ttl);
 void lvds_hal_init(void *reg_base, void *sys_base);
@@ -151,6 +167,8 @@ uint32_t lvds_hal_get_lane_clk_en_en(uint32_t ch);
 uint32_t lvds_hal_get_lane_clk_bias_en(uint32_t ch);
 uint32_t lvds_hal_get_lane_clk_lvds_mode_en(uint32_t ch);
 uint32_t lvds_hal_get_lane_clk_ttl_mode_en(uint32_t ch);
+void lvds_hal_set_lane_clk_bias_en_reserve(uint32_t ch, unsigned char val);
+uint8_t lvds_hal_get_lane_clk_bias_en_reserve(uint32_t ch);
 uint32_t lvds_hal_get_lane_clk_data_trans_en(uint32_t ch);
 uint32_t lvds_hal_get_pll_en(uint32_t ch);
 uint32_t lvds_hal_get_phy_dig_en(uint32_t ch);
@@ -161,8 +179,13 @@ uint32_t lvds_hal_get_power_on(void);
 uint32_t lvds_hal_phy_ch_get_enable(uint32_t ch);
 uint32_t lvds_hal_get_src_sel(void);
 uint32_t lvds_hal_get_trigger_en(void);
+void lvds_hal_set_chx_swap_ctrl(uint32_t int_value);
+uint32_t lvds_hal_get_chx_swap_ctrl(void);
 void lvds_set_gpio_output(struct lvds_set_gpio *pad);
 void lvds_hal_rgb_clk_inv_sel(bool val);
+void lvds_lld_phy_enhance_driving_ability(uint8_t ch, lvds_lld_phy_drive_strength_e strength);
+void lvds_open_phy_clk(void);
+void lvds_ttl_enhance_driving_ability(uint8_t ch, lvds_ttl_drive_strength_e strength);
 #ifdef __cplusplus
 }
 #endif

@@ -18,7 +18,7 @@ built-in.o: FORCE
 
 install: FORCE
 	install -D -m 0664 $(TARGETS) $(STAGING_DIR)/usr/lib/$(TARGETS)
-	cp -fr $(srctree)/bluetooth.h $(STAGING_DIR)/usr/include/
+	cp -fr $(srctree)/bluetooth.h $(srctree)/bluetooth_io.h $(STAGING_DIR)/usr/include/
 
 clean: FORCE
 	$(Q)$(MAKE) $(clean)=.

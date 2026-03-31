@@ -49,6 +49,9 @@ static unsigned int g_afeed_cnt = 0;
 static unsigned int g_afeed_len = 0;
 static int m_flip_rotate = 0;
 static int m_flip_mirror = 0;
+static int g_dis_backup = 0;
+static unsigned int g_video_framerate = 0;
+static unsigned int g_play_speed = 0;
 
 static uint8_t g_es_dump_en = 0;
 static char g_es_dump_folder[64] = {0};
@@ -57,6 +60,9 @@ static FILE *g_es_vfp = NULL;
 static int g_ium_vd_dis_mode = DIS_PILLBOX;
 static int g_um_enable_rotate = 0;
 static pthread_mutex_t g_um_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t g_um_vd_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t g_um_ad_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 
 extern um_ioctl ium_api_ioctl;
 extern hccast_um_cb g_ium_evt_cb;
@@ -64,15 +70,27 @@ extern hccast_um_cb g_aum_evt_cb;
 
 static void *hccast_um_player_state_timer(void *args)
 {
+    struct vdec_decore_status stat;
+
     while (g_vdec_started)
     {
-        UM_AV_DEBUG("[FEED] V(%d:%d) A(%d:%d)\n", g_vfeed_cnt, g_vfeed_len, g_afeed_cnt, g_afeed_len);
+        pthread_mutex_lock(&g_um_vd_mutex);
+        if(g_video_decoder > 0)
+        {
+            ioctl(g_video_decoder, VIDDEC_GET_STATUS, &stat);
+        }    
+        pthread_mutex_unlock(&g_um_vd_mutex);
+
+        UM_AV_DEBUG("[FEED] V(%d:%d) A(%d:%d) FPS(%d:%d)\n", g_vfeed_cnt, g_vfeed_len, g_afeed_cnt, g_afeed_len,
+                    0, stat.frames_decoded);
         g_vfeed_cnt = 0;
         g_vfeed_len = 0;
         g_afeed_cnt = 0;
         g_afeed_len = 0;
         sleep(2);
     }
+
+    return NULL;
 }
 
 static void hccast_um_video_dis_mode_change(int expect_vd_dis_mode)
@@ -266,13 +284,36 @@ static void hccast_um_video_aspect_set()
 static void hccast_um_video_restart(int play_mode)
 {
     struct video_config mvcfg;
+    struct vdec_rls_param rls_param = {0, 0};
+    int distype = DIS_TYPE_HD;
+    int fd;
 
     UM_AV_DEBUG("[%s - %d]\n", __func__, __LINE__);
-
+    pthread_mutex_lock(&g_um_vd_mutex);
+    
     if (g_video_decoder >= 0)
     {
-        close(g_video_decoder);
-        g_video_decoder = -1;
+        if(g_um_type == UM_TYPE_IUM)
+        {
+            ioctl(g_video_decoder, VIDDEC_RLS , &rls_param);
+            close(g_video_decoder);
+            g_video_decoder = -1;
+            
+            fd = open("/dev/dis" , O_WRONLY);
+            if (fd >= 0)
+            {
+                usleep(100*1000);
+                ioctl(fd ,DIS_BACKUP_MP , distype);
+                usleep(100*1000);
+                close(fd);
+                g_dis_backup = 1;
+            }
+        }
+        else
+        {
+            close(g_video_decoder);
+            g_video_decoder = -1;
+        }
     }
 
     memset(&mvcfg, 0, sizeof(struct video_config));
@@ -302,6 +343,7 @@ static void hccast_um_video_restart(int play_mode)
     if (g_video_decoder < 0)
     {
         perror("Open viddec");
+        pthread_mutex_unlock(&g_um_vd_mutex);
         return;
     }
     if (ioctl(g_video_decoder, VIDDEC_INIT, &mvcfg) != 0)
@@ -309,9 +351,15 @@ static void hccast_um_video_restart(int play_mode)
         perror("Viddec init");
         close(g_video_decoder);
         g_video_decoder = -1;
+        pthread_mutex_unlock(&g_um_vd_mutex);
         return;
     }
     ioctl(g_video_decoder, VIDDEC_START, 0);
+    ioctl(g_video_decoder, VIDDEC_SET_SHOW_MASAIC_ON_ERR, 2);
+
+    g_video_framerate = 0;
+    g_play_speed = 0;
+    pthread_mutex_unlock(&g_um_vd_mutex);
 }
 
 static void hccast_um_audio_restart(int play_mode)
@@ -321,6 +369,7 @@ static void hccast_um_audio_restart(int play_mode)
 
     UM_AV_DEBUG("[%s - %d]\n", __func__, __LINE__);
 
+    pthread_mutex_lock(&g_um_ad_mutex);
     if (g_audio_decoder >= 0)
     {
         close(g_audio_decoder);
@@ -335,15 +384,8 @@ static void hccast_um_audio_restart(int play_mode)
     macfg.sample_rate = 48000;
     macfg.block_align = 0;
     macfg.extradata_size = 0;
-    if (UM_PLAY_MODE_STREAM == play_mode)
-    {
-        macfg.sync_mode = AVSYNC_TYPE_FREERUN;
-    }
-    else
-    {
-        macfg.sync_mode = AVSYNC_TYPE_FREERUN;
-        macfg.audio_flush_thres = 300;
-    }
+    macfg.sync_mode = AVSYNC_TYPE_FREERUN;
+    macfg.audio_flush_thres = 200;
 
     macfg.snd_devs = hccast_com_media_control(HCCAST_CMD_SND_DEVS_GET, 0);
 
@@ -351,6 +393,7 @@ static void hccast_um_audio_restart(int play_mode)
     if (g_audio_decoder < 0)
     {
         perror("Open auddec");
+        pthread_mutex_unlock(&g_um_ad_mutex);
         return -1;
     }
 
@@ -359,20 +402,11 @@ static void hccast_um_audio_restart(int play_mode)
         perror("Init auddec");
         close(g_audio_decoder);
         g_audio_decoder = -1;
+        pthread_mutex_unlock(&g_um_ad_mutex);
         return -1;
     }
     ioctl(g_audio_decoder, AUDDEC_START, 0);
-
-    int snd_fd = open("/dev/sndC0i2so", O_WRONLY);
-    if (snd_fd < 0)
-    {
-        perror("Open sndC0i2so");
-        g_audio_started = 0;
-        return -1;
-    }
-    g_vol = 100;
-    ioctl(snd_fd, SND_IOCTL_SET_VOLUME, &g_vol);
-    close(snd_fd);
+    pthread_mutex_unlock(&g_um_ad_mutex);
 }
 
 extern int hccast_aum_get_flip_mode();
@@ -414,9 +448,11 @@ int hccast_um_video_open(int um_type)
     struct video_config mvcfg;
     pthread_t tid;
     char path[128] = {0};
+    pthread_attr_t thread_attr;
 
     UM_AV_DEBUG("[%s - %d]\n", __func__, __LINE__);
-
+    pthread_mutex_lock(&g_um_vd_mutex);
+    
     if (g_vdec_started)
     {
         UM_AV_DEBUG("Warning: aircast video has been started!\n");
@@ -436,6 +472,8 @@ int hccast_um_video_open(int um_type)
 
     g_video_width = 0;
     g_video_height = 0;
+    g_video_framerate = 0;
+    g_play_speed = 0;
 
     memset(&mvcfg, 0, sizeof(struct video_config));
     mvcfg.codec_id = HC_AVCODEC_ID_H264;
@@ -455,6 +493,7 @@ int hccast_um_video_open(int um_type)
     if (g_video_decoder < 0)
     {
         perror("Open viddec");
+        pthread_mutex_unlock(&g_um_vd_mutex);
         return -1;
     }
     if (ioctl(g_video_decoder, VIDDEC_INIT, &mvcfg) != 0)
@@ -462,15 +501,21 @@ int hccast_um_video_open(int um_type)
         perror("Viddec init");
         close(g_video_decoder);
         g_video_decoder = -1;
+        pthread_mutex_unlock(&g_um_vd_mutex);
         return -1;
     }
     ioctl(g_video_decoder, VIDDEC_START, 0);
+    ioctl(g_video_decoder, VIDDEC_SET_SHOW_MASAIC_ON_ERR, 2);
 
     hccast_um_video_aspect_set();
 
     g_vdec_started = 1;
 
-    pthread_create(&tid, NULL, hccast_um_player_state_timer, NULL);
+    pthread_attr_init(&thread_attr);
+    pthread_attr_setdetachstate(&thread_attr, PTHREAD_CREATE_DETACHED);
+    pthread_create(&tid, &thread_attr, hccast_um_player_state_timer, NULL);
+    
+    pthread_attr_destroy(&thread_attr);
 
     if (g_es_dump_en)
     {
@@ -479,14 +524,17 @@ int hccast_um_video_open(int um_type)
 
         g_es_vfp = fopen(path, "w+");
     }
-
+    pthread_mutex_unlock(&g_um_vd_mutex);
     return 0;
 }
 
 void hccast_um_video_close()
 {
+    int distype = DIS_TYPE_HD;
+    int fd;
+    
     UM_AV_DEBUG("[%s - %d]\n", __func__, __LINE__);
-
+    pthread_mutex_lock(&g_um_vd_mutex);
     if (g_es_vfp)
     {
         fflush(g_es_vfp);
@@ -497,6 +545,7 @@ void hccast_um_video_close()
     if (!g_vdec_started)
     {
         UM_AV_DEBUG("[%s - %d] video has been close.\n", __func__, __LINE__);
+        pthread_mutex_unlock(&g_um_vd_mutex);
         return ;
     }
 
@@ -506,11 +555,23 @@ void hccast_um_video_close()
         g_video_decoder = -1;
     }
 
+    if (g_dis_backup)
+    {
+        fd = open("/dev/dis" , O_WRONLY);
+        if (fd >= 0)
+        {
+            ioctl(fd ,DIS_FREE_BACKUP_MP , distype);
+            close(fd);
+            g_dis_backup = 0;
+        }
+    }
+
     memset(&g_aum_screen_mode, 0, sizeof(g_aum_screen_mode));
     g_vdec_started = 0;
     g_video_width = 0;
     g_video_height = 0;
     g_rotate_mode = 0xFF;
+    pthread_mutex_unlock(&g_um_vd_mutex);
 }
 
 static int hccast_um_h264_decode(uint8_t *data, size_t len, unsigned int pts, int rotate)
@@ -644,8 +705,11 @@ int hccast_um_video_feed(unsigned char *data, unsigned int len,
         UM_AV_DEBUG("Change rotate %d\n", rotate);
     }
 
+    pthread_mutex_lock(&g_um_vd_mutex);
+    
     if (g_video_decoder < 0)
     {
+        pthread_mutex_unlock(&g_um_vd_mutex);
         return -1;
     }
 
@@ -661,7 +725,9 @@ int hccast_um_video_feed(unsigned char *data, unsigned int len,
         data_aux[4] = 0x09;
         hccast_um_h264_decode((uint8_t *)data_aux, 5, pts, rotate);
     }
-
+    
+    pthread_mutex_unlock(&g_um_vd_mutex);
+    
     return 0;
 }
 
@@ -677,23 +743,26 @@ void hccast_um_video_mode(int mode)
 
 void hccast_aum_screen_mode(aum_screen_mode_t *screen_mode)
 {
-    hccast_um_video_restart(0);
-
     memcpy(&g_aum_screen_mode, screen_mode, sizeof(g_aum_screen_mode));
 
-    hccast_um_video_aspect_set();
+    if(g_video_decoder != -1)
+    {
+        hccast_um_video_restart(0);
+        hccast_um_video_aspect_set();
+    }    
 }
 
 int hccast_um_audio_open()
 {
     struct audio_config macfg;
-    uint8_t g_vol = 0;
 
     UM_AV_DEBUG("[%s - %d]\n", __func__, __LINE__);
 
+    pthread_mutex_lock(&g_um_ad_mutex);
     if (g_audio_started)
     {
         UM_AV_DEBUG("Warning: Audio has been started!\n");
+        pthread_mutex_unlock(&g_um_ad_mutex);
         return -1;
     }
 
@@ -712,7 +781,7 @@ int hccast_um_audio_open()
     macfg.sample_rate = 48000;
     macfg.block_align = 0;
     macfg.extradata_size = 0;
-    macfg.audio_flush_thres = 300;
+    macfg.audio_flush_thres = 200;
 
     macfg.snd_devs = hccast_com_media_control(HCCAST_CMD_SND_DEVS_GET, 0);
 
@@ -720,6 +789,7 @@ int hccast_um_audio_open()
     if (g_audio_decoder < 0)
     {
         perror("Open auddec");
+        pthread_mutex_unlock(&g_um_ad_mutex);
         return -1;
     }
 
@@ -728,6 +798,7 @@ int hccast_um_audio_open()
         perror("Init auddec");
         close(g_audio_decoder);
         g_audio_decoder = -1;
+        pthread_mutex_unlock(&g_um_ad_mutex);
         return -1;
     }
     //ioctl(g_audio_decoder, AUDDEC_SET_FLUSH_TIME, 300);
@@ -735,30 +806,11 @@ int hccast_um_audio_open()
 
     g_audio_started = 1;
 
-    int snd_fd = open("/dev/sndC0i2so", O_WRONLY);
-    if (snd_fd < 0)
-    {
-        perror("Open sndC0i2so");
-        g_audio_started = 0;
-        return -1;
-    }
-
     //mute controled is by upper user, don not enable mute here
     //ioctl(snd_fd, SND_IOCTL_SET_MUTE, 0);
 
-    ioctl(snd_fd, SND_IOCTL_GET_VOLUME, &g_vol);
-    if (g_vol < 100)
-    {
-        g_vol = 100;
-        ioctl(snd_fd, SND_IOCTL_SET_VOLUME, &g_vol);
-    }
-    else
-    {
-        ioctl(snd_fd, SND_IOCTL_SET_VOLUME, &g_vol);
-    }
-    close(snd_fd);
-
     g_avsync_dev = open("/dev/avsync0", O_RDWR);
+    pthread_mutex_unlock(&g_um_ad_mutex);
 
     return 0;
 }
@@ -767,9 +819,12 @@ void hccast_um_audio_close()
 {
     UM_AV_DEBUG("[%s - %d]\n", __func__, __LINE__);
 
+    pthread_mutex_lock(&g_um_ad_mutex);
+
     if (!g_audio_started)
     {
         UM_AV_DEBUG("[%s - %d] audio has been close.\n", __func__, __LINE__);
+        pthread_mutex_unlock(&g_um_ad_mutex);
         return ;
     }
 
@@ -786,15 +841,18 @@ void hccast_um_audio_close()
     }
 
     g_audio_started = 0;
+    pthread_mutex_unlock(&g_um_ad_mutex);
 }
 
 int hccast_um_audio_feed(int type, unsigned char *buf, int length, unsigned long long pts)
 {
     AvPktHd pkthd = {0};
 
+    pthread_mutex_lock(&g_um_ad_mutex);
     if (!g_audio_started )
     {
         UM_AV_DEBUG("Audio is not started\n");
+        pthread_mutex_unlock(&g_um_ad_mutex);
         return -1;
     }
 
@@ -803,6 +861,7 @@ int hccast_um_audio_feed(int type, unsigned char *buf, int length, unsigned long
 
     if (g_audio_decoder < 0)
     {
+        pthread_mutex_unlock(&g_um_ad_mutex);
         return -1;
     }
 
@@ -822,15 +881,90 @@ int hccast_um_audio_feed(int type, unsigned char *buf, int length, unsigned long
         goto fail;
     }
 
+    pthread_mutex_unlock(&g_um_ad_mutex);
     return length;
 
 fail:
     ioctl(g_audio_decoder, AUDDEC_FLUSH, 0);
-
+    pthread_mutex_unlock(&g_um_ad_mutex);
+    
     return 0;
 }
 
-void hccast_um_set_timebase(unsigned int time_ms)
+static void hccast_um_set_speed()
+{
+    float speed = 0.0;
+    int invalid_speed = 0;
+
+    if ((0 == g_play_speed) || (g_avsync_dev < 0))
+    {
+        return ;
+    }
+
+    switch (g_play_speed)
+    {
+        case 0x3FD0:
+            speed = 0.25;
+            break;
+        case 0x3FE0:
+            speed = 0.5;
+            break;
+        case 0x3FE8:
+            speed = 0.75;
+            break;
+        case 0x3FF0:
+            speed = 1.0;
+            break;
+        case 0x3FF4:
+            speed = 1.25;
+            break;
+        case 0x3FF8:
+            speed = 1.5;
+            break;
+        case 0x3FFC:
+            speed = 1.75;
+            break;
+        case 0x4000:
+            speed = 2.0;
+            break;
+        default:
+            invalid_speed = 1;
+            break;
+    }
+
+    if (invalid_speed)
+    {
+        return ;
+    }
+
+    ioctl(g_avsync_dev, AVSYNC_SET_STC_RATE, &speed);
+}
+
+static void hccast_um_set_framerate()
+{
+    if ((0 == g_video_framerate) || (g_video_decoder < 0))
+    {
+        return ;
+    }
+
+    if (g_play_speed <= 0x3FF0)
+    {
+        ioctl(g_video_decoder, VIDDEC_SET_FRAMERATE, g_video_framerate * 1000);
+    }
+    else
+    {
+        if (g_video_framerate <= 30)
+        {
+            ioctl(g_video_decoder, VIDDEC_SET_FRAMERATE, 60 * 1000);
+        }
+        else
+        {
+            ioctl(g_video_decoder, VIDDEC_SET_FRAMERATE, 120 * 1000);
+        }
+    }
+}
+
+void hccast_um_set_timebase(unsigned int time_ms, unsigned int speed)
 {
     int percent = 0;
 
@@ -839,18 +973,17 @@ void hccast_um_set_timebase(unsigned int time_ms)
         ioctl(g_video_decoder, GET_AV_BUFFERING_PERCENT, &percent);
     }
 
-    if (percent > 50)
-    {
-        ium_api_ioctl(IUM_CMD_ENABLE_BUFFERING, 0, NULL);
-    }
-    else if (percent < 20)
-    {
-        ium_api_ioctl(IUM_CMD_ENABLE_BUFFERING, 1, NULL);
-    }
-
     if (g_avsync_dev >= 0)
     {
+        UM_AV_DEBUG("pt: %d, percent: %d\n", time_ms, percent);
         ioctl(g_avsync_dev, AVSYNC_SET_STC_MS, time_ms);
+    }
+
+    if (g_play_speed != speed)
+    {
+        g_play_speed = speed;
+        hccast_um_set_speed();
+        hccast_um_set_framerate();
     }
 }
 
@@ -868,7 +1001,7 @@ void hccast_um_video_pause(int pause)
         return ;
     }
 
-    UM_AV_DEBUG("[%s - %d]\n", __func__, __LINE__);
+    UM_AV_DEBUG("[%s - %d] %d\n", __func__, __LINE__, pause);
 
     if (pause)
     {
@@ -877,6 +1010,15 @@ void hccast_um_video_pause(int pause)
     else
     {
         ioctl(g_video_decoder, VIDDEC_START, 0);
+    }
+}
+
+void hccast_um_set_video_fps(unsigned int fps)
+{
+    if (g_video_framerate != fps)
+    {
+        g_video_framerate = fps;
+        hccast_um_set_framerate();
     }
 }
 
@@ -892,6 +1034,7 @@ ium_av_func_t ium_av_func =
     ._set_timebase  = hccast_um_set_timebase,
     ._av_reset      = hccast_um_av_reset,
     ._video_pause   = hccast_um_video_pause,
+    ._set_fps       = hccast_um_set_video_fps,
 };
 
 aum_av_func_t aum_av_func =

@@ -100,6 +100,7 @@ int cast_usb_mirror_deinit(void);
 int cast_usb_mirror_start(void);
 int cast_usb_mirror_stop(void);
 void cast_usb_mirror_rotate_init(void);
+bool cast_usb_mirror_start_get();
 #else
 /*
 int hccast_um_init(void);

@@ -19,6 +19,7 @@ struct hc_key_adc_priv {
 	struct device			*dev;
 	int				irq;
 	void __iomem			*base;
+	void __iomem			*base_wait;
 	int				ch_id;
 
 	int				key_code;
@@ -32,6 +33,7 @@ struct hc_key_adc_priv {
 	uint32_t			timeout;
 
 	struct timer_list		timer_keyup;	
+	struct timer_list		timer_clr_cnt;
 	int				keymap_len;
 	hc_adckey_map_s			*key_map;
 
@@ -42,7 +44,6 @@ struct hc_key_adc_priv {
 
 	int				key_state;	/* 0: key down, 1: repead key down */
 	int				val_cmp;
-	uint32_t 			deviation;
 	uint8_t				efuse_adjust;	/* 0 : invalid, others : valid, high priority */
 	uint8_t 			flash_adjust;	/* 0 : invalid, others : valid, low priority */
 	uint8_t 			dyn_adjust;	/* 0 : invalid, others : valid, low priority */
@@ -51,6 +52,7 @@ struct hc_key_adc_priv {
 	int16_t 			dyn_adjust_temp;
 	int 				dts_refer_value;
 	struct work_s			work;
+	struct work_s			irq_work;
 };
 
 extern void get_map_info(struct hc_key_adc_priv *priv);

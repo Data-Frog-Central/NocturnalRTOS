@@ -4255,8 +4255,10 @@ static int mov_read_trak(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     sc->ffindex = st->index;
     c->trak_index = st->index;
 
-    if ((ret = mov_read_default(c, pb, atom)) < 0)
-        return ret;
+    if ((ret = mov_read_default(c, pb, atom)) < 0) {
+        ff_free_stream(c->fc, st);
+        return 0;
+    }
 
     c->trak_index = -1;
 
@@ -4278,7 +4280,8 @@ static int mov_read_trak(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     if (sc->stsc_count && sc->stsc_data[ sc->stsc_count - 1 ].first > sc->chunk_count) {
         av_log(c->fc, AV_LOG_ERROR, "stream %d, contradictionary STSC and STCO\n",
                st->index);
-        return AVERROR_INVALIDDATA;
+        ff_free_stream(c->fc, st);
+        return 0;
     }
 
     fix_timescale(c, sc);

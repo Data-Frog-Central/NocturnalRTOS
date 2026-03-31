@@ -308,8 +308,7 @@ static int gc9505_probe(const char *node)
 	fdt_get_property_u_32_index(np, "spi-gpio-stbyb", 	0, &gc9505dev.lcd_stbyb_num);
 	log_d("gc9505dev.lcd_stbyb_num = %d %d %d %d\n",gc9505dev.spi_clk_num,gc9505dev.spi_mosi_num,gc9505dev.spi_cs_num,gc9505dev.lcd_stbyb_num);
 
-	int default_off = 0;
-	fdt_get_property_u_32_index(np, "default-off", 	0, &default_off);
+	int default_off = fdt_property_read_bool(np, "default-off");
 	if(default_off ==0)
 		gc9505_display_init();
 

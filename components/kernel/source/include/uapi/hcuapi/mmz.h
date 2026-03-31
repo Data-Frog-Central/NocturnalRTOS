@@ -26,6 +26,7 @@ void *mmz_calloc(int id, size_t nmemb, size_t size);
 void *mmz_realloc(int id, void *ptr, size_t size);
 int mmz_create(void *start, size_t size);
 int mmz_delete(int id);
+int mmz_name2id(const char *name);
 #endif
 
 #endif /* _HCUAPI_MMZ_H_ */

@@ -2177,7 +2177,7 @@ static FRESULT load_xdir (	/* FR_INT_ERR: invalid entry block */
 	/* Load file directory entry */
 	res = move_window(dp->obj.fs, dp->sect);
 	if (res != FR_OK) return res;
-	if (dp->dir[XDIR_Type] != ET_FILEDIR) return FR_INT_ERR;	/* Invalid order */
+	if (dp->dir[XDIR_Type] != ET_FILEDIR) return FR_PARSE_NEXT;	/* Invalid order */
 	memcpy(dirb + 0 * SZDIRE, dp->dir, SZDIRE);
 	sz_ent = (dirb[XDIR_NumSec] + 1) * SZDIRE;
 	if (sz_ent < 3 * SZDIRE || sz_ent > 19 * SZDIRE) return FR_INT_ERR;
@@ -2188,7 +2188,7 @@ static FRESULT load_xdir (	/* FR_INT_ERR: invalid entry block */
 	if (res != FR_OK) return res;
 	res = move_window(dp->obj.fs, dp->sect);
 	if (res != FR_OK) return res;
-	if (dp->dir[XDIR_Type] != ET_STREAM) return FR_INT_ERR;	/* Invalid order */
+	if (dp->dir[XDIR_Type] != ET_STREAM) return FR_PARSE_NEXT;	/* Invalid order */
 	memcpy(dirb + 1 * SZDIRE, dp->dir, SZDIRE);
 	if (MAXDIRB(dirb[XDIR_NumName]) > sz_ent) return FR_INT_ERR;
 
@@ -2200,7 +2200,7 @@ static FRESULT load_xdir (	/* FR_INT_ERR: invalid entry block */
 		if (res != FR_OK) return res;
 		res = move_window(dp->obj.fs, dp->sect);
 		if (res != FR_OK) return res;
-		if (dp->dir[XDIR_Type] != ET_FILENAME) return FR_INT_ERR;	/* Invalid order */
+		if (dp->dir[XDIR_Type] != ET_FILENAME) return FR_PARSE_NEXT;	/* Invalid order */
 		if (i < MAXDIRB(FF_MAX_LFN)) memcpy(dirb + i, dp->dir, SZDIRE);
 	} while ((i += SZDIRE) < sz_ent);
 
@@ -2370,6 +2370,8 @@ static FRESULT dir_read (
 					res = load_xdir(dp);	/* Load the entry block */
 					if (res == FR_OK) {
 						dp->obj.attr = fs->dirbuf[XDIR_Attr] & AM_MASK;	/* Get attribute */
+					} else if (res == FR_PARSE_NEXT) {
+						res = FR_OK;
 					}
 					break;
 				}
@@ -3341,7 +3343,7 @@ static UINT check_fs (	/* 0:FAT/FAT32 VBR, 1:exFAT VBR, 2:Not FAT and valid BS, 
 #endif
 	b = fs->win[BS_JmpBoot];
 	if (b == 0xEB || b == 0xE9 || b == 0xE8) {	/* Valid JumpBoot code? (short jump, near jump or near call) */
-		if (sign == 0xAA55 && !memcmp(fs->win + BS_FilSysType32, "FAT32   ", 8)) {
+		if (sign == 0xAA55 && !memcmp(fs->win + BS_FilSysType32, "FAT32", 5)) {
 			return 0;	/* It is an FAT32 VBR */
 		}
 		/* FAT volumes formatted with early MS-DOS lack BS_55AA and BS_FilSysType, so FAT VBR needs to be identified without them. */

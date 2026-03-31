@@ -56,6 +56,8 @@ struct i2so_platform_device {
 	struct pinmux_setting *pinmux_data;
 	struct pinmux_setting *pinmux_mute;
 	bool mute_polar;
+	int force_mute;//0: mute gpio control by driver automatically, 1: mute gpio control by appliaction only.
+	int target_mute;
 	uint8_t volume;
 	uint8_t fade_en;
 	uint8_t fade_step;

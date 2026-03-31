@@ -44,7 +44,9 @@ typedef enum
 typedef enum
 {
     HCCAST_UM_CMD_SET_IUM_RESOLUTION = 1,
-    HCCAST_UM_CMD_SET_AUM_RESOLUTION = 100, //hccast_aum_res_e
+    HCCAST_UM_CMD_SET_AUM_RESOLUTION = 100, /* hccast_aum_res_e */
+    HCCAST_UM_CMD_SET_AUM_VENDOR,
+    HCCAST_UM_CMD_SET_AUM_MODEL,
 } hccast_um_cmd_e;
 
 typedef enum

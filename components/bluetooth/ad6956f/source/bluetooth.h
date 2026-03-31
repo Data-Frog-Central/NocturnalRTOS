@@ -2,25 +2,37 @@
 #define _BLUETOOTH_H
 
 #define BLUETOOTH_MAC_LEN 6
+#define BLUETOOTH_TYPE_LEN 4
 #define BLUETOOTH_NAME_LEN 128
 
+#include "bluetooth_io.h"
 struct bluetooth_slave_dev {
 	unsigned char mac[BLUETOOTH_MAC_LEN];
 	char name[BLUETOOTH_NAME_LEN];
+	unsigned int type_value;
 };
 
+#define BT_RET_NOT_CONNECTED 1
 #define BT_RET_SUCCESS 0
-#define BT_RET_ERROR   -1
+#define BT_RET_ERROR -1
+#define BT_RET_TIMEOUT -2
 
 #define BLUETOOTH_EVENT_SLAVE_DEV_SCANNED		        0	/* param = (struct bluetooth_slave_dev *) param */
 #define BLUETOOTH_EVENT_SLAVE_DEV_SCAN_FINISHED	    	1	/* param = 0 */
 #define BLUETOOTH_EVENT_SLAVE_DEV_DISCONNECTED		    2	/* param = 0 */
 #define BLUETOOTH_EVENT_SLAVE_DEV_CONNECTED		    	3	/* param = 0 */
 #define BLUETOOTH_EVENT_SLAVE_DEV_GET_CONNECTED_INFO 	4	/* param = (struct bluetooth_slave_dev *) param */
+#define BLUETOOTH_EVENT_SLAVE_DEV_CONNECTION_TIMED_OUT	5	/* param = 0 */
+#define BLUETOOTH_EVENT_SLAVE_DEV_IS_RECONNECTING		6	/* param = (struct bluetooth_slave_dev *) param */
+#define BLUETOOTH_EVENT_SLAVE_DEV_IS_SEARCHING			7	/* param = 0 */
+#define BLUETOOTH_EVENT_REPORT_GPI_STAT					8	/* param = 0 */
+#define BLUETOOTH_EVENT_SLAVE_DEV_GET_INIT_WORKING_STATE	9	/* param = 0 */
+#define BLUETOOTH_EVENT_SLAVE_GET_VERSION				10	/* param = 0 */
+
 struct input_event_bt {
-	uint16_t type;
-	uint16_t code;
-	int32_t value;
+	unsigned short type;
+	unsigned short code;
+	unsigned int value;
 };
 
 typedef int (*bluetooth_callback_t)(unsigned long event, unsigned long param);
@@ -46,4 +58,8 @@ int bluetooth_del_list_device(void);
 int bluetooth_set_connection_cvbs_aux_mode(void);
 int bluetooth_set_connection_cvbs_fiber_mode(void);
 int bluetooth_ir_key_init(bluetooth_ir_control_t control);
+int bluetooth_power_on_to_rx(void);
+int bluetooth_factory_reset(void);
+int bluetooth_ioctl(int cmd, ...);
+
 #endif

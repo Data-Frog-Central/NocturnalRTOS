@@ -6,6 +6,11 @@
 #include <linux/slab.h>
 #include <linux/printk.h>
 #include <kernel/lib/fdt_api.h>
+#include <hcuapi/pinmux.h>
+#include <hcuapi/gpio.h>
+#include <kernel/io.h>
+#include <kernel/ld.h>
+
 
 /* Bit masks for spi_device.mode management.  Note that incorrect
  * settings for some settings can cause *lots* of trouble for other
@@ -24,9 +29,14 @@
 				| SPI_NO_CS | SPI_READY | SPI_TX_DUAL \
 				| SPI_TX_QUAD | SPI_RX_DUAL | SPI_RX_QUAD)
 
+extern struct mutex            sf_lock;
+
 struct spidev_data {
 	struct spi_device	*spi;
-
+	struct pinmux_setting 	*sfgpio_pinmux;
+	struct pinmux_setting 	*sfspi_pinmux;
+	uint32_t		strappin_status;
+	int			use_mutex_lock;
 	struct mutex		buf_lock;
 	void			*tx_buffer;
 	void			*rx_buffer;
@@ -340,18 +350,32 @@ spidev_ioctl(struct file *filp, int cmd, unsigned long arg)
 
 static int spidev_open(struct file *filp)
 {
-	int			status = -ENXIO;
 	struct inode		*inode = filp->f_inode;
 	struct spidev_data	*spidev = inode->i_private;
 
 	filp->f_priv = spidev;
+	if (spidev->use_mutex_lock) {
+		mutex_lock(&sf_lock);
+		if (spidev->sfgpio_pinmux != NULL){
+			pinmux_select_setting(spidev->sfgpio_pinmux);
+		}
+	}
 
 	return 0;
 }
 
 static int spidev_close(struct file *filp)
 {
+	struct inode		*inode = filp->f_inode;
+	struct spidev_data	*spidev = inode->i_private;
+
 	filp->f_priv = NULL;
+	if (spidev->use_mutex_lock) {
+		if (spidev->sfspi_pinmux != NULL) {
+			pinmux_select_setting(spidev->sfspi_pinmux);
+		}
+		mutex_unlock(&sf_lock);
+	}
 
 	return 0;
 }
@@ -372,14 +396,21 @@ static const struct file_operations spidev_fops = {
 
 static int spidev_probe(const char *master, const char *node)
 {
+	u32 cs;
 	int rc = 0;
-	int np;
+	int np, np_sf_gpio_spi, np_sfspi;
 	const char *path;
+	const char *status;
+	const char *mutex_status;
 	struct spi_device *spi = NULL;
 	struct spidev_data *spidev = NULL;
 
 	np = fdt_node_probe_by_path(node);
 	if (np < 0)
+		return 0;
+
+	if (!fdt_get_property_string_index(np, "status", 0, &status) &&
+	    !strcmp(status, "disabled"))
 		return 0;
 
 	if (fdt_get_property_string_index(np, "devpath", 0, &path))
@@ -399,7 +430,7 @@ static int spidev_probe(const char *master, const char *node)
 
 	spi->controller = spi_find_controller(master);
 	if (!spi->controller) {
-		rc = -EFAULT;
+		rc = 0;
 		goto err_probe;
 	}
 
@@ -408,7 +439,30 @@ static int spidev_probe(const char *master, const char *node)
 	spi->bits_per_word = 8;
 	spi->chip_select = 0;
 	spi->mode = SPI_MODE_0;
-	spi->cs_gpio = PINPAD_INVALID;
+
+	if (!(fdt_get_property_u_32_index(np, "cs_gpio", 0, (u32 *)&spi->cs_gpio))){
+		gpio_configure(spi->cs_gpio, GPIO_DIR_OUTPUT);
+		gpio_set_output(spi->cs_gpio, 1);
+	} else {
+		fdt_get_property_u_32_index(np, "reg", 0, &cs);
+		spi->chip_select = cs;
+		spi->cs_gpio = PINPAD_INVALID;
+	}
+
+	if (!fdt_get_property_string_index(np, "mutex-lock", 0, &mutex_status) &&
+	    !strcmp(mutex_status, "sf_lock")) {
+		spidev->use_mutex_lock = 1;
+
+		np_sfspi = fdt_node_probe_by_path("/hcrtos/sfspi");
+		np_sf_gpio_spi = fdt_node_probe_by_path("/hcrtos/spi-gpio");
+		if (np_sf_gpio_spi  < 0 || np_sfspi < 0) {
+			printf("/hcrtos/spi-gpio or /hcrtos/sfspi no find in dts\n");
+			return -ENOENT;
+		}
+		spidev->sfspi_pinmux = fdt_get_property_pinmux(np_sfspi , "active");
+		spidev->sfgpio_pinmux = fdt_get_property_pinmux(np_sf_gpio_spi , "active");
+	} else
+		spidev->use_mutex_lock = 0;
 
 	rc = spi_add_device(spi);
 	if (rc)
@@ -446,4 +500,4 @@ static int spidev_init(void)
 	return rc;
 }
 
-module_driver(spidev, spidev_init, NULL, 0)
+module_driver(spidev, spidev_init, NULL, 1)

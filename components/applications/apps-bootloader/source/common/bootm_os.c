@@ -22,6 +22,7 @@ static int do_bootm_standalone(int flag, int argc, char *const argv[],
 #elif defined(CONFIG_BOOT_HCLINUX_DUALCORE)
 		irq_save_av();
 #endif
+		sys_hcprogrammer_check();
 		appl(argc, argv);
 		taskEXIT_CRITICAL();
 	}
@@ -84,6 +85,7 @@ static void boot_jump_linux(bootm_headers_t *images)
 	if (images->ft_len) {
 		taskENTER_CRITICAL();
 		irq_save_all();
+		sys_hcprogrammer_check_timeout();
 		kernel(-2, (unsigned long)images->ft_addr, 0, 0);
 	}
 }

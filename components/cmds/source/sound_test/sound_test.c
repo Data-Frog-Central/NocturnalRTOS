@@ -4,10 +4,47 @@ static int sound_test(int argc, char *argv[]){
 	return 0;
 }
 
+static int drc(int argc , char *argv[])
+{
+	int opt;
+	int fd;
+	struct snd_drc_setting setting = { 0 };
+
+	fd = open("/dev/sndC0i2so", O_WRONLY);
+	if (fd < 0) {
+		printf ("open snd_fd %d failed\n", fd);
+		return -1;
+	}
+
+	ioctl(fd, SND_IOCTL_GET_DRC_PARAM, &setting);
+	while ((opt = getopt(argc, argv, "l:g:")) != -1) {
+		switch (opt) {
+		case 'l':
+			setting.peak_dBFS = atof(optarg);
+			if (setting.peak_dBFS > 0) {
+				printf("bad level limit: %.4f\n", setting.peak_dBFS);
+				return -1;
+			}
+			break;
+		case 'g':
+			setting.gain_dBFS = atof(optarg);
+			break;
+		}
+	}
+
+	printf("gain_dBFS %f\r\n", setting.gain_dBFS);
+	printf("level_limit %f\r\n", setting.peak_dBFS);
+	ioctl(fd, SND_IOCTL_SET_DRC_PARAM, &setting);
+	close(fd);
+	return 0;
+}
+
 CONSOLE_CMD(snd, NULL, sound_test, CONSOLE_CMD_MODE_SELF,
     "enter sound test")
 CONSOLE_CMD(i2so, "snd", i2so_test, CONSOLE_CMD_MODE_SELF,
     "do i2so test")
+CONSOLE_CMD(pcm_play, "snd", pcm_dec, CONSOLE_CMD_MODE_SELF,
+    "do pcm dec")
 CONSOLE_CMD(i2si, "snd", i2si_test, CONSOLE_CMD_MODE_SELF,
     "do i2si test")
 CONSOLE_CMD(i2s_rec_play, "snd", i2s_rec_play_test, CONSOLE_CMD_MODE_SELF,
@@ -52,4 +89,4 @@ CONSOLE_CMD(aec_start, "snd", aec_main, CONSOLE_CMD_MODE_SELF,"do aec test")
 CONSOLE_CMD(alac, "snd", alac_test, CONSOLE_CMD_MODE_SELF,"do alac test")
 CONSOLE_CMD(dsp, "snd", dsp_test, CONSOLE_CMD_MODE_SELF,"do dsp test")
 CONSOLE_CMD(dsp_stop, "snd", stop_dsp_test, CONSOLE_CMD_MODE_SELF,"stop dsp test")
-
+CONSOLE_CMD(drc, "snd", drc, CONSOLE_CMD_MODE_SELF, "set drc gain/limit, usage drc -l 0 -g 12")

@@ -21,7 +21,6 @@ obj-$(CONFIG_DRV_INPUT) += input/
 obj-$(CONFIG_MTD) += mtd/
 obj-$(CONFIG_DRV_SPI) += spi/
 obj-$(CONFIG_I2C) += i2c/
-obj-$(CONFIG_DRV_ADC) += adc/
 obj-$(CONFIG_DRV_APLATFORM) += aplatform/
 obj-y += drivers.o
 obj-$(CONFIG_DRV_LVDS) += lvds/
@@ -40,5 +39,7 @@ obj-$(CONFIG_DRV_DVP) += dvp/
 obj-$(CONFIG_DEV_URANDOM) += crypto/
 obj-$(CONFIG_PIPES) += pipes/
 
-obj-$(CONFIG_USB_GADGET_VENDOR) += usb/
+obj-$(CONFIG_USB_VENDOR) += usb/
 obj-$(CONFIG_DRV_LCD) += lcd/
+obj-$(CONFIG_HC_NAND) += nand/
+obj-$(CONFIG_DRV_RTC) += rtc/

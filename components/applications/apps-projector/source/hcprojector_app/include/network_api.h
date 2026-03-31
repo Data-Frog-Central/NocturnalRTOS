@@ -33,6 +33,8 @@ typedef struct
     bool bConnectedByPhone;  // 1: Connected by Phone; 0: Not connect by phone
     bool host_ap_ip_ready; //AP mode, station client get ip from device successful.
     bool sta_ip_ready; //station mode, device get ip from host clinet successful.
+    int wifi_connecting;
+    int wifi_init_done;
     WIFI_MODE_e mode;
 
 } wifi_config_t;
@@ -59,7 +61,8 @@ int app_wifi_reconnect(hccast_wifi_ap_info_t *wifi_ap);
 int app_wifi_switch_work_mode(WIFI_MODE_e wifi_mode);
 char *app_get_connecting_ssid();
 bool app_wifi_connect_status_get(void);
-bool app_wifi_init_done(void);
+bool app_get_wifi_init_done(void);
+WIFI_MODE_e app_wifi_get_work_mode(void);
 
 int api_network_download(char *url, char *file_name, uint8_t *data, uint32_t size, \
         net_dowload_cb net_cb, void *user_data, bool block);

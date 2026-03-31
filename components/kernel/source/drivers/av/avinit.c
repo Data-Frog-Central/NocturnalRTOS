@@ -26,6 +26,24 @@ uint32_t __attribute__((weak)) avsync_stc_tick_to_ms(enum AVSYNC_STCID id, uint3
 	return (tick == 0xffffffff) ? 0 : tick / 45;
 }
 
+void __attribute__((weak)) avsync_video_update_stc(enum AVSYNC_STCID id , uint32_t tick)
+{
+    
+}
+
+uint32_t __attribute__((weak)) avsync_get_stc_tick(enum AVSYNC_STCID id)
+{
+    return 0;
+}
+
+uint32_t __attribute__((weak)) avsync_get_video_delay_ms(enum AVSYNC_STCID id)
+{
+    return 0;
+}
+void __attribute__((weak)) avsync_set_video_delay_ms(enum AVSYNC_STCID id , uint32_t delay)
+{
+    ;
+}
 #if CONFIG_AUDIO_SUPPORT
 int get_config_audio_decoder_priority(void)
 {

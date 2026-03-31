@@ -48,6 +48,11 @@ extern "C" {
 #define OSD_MAX_HEIGHT  720
 #endif
 
+#define DIS_SOURCE_FULL_W  1920
+#define DIS_SOURCE_FULL_H  1080
+#define DIS_SOURCE_FULL_X  0
+#define DIS_SOURCE_FULL_Y  0
+
 #define SUB_NAME_X  140
 #define SUB_NAME_Y  80
 #define SUB_NAME_W  200
@@ -60,7 +65,7 @@ extern "C" {
 
 #define MAX_FILE_NAME 1024    
 
-
+#define EBOOK_FILE_SIZE_MAX 30*1024*1024  //ebook_max_size
 //#define GPIO_RESET_NUMBER   PINPAD_L08
 #define GPIO_RESET_NUMBER   INVALID_VALUE_32
 #define GPIO_RESET_ACTIVE_VAL   0 //Read the GPIO, the value is actived
@@ -75,6 +80,9 @@ extern "C" {
 #define MAX_UDISK_DEV_LEN   64
 #define MOUNT_ROOT_DIR    "/media"
 
+#ifndef HC_ARRAY_SIZE
+  #define HC_ARRAY_SIZE(x) (sizeof(x)/sizeof(x[0]))
+#endif    
 
 typedef enum
 {
@@ -164,8 +172,14 @@ typedef enum{
     MSG_TYPE_CLOSE_WIN,
     MSG_TYPE_NETWORK_CONNECTING,
 
-    MSG_TYPE_MOUNT,
+    MSG_TYPE_USB_MOUNT,
     MSG_TYPE_USB_UNMOUNT,
+    MSG_TYPE_USB_MOUNT_FAIL,
+    MSG_TYPE_USB_UNMOUNT_FAIL,
+    MSG_TYPE_SD_MOUNT,
+    MSG_TYPE_SD_UNMOUNT,
+    MSG_TYPE_SD_MOUNT_FAIL,
+    MSG_TYPE_SD_UNMOUNT_FAIL,
 
     MSG_TYPE_USB_DISK_PLUGIN,
     MSG_TYPE_USB_DISK_PLUGOUT,
@@ -173,11 +187,11 @@ typedef enum{
     MSG_TYPE_USB_WIFI_PLUGIN,
     MSG_TYPE_USB_WIFI_PLUGOUT,
 
-    MSG_TYPE_USB_UPGRADE,//20
+    MSG_TYPE_USB_UPGRADE,
     MSG_TYPE_NET_UPGRADE,
     MSG_TYPE_UPG_STATUS, //the status of upgreade, error code, etc
     MSG_TYPE_UPG_DOWNLOAD_PROGRESS,
-    MSG_TYPE_UPG_BURN_PROGRESS,
+    MSG_TYPE_UPG_BURN_PROGRESS,//30
 
     MSG_TYPE_MEDIA_BUFFERING,
     MSG_TYPE_MEDIA_VIDEO_DECODER_ERROR, //video data decoded error
@@ -195,8 +209,10 @@ typedef enum{
     MSG_TYPE_NETWORK_WIFI_CONNECTING, //connecting wifi
     MSG_TYPE_NETWORK_WIFI_CONNECT_FAIL, //connect wifi
     MSG_TYPE_NETWORK_WIFI_STATUS_UPDATE,
+    MSG_TYPE_NETWORK_WIFI_RECONNECTE,//reconnect wifi
+    MSG_TYPE_NETWORK_WIFI_RECONNECTED,//reconnect wifi
     MSG_TYPE_NETWORK_WIFI_PWD_WRONG,
-    MSG_TYPE_NETWORK_DHCP_ON,//40
+    MSG_TYPE_NETWORK_DHCP_ON,
     MSG_TYPE_NETWORK_DHCP_OFF,
     MSG_TYPE_NETWORK_DEVICE_BE_CONNECTED, //connected by phone
     MSG_TYPE_NETWORK_DEVICE_BE_DISCONNECTED, //disconected by phone
@@ -207,19 +223,21 @@ typedef enum{
     MSG_TYPE_CAST_DLNA_PLAY,
     MSG_TYPE_CAST_DLNA_PAUSE,
     MSG_TYPE_CAST_DLNA_MUTE,
-    MSG_TYPE_CAST_DLNA_SEEK,//50
+    MSG_TYPE_CAST_DLNA_SEEK,
     MSG_TYPE_CAST_DLNA_VOL_SET,
     MSG_TYPE_CAST_AIRCAST_START,
     MSG_TYPE_CAST_AIRCAST_AUDIO_START,
    	MSG_TYPE_CAST_AIRCAST_AUDIO_STOP,
     MSG_TYPE_CAST_AIRCAST_STOP,
+    MSG_TYPE_CAST_AIRCAST_VOL_SET,
     MSG_TYPE_CAST_AIRMIRROR_START,
     MSG_TYPE_CAST_AIRMIRROR_STOP,
     MSG_TYPE_CAST_MIRACAST_START,
     MSG_TYPE_CAST_MIRACAST_STOP,
-    MSG_TYPE_CAST_MIRACAST_CONNECTING,//60
+    MSG_TYPE_CAST_MIRACAST_CONNECTING,
     MSG_TYPE_CAST_MIRACAST_CONNECTED,
     MSG_TYPE_CAST_MIRACAST_SSID_DONE,
+    MSG_TYPE_CAST_MIRACAST_RESET,
 
     MSG_TYPE_CAST_AUSB_START, //android usb mirror start
     MSG_TYPE_CAST_AUSB_STOP,  //android usb mirror stop
@@ -227,9 +245,10 @@ typedef enum{
     MSG_TYPE_CAST_IUSB_STOP,  //apple usb mirror stop
     MSG_TYPE_CAST_IUSB_NEED_TRUST, //apple usb mirror need user to trust
     MSG_TYPE_CAST_IUSB_DEVICE_REMOVE, //apple usb mirror need user to trust
+    MSG_TYPE_CAST_IUSB_NO_DATA, 
 
     MSG_TYPE_AIR_INVALID_CERT,
-    MSG_TYPE_VIDEO_DECODER_ERROR,//70
+    MSG_TYPE_VIDEO_DECODER_ERROR,
     MSG_TYPE_AUDIO_DECODER_ERROR,
     MSG_TYPE_HDMI_TX_CHANGED,
     MSG_TYPE_DLNA_HOSTAP_SKIP_URL,
@@ -243,6 +262,8 @@ typedef enum{
 
     MSG_TYPE_BT_CONNECTED,
     MSG_TYPE_BT_DISCONNECTED,
+    MSG_TYPE_BT_SCANED,
+    MSG_TYPE_BT_SCAN_FINISH,
 
     //command
     MSG_TYPE_CMD = 1000
@@ -344,6 +365,7 @@ int api_control_send_msg(control_msg_t *control_msg);
 int api_control_receive_msg(control_msg_t *control_msg);
 int api_control_send_key(uint32_t key);
 
+int api_dis_suspend(void);
 int api_dis_show_onoff(bool on_off);
 int api_logo_show(const char *file);
 int api_logo_reshow(void);
@@ -375,7 +397,7 @@ void api_dts_string_get(const char *path, char *string, int size);
 #endif
 void api_screen_regist_ctrl_handle(screen_entry_t *entry);
 screen_ctrl api_screen_get_ctrl(void *screen);
-
+screen_entry_t* api_screen_get_ctrl_entry(void *screen);
 int sys_upg_flash_burn(char *buff, uint32_t length);
 void key_set_group(lv_group_t *key_group);
 
@@ -414,8 +436,9 @@ void api_set_display_aspect(dis_tv_mode_e ratio , dis_mode_e dis_mode);
 int api_get_display_area(dis_screen_info_t * dis_area);
 int api_set_display_zoom2(dis_zoom_t* diszoom_param);
 int api_get_screen_info(dis_screen_info_t * dis_area);
-
-
+#ifdef BLUETOOTH_SUPPORT
+int bt_set_shield_wifi_channel(int wifi_channel);
+#endif
 void *api_ffmpeg_player_get(void);
 void api_ffmpeg_player_get_regist(void *(func)(void));
 int api_usb_dev_path_get(char dev_path[][MAX_UDISK_DEV_LEN], int dev_cnt);
@@ -459,6 +482,16 @@ int api_media_pic_backup(void);
 int api_media_pic_backup_free(void);
 void win_upgrade_type_set(uint32_t upgrade_type);
 int api_set_backlight_brightness(int val);
+bool ui_mute_get(void);
+void ui_mute_set(void);
+int partition_info_update(int usb_state,void* dev);
+bool api_storage_devinfo_state_get(void);
+void api_storage_devinfo_state_set(bool state);
+int api_storage_devinfo_check(char* device,char* filename);
+#ifdef USBMIRROR_SUPPORT
+bool cast_um_play_state(void);
+#endif
+
 #ifdef __cplusplus
 } /*extern "C"*/
 #endif

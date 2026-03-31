@@ -76,6 +76,7 @@ static void *hccast_air_player_state_timer(void *args)
     pthread_mutex_unlock(&g_timer_mutex);
 
     hccast_log(LL_NOTICE, "hccast_air_player_state_timer stopd!\n");
+    return NULL;
 }
 
 void hccast_air_set_audio_sync_thresh()
@@ -220,6 +221,8 @@ int hccast_air_video_open()
 {
     pthread_t tid;
     char path[128] = {0};
+    pthread_attr_t thread_attr;
+
     
     hccast_log(LL_NOTICE, "[%s - %d]\n", __func__, __LINE__);
 
@@ -255,11 +258,15 @@ int hccast_air_video_open()
     if (g_air_timer_start == 0)
     {
         g_air_timer_start = 1;
-
-        if (pthread_create(&tid, NULL, hccast_air_player_state_timer, NULL) != 0)
+        
+        pthread_attr_init(&thread_attr);
+        pthread_attr_setdetachstate(&thread_attr, PTHREAD_CREATE_DETACHED);
+        if (pthread_create(&tid, &thread_attr, hccast_air_player_state_timer, NULL) != 0)
         {
             g_air_timer_start = 0;
         }
+        
+        pthread_attr_destroy(&thread_attr);
     }
     pthread_mutex_unlock(&g_timer_mutex);
 

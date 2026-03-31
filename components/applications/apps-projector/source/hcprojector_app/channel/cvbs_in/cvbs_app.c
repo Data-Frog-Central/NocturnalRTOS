@@ -69,7 +69,7 @@ static void cvbs_event_handle(lv_event_t* e){
             timer_start = NULL;
         }
  
-        cvbs_rx_stop();
+        //cvbs_rx_stop();
         lv_obj_clean(cvbs_scr);
         if(lv_obj_has_flag(cvbs_scr, LV_OBJ_FLAG_HIDDEN)){
             lv_obj_clear_flag(cvbs_scr, LV_OBJ_FLAG_HIDDEN);

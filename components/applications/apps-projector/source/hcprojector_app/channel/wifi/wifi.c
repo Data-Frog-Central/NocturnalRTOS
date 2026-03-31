@@ -1,14 +1,9 @@
 #include "app_config.h"
 #include <stdio.h>
-
-
-
 #ifdef WIFI_SUPPORT
 #include "wifi.h"
 #include<stdlib.h>
 #include<unistd.h>
-
-
 #ifdef __HCRTOS__
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -16,9 +11,7 @@
 #endif
 #include <pthread.h>
 #include "setup.h"
-
 #include "factory_setting.h"
-
 #include "mul_lang_text.h"
 #include "com_api.h"
 #include "osd_com.h"
@@ -26,6 +19,7 @@
 #include "../../app_config.h"
 #include "hcstring_id.h"
 #include "../main_page/main_page.h"
+#include "app_log.h"
 
 #ifdef LVGL_RESOLUTION_240P_SUPPORT
     #define WIFI_SCR_HOR_PAD 0
@@ -149,7 +143,7 @@ lv_obj_t *wifi_save_obj;
 lv_obj_t *wifi_nearby_obj;
 static lv_obj_t* msg_box, *reconn_msg_box, *prompt_box;
 static lv_obj_t* cur_scr_focused_obj;//
-
+static bool is_reconn = false;
 static int cur_wifi_id = -1;//wifi列表当前选中的id
 static int cur_wifi_conning_id = -1;//wifi列表中当前正在连接的节点的id
 static wifi_scan_node* cur_wifi_conning_node_p=NULL;//指向wifi列表中当前正在连接的节点
@@ -165,20 +159,21 @@ static bool wifi_is_scaning = false;
 static bool wifi_is_conning = false;
 lv_obj_t *searching_label = NULL;//搜索时提示的指针
 lv_timer_t *timer_scan=NULL;
-extern lv_font_t* select_font_normal[3];
-extern lv_font_t *select_middle_font[3];
+
 extern lv_obj_t* slave_scr_obj;//top层上的对象
 extern lv_obj_t *wifi_show;
 
 static void wifi_list_clean();
 void wifi_list_add(void *p);
-
+static void list_sub_wifi_ssid_set(int id, char* ssid);
+static void list_sub_wifi_sig_strength_set(int id, void* img);
 static lv_obj_t* create_keypad_widget(lv_obj_t *, lv_event_cb_t,int);
 static void list_sub_wifi_btn_3_event_handle(lv_event_t *e);
 static void list_sub_wifi_btn_1_event_handle(lv_event_t *e);
-
+static void saved_wifi_reconn_event_handle(lv_event_t *e);
 static void event_handle(lv_event_t *e);
 void wifi_screen_init();
+static void wifi_screen_open();
 extern lv_obj_t* create_list_obj1(lv_obj_t *parent, int w, int h);
 extern lv_obj_t* create_list_sub_text_obj1(lv_obj_t *parent, int w, int h, int str1, int font_id);
 lv_obj_t* create_list_sub_wifi_text_obj(lv_obj_t *parent, int str1);
@@ -222,11 +217,14 @@ int projector_wifi_exit(void);
 //int projector_wifi_mgr_callback_func(hccast_wifi_event_e event, void* in, void* out);
 static void win_wifi_control(void* arg1, void* arg2);
 //wifi 保存列表
-extern bool get_m_wifi_connecting();
+
 extern void set_remote_control_disable(bool b);
 wifi_scan_node_head wifi_node_h = {NULL};
 
 wifi_scan_list wifi_list = {&wifi_node_h, 0, NULL,NULL};
+static pthread_mutex_t wifi_list_mutex;
+static pthread_mutex_t *wifi_list_mutex_p=NULL;
+static bool __wifi_list_update_enable = false;
 hccast_wifi_ap_info_t hidden_ap_info = {0};
 hccast_wifi_ap_info_t cur_conne = {0};
 hccast_wifi_ap_info_t *cur_conne_p = NULL;
@@ -234,19 +232,24 @@ hccast_wifi_ap_info_t *cur_conne_p = NULL;
 hccast_udhcp_result_t udhcp_result={0};
 
 
+bool wifi_list_update_is_enable(){
+    return __wifi_list_update_enable;
+}
+
 void wifi_list_add(void *p){
-    
     if(wifi_list.p_n != NULL){
         memcpy(&(wifi_list.p_n->res), p, sizeof(hccast_wifi_ap_info_t));
         wifi_list.tail = wifi_list.p_n;
         wifi_list.p_n = wifi_list.p_n->next;  
          
     }else{
-        wifi_scan_node *node = (wifi_scan_node*)lv_mem_alloc(sizeof(wifi_scan_node));
-        lv_memset_00(node, sizeof(wifi_scan_node));
+        wifi_scan_node *node = (wifi_scan_node*)malloc(sizeof(wifi_scan_node));
+        if(!node){
+            return;
+        }
+        memset(node,0, sizeof(wifi_scan_node));
         memcpy(&node->res, p, sizeof(hccast_wifi_ap_info_t));
         node->next = NULL;
-         printf("get wifi %s\n", node->res.ssid);
         if(NULL == wifi_list.head->next){
             wifi_list.head->next = node;
             
@@ -270,16 +273,22 @@ void wifi_list_swap(wifi_scan_node* p1, wifi_scan_node* p2){
     p1->next = p2->next;
     p1->prev = p2->prev;
 
+    if(p2->next)
+        p2->next->prev = p1;
+    if(p2->prev)
+        p2->prev->next = p1;
+
     p2->prev = prev;
     p2->next = next;
+    if(prev)
+        prev->next = p2;
+    if(next)
+        next->prev = p2;
 }
 
 
 
 void wifi_list_set_zero(){
-    // for(wifi_scan_node *node = wifi_list.head->next; node != NULL; node = node->next){
-    //     lv_memset_00(&(node->res), sizeof(hccast_wifi_ap_info_t));
-    // }
     wifi_list.len = 0;
     wifi_list.p_n = wifi_list.head->next;
 }
@@ -309,37 +318,89 @@ void wifi_list_remove(wifi_scan_node *node, bool copy){//copy从list删除并保
         memcpy(&cur_conne, &node->res, sizeof(hccast_wifi_ap_info_t));
         cur_conne_p = &cur_conne;
     }
+    wifi_list.len -= 1;
+    free(node);
+}
 
-    lv_mem_free(node);
+wifi_scan_node* wifi_list_get_tail(){
+    return wifi_list.tail;
+}
+
+wifi_scan_node* wifi_list_get_head(){
+    return (wifi_scan_node*)wifi_list.head;
+}
+
+bool wifi_list_mutex_lock(){
+    if(wifi_list_mutex_p){
+        pthread_mutex_lock(wifi_list_mutex_p);
+        if(!__wifi_list_update_enable){
+            pthread_mutex_unlock(wifi_list_mutex_p);
+            return false;        
+        }        
+    }
+    return true;
+}
+
+void wifi_list_mutex_unlock(){
+    if(wifi_list_mutex_p){
+        pthread_mutex_unlock(wifi_list_mutex_p);
+    }
 }
 
 void wifi_list_insert(hccast_wifi_ap_info_t* info, wifi_scan_node *p_after){
-    wifi_scan_node *node = (wifi_scan_node*)lv_mem_alloc(sizeof(wifi_scan_node));
-    lv_memset_00(node, sizeof(wifi_scan_node));
+    wifi_scan_node *node = (wifi_scan_node*)malloc(sizeof(wifi_scan_node));
+    if(!node){
+        return;
+    }
+    memset(node, 0, sizeof(wifi_scan_node));
     memcpy(&node->res, info, sizeof(hccast_wifi_ap_info_t));
     node->next=p_after->next;
     if(p_after == wifi_list.tail){
         wifi_list.tail = node;
-    }else{
+    }else if(node->next){
         node->next->prev=node;
     }
 
-    node->prev=p_after;
+    if(p_after != (wifi_scan_node*)wifi_list.head){
+        node->prev=p_after;
+    }else{
+        node->prev=NULL;
+    }
     p_after->next=node;
+    wifi_list.len += 1;
+    if(wifi_list.len == 1){
+        wifi_list.tail = node;
+         wifi_list.head->next = node;
+    }
 }
 
 static void wifi_list_clean(){
+    pthread_mutex_lock(wifi_list_mutex_p);
     wifi_scan_node *node_p = wifi_list.head->next;
     wifi_scan_node *temp_p;
     while (node_p){
         temp_p = node_p->next;
-        lv_mem_free(node_p);
+        node_p->next = NULL;
+        node_p->prev = NULL;
+        free(node_p);
         node_p = temp_p;
     }  
     wifi_list.p_n = NULL;
     wifi_list.head->next = NULL;
     wifi_list.tail = NULL;
     wifi_list.len = 0;
+    pthread_mutex_unlock(wifi_list_mutex_p);
+}
+
+hccast_wifi_ap_info_t * wifi_list_get_node_by_name(char* name){
+    wifi_scan_node *node = wifi_list.head->next;
+    while(node){
+        if(strcmp(node->res.ssid, name) == 0){
+            return &node->res;
+        }
+        node = node->next;
+    }
+    return NULL;
 }
 
 enum {
@@ -354,7 +415,7 @@ void wifi_list_set_cur(int i){
     if(i==SET_CUR_FIRST){
         wifi_list.p_n = wifi_list.head->next;//第一个
     }else if(i==SET_CUR_PREV){
-        wifi_list.p_n =  wifi_list.p_n != NULL ? wifi_list.p_n->prev : wifi_list.head->next;
+        wifi_list.p_n =  wifi_list.p_n != NULL ? wifi_list.p_n->prev : wifi_list.tail;
     }else if (i==SET_CUR_NEXT){    
         wifi_list.p_n = wifi_list.p_n != NULL ? wifi_list.p_n->next : wifi_list.head->next;
     }else if (i==SET_CUR_LAST){
@@ -389,7 +450,7 @@ static char* wifi_get_quality(int i){
     
 }
 
-static char* wifi_get_entryMode(int i){
+static char* wifi_get_encryMode_str(int i){
     switch (i)
     {
     case HCCAST_WIFI_ENCRYPT_MODE_NONE:
@@ -403,8 +464,9 @@ static char* wifi_get_entryMode(int i){
         return "WPA-PSK";
     case HCCAST_WIFI_ENCRYPT_MODE_WPA2PSK_TKIP:
     case HCCAST_WIFI_ENCRYPT_MODE_WPA2PSK_AES:;
-    case  HCCAST_WIFI_ENCRYPT_MODE_WPA2PSK_SAE:
         return "WPA2-PSK";
+    case HCCAST_WIFI_ENCRYPT_MODE_WPA2PSK_SAE:
+        return "WPA3/WPA2-SAE";
     default:
         break;
     }
@@ -417,6 +479,12 @@ void set_wifi_had_con_by_cast(bool b){
 
 bool wifi_is_conning_get(){
     return wifi_is_conning;
+}
+
+void wifi_is_reconning_set(bool en){
+    if(lv_scr_act() != wifi_scr){
+        is_reconn = en;        
+    }
 }
 
 static lv_group_t* kb_g;
@@ -436,44 +504,68 @@ static void kb_g_onoff(bool en){
     }
 }
 
-static char old_ip[MAX_IP_STR_LEN]={0};
 
 void wifi_get_udhcp_result(hccast_udhcp_result_t* result){
     memcpy(&udhcp_result, result, sizeof(hccast_udhcp_result_t));
 }
 
 static void update_saved_wifi_list(){
-    int size = lv_obj_get_index(wifi_nearby_obj);
-    for(int i=lv_obj_get_index(wifi_save_obj)+1, j=i; i<size; i++){
-        lv_obj_del(lv_obj_get_child(wifi_lists, j));
-    }
+    int size = sysdata_get_saved_wifi_count();
     int i=0;
     lv_obj_t *obj;
     for (hccast_wifi_ap_info_t * res = sysdata_get_wifi_info_by_index(i); res != NULL; res = sysdata_get_wifi_info_by_index(++i)){
-        if(lv_obj_get_index(wifi_save_obj)>0 && strcmp(res->ssid, lv_label_get_text(lv_obj_get_child(lv_obj_get_child(wifi_lists, 0), 1)))==0){
-            continue;
-        }
-        if(cur_wifi_conning_id>(int)lv_obj_get_index(wifi_nearby_obj) && strcmp(res->ssid, get_list_sub_wifi_ssid(cur_wifi_conning_id))==0){
-            continue;
-        }
         int quatity = res->quality;
-        void *img = (quatity<=100 && quatity>=75) ? &wifi4 :
-                    (quatity<75 && quatity>50) ? &wifi3 :
-                    (quatity<50 && quatity>25) ? &wifi2 : &wifi1;
-        obj = create_list_sub_wifi_btn_obj0(wifi_lists, img, res->ssid, STR_BT_SAVED);
-        lv_obj_move_to_index(obj, lv_obj_get_index(wifi_nearby_obj));
+        void *img = (quatity>=68) ? &wifi4 :
+                    (quatity<68 && quatity>=46) ? &wifi3 :
+                    (quatity<46 && quatity>=24) ? &wifi2 :
+                    (quatity<24) ? &wifi1: &wifi1;        
+        if(app_wifi_connect_status_get() && i == 0){
+            list_sub_wifi_sig_strength_set(0, img);          
+            continue;
+        }
+        if(i < size){
+            int fix_v = app_wifi_connect_status_get() ? 0 : 1;
+            list_sub_wifi_ssid_set(i + lv_obj_get_index(wifi_save_obj)+fix_v, res->ssid);
+            list_sub_wifi_sig_strength_set(i + lv_obj_get_index(wifi_save_obj)+fix_v, img);
+        }else{
+            obj = create_list_sub_wifi_btn_obj0(wifi_lists, img, res->ssid, STR_BT_SAVED);
+            lv_obj_move_to_index(obj, lv_obj_get_index(wifi_nearby_obj));            
+        }
+
+    }
+
+    while(i + 1 < lv_obj_get_index(wifi_nearby_obj)){
+        if(cur_wifi_id == lv_obj_get_index(wifi_nearby_obj)-1){
+            cur_wifi_id--;
+            lv_obj_add_state(lv_obj_get_child(wifi_lists, cur_wifi_id), LV_STATE_CHECKED);
+        }
+        lv_obj_del(lv_obj_get_child(wifi_lists, lv_obj_get_index(wifi_nearby_obj)-1));
     }
 }
-
+static int recon_count = 0;
 static void wifi_reconne_exec_cb(void * obj, int32_t v){//修改WiFi密码后自动重连
-    if(app_wifi_connect_status_get() && hccast_wifi_mgr_get_connect_status()){
+     recon_count++;
+     //printf("count: %d\n", recon_count);
+    if(recon_count>1400 ||  app_wifi_connect_status_get() || !is_reconn){
         set_remote_control_disable(false);
         lv_obj_set_style_bg_opa(lv_layer_top(), LV_OPA_0, 0);
-        if(prompt_box){
-            lv_obj_del(prompt_box);
+        if(lv_obj_is_valid(obj)){
+            lv_anim_del(obj, wifi_reconne_exec_cb);
+            lv_obj_del(obj);
             prompt_box=NULL;
         }
-        create_message_box(api_rsc_string_get(STR_WIFI_CONN_SUCCESS));
+        if(recon_count>1400){
+            control_msg_t ctl_msg = {0};
+            ctl_msg.msg_type = MSG_TYPE_NETWORK_WIFI_DISCONNECTED;
+            win_wifi_control(&ctl_msg, NULL); 
+        }else{
+        }
+        recon_count = 0;
+
+        if(wifi_list_get_len() == 0){
+            usleep(2000);
+            projector_wifi_scan();
+        }
         return;
     }
     lv_arc_set_value(obj, v);
@@ -490,123 +582,71 @@ static void event_handle(lv_event_t *e){
         if(key == LV_KEY_ESC){
             change_screen(SCREEN_CHANNEL_MAIN_PAGE);
         }
-    }else if(code == LV_EVENT_SCREEN_LOADED){
+    }else if(code == LV_EVENT_SCREEN_LOAD_START){
         key_set_group(wifi_g);
+        wifi_screen_open();
         lv_group_focus_obj(wifi_onoff);
+        __wifi_list_update_enable = true;
         if(!network_wifi_module_get()){
-            create_message_box((char *)api_rsc_string_get(STR_WIFI_NO_DEVICE));
+            create_message_box((char *)api_rsc_string_get(STR_WIFI_DEVICE_ABNORMAL));
             return;
         }
 
-         if(lv_obj_has_flag(wifi_lists, LV_OBJ_FLAG_HIDDEN)){  
+        if(lv_obj_has_flag(wifi_lists, LV_OBJ_FLAG_HIDDEN)){  
             return;
-         }
-
-       if(get_save_wifi_flag()==1){
-            if(!wifi_is_conning){
-                update_saved_wifi_list();
-            }
-            set_save_wifi_flag_zero();
-       }
-
-        if(app_wifi_connect_status_get()){//m_wifi_config.bConnected
-            if(!cur_conne_p){
-                memcpy(&cur_conne, sysdata_get_wifi_info_by_index(0), sizeof(hccast_wifi_ap_info_t));
-                cur_conne_p = &cur_conne;
-            }
-           if(lv_obj_get_index(wifi_save_obj)>0 && strncmp(old_ip, app_wifi_local_ip_get(), MAX_IP_STR_LEN)==0){
-                if(!wifi_is_conning){
-                    int status = hccast_wifi_mgr_get_connect_status();
-                    if(status == 1){
-                        scan_type =WIFI_SCAN_ENTER;
-                        projector_wifi_scan();                        
-                    }else{
-                        lv_obj_set_style_bg_opa(lv_layer_top(), LV_OPA_50, 0);
-                        set_remote_control_disable(true);
-                        prompt_box = loader_with_arc((char*)api_rsc_string_get(STR_WIFI_CONNING),  wifi_reconne_exec_cb);
-                    }
-
+        }
+        
+        if(projector_get_some_sys_param(P_WIFI_ONOFF)){
+            if(app_wifi_connect_status_get() || is_reconn){
+                if(!cur_conne_p){
+                    memcpy(&cur_conne, sysdata_get_wifi_info_by_index(0), sizeof(hccast_wifi_ap_info_t));
+                    cur_conne_p = &cur_conne;
                 }
             }else{
-                if(!wifi_is_conning){//在无线投屏中连上了wifi
-                    int size = lv_obj_get_index(wifi_nearby_obj);
-                    char cur_ssid[64] = {0};
-                    hccast_wifi_mgr_get_connect_ssid(cur_ssid, sizeof(cur_ssid));
-                    if(lv_obj_get_index(wifi_save_obj)>0){
-                        if(strcmp(cur_ssid, lv_label_get_text(lv_obj_get_child(lv_obj_get_child(wifi_lists, 0), 1)))!=0){
-                                for(int i=lv_obj_get_index(wifi_save_obj)+1; i<size; i++){
-                                    if(strcmp(cur_ssid, lv_label_get_text(lv_obj_get_child(lv_obj_get_child(wifi_lists, i), 1))) == 0){
-                                        lv_label_set_text(lv_obj_get_child(lv_obj_get_child(wifi_lists, i), 1), 
-                                                            lv_label_get_text(lv_obj_get_child(lv_obj_get_child(wifi_lists, 0), 1)));
-                                        lv_label_set_text(lv_obj_get_child(lv_obj_get_child(wifi_lists, 0), 1), cur_ssid);
-                                        break;
-                                    }
-                            }    
-                        }
-                    }else{
-                        for(int i=lv_obj_get_index(wifi_save_obj)+1; i<size; i++){
-                            if(strcmp(cur_ssid, lv_label_get_text(lv_obj_get_child(lv_obj_get_child(wifi_lists, i), 1))) == 0){
-                                //language_choose_add_label1(lv_obj_get_child(lv_obj_get_child(lv_obj_get_child(wifi_lists, i), 2), 0), STR_BT_CONN);
-                                set_label_text2(lv_obj_get_child(lv_obj_get_child(lv_obj_get_child(wifi_lists, i), 2), 0), STR_BT_CONN, FONT_NORMAL);
-                                
-                                lv_obj_move_to_index(lv_obj_get_child(wifi_lists, i), 0);
-                                lv_obj_clear_flag(get_list_sub_wifi_prompt_obj(0), LV_OBJ_FLAG_HIDDEN);
-                                break;
-                            }
-                        }
-                    }
-                    scan_type =WIFI_SCAN_ENTER;
-                    projector_wifi_scan();
-                }else{
-                    control_msg_t ctl_msg = {0};
-                    ctl_msg.msg_type = MSG_TYPE_NETWORK_WIFI_CONNECTED;
-                    win_wifi_control(&ctl_msg, NULL); 
-                }
+                cur_conne_p =  NULL;
             }
-        }else{
-            if(wifi_is_conning && !get_m_wifi_connecting()){//下层已不再连接中，但ui还未更新
-                control_msg_t ctl_msg = {0};
-                ctl_msg.msg_type = MSG_TYPE_NETWORK_WIFI_CONNECT_FAIL;
-                win_wifi_control(&ctl_msg, NULL);              
-            }else if(!wifi_is_conning){
-                if(lv_obj_get_index(wifi_save_obj)>0){//第一行显示已连接的wifi
-                    control_msg_t ctl_msg = {0};
-                    ctl_msg.msg_type = MSG_TYPE_NETWORK_WIFI_DISCONNECTED;
-                    win_wifi_control(&ctl_msg, NULL);
-                }
-                scan_type =WIFI_SCAN_ENTER;
-                projector_wifi_scan();                
+
+            if(is_reconn){
+
+                lv_obj_set_style_bg_opa(lv_layer_top(), LV_OPA_50, 0);
+                set_remote_control_disable(true);
+                prompt_box = loader_with_arc((char*)api_rsc_string_get(STR_WIFI_CONNING),  wifi_reconne_exec_cb);   
+                return;                 
             }
-        }    
-    }else if(code == LV_EVENT_SCREEN_UNLOADED){
+
+            if(hccast_wifi_mgr_is_connecting() || hccast_wifi_mgr_is_scanning()){
+                hccast_wifi_mgr_op_abort();
+                wifi_is_conning = false;
+                scan_type = WIFI_SCAN_ENTER;
+                projector_wifi_scan();
+            }else{
+                wifi_is_conning = false;
+                scan_type = WIFI_SCAN_ENTER;
+                projector_wifi_scan();
+            }        
+        } 
+    }else if(code == LV_EVENT_SCREEN_UNLOAD_START){
+        __wifi_list_update_enable = false;
+        if(wifi_is_conning || wifi_is_scaning){
+            hccast_wifi_mgr_op_abort();
+            wifi_is_conning = false;
+        }
+        lv_group_remove_all_objs(wifi_g);
+        lv_obj_clean(wifi_scr);
+
+        wifi_list_clean();
         
-
-        if(lv_obj_is_valid(wifi_conn_widget)){
-            /*修改密码后再连接*/
-            if(cur_wifi_conning_id<lv_obj_get_index(wifi_nearby_obj) && cur_wifi_conning_id>lv_obj_get_index(wifi_save_obj)){
-                set_label_text2(lv_obj_get_child(get_list_sub_wifi_status_obj(cur_wifi_conning_id), 0), STR_BT_SAVED, FONT_NORMAL);
-                cur_wifi_conning_id = -1;
-                cur_conne_p = NULL;
-            }
-        }
-        if (reconn_msg_box){
-            if(cur_wifi_conning_id>(int)lv_obj_get_index(wifi_nearby_obj)){
-                set_label_text2(lv_obj_get_child(get_list_sub_wifi_status_obj(cur_wifi_conning_id), 0), STR_BT_SAVED, FONT_NORMAL);
-                cur_wifi_conning_id = -1;
-                cur_conne_p = NULL;
-            }
-
-        }
-
+        searching_label = NULL;
+        wifi_save_obj = NULL;
+        wifi_nearby_obj = NULL;
+        cur_wifi_conning_id = -1;
+        cur_wifi_id = -1;
+        wifi_lists = NULL;
+        wifi_onoff = NULL;
+        wifi_return = NULL;
+        wifi_search = NULL;
         slave_scr_clear();
-
         lv_obj_set_style_bg_opa(lv_layer_top(), LV_OPA_0, 0);
-        set_save_wifi_flag_zero();
-        if(cur_wifi_id>=0 && cur_wifi_id<lv_obj_get_child_cnt(wifi_lists)){
-            lv_obj_clear_state(lv_obj_get_child(wifi_lists, cur_wifi_id), LV_STATE_CHECKED);
-            cur_wifi_id = -1;
-        }
-        strncpy(old_ip, app_wifi_local_ip_get(), MAX_IP_STR_LEN);
     }
 }
 
@@ -648,9 +688,9 @@ static void slave_scr_clear(){
 
 
 
+
 void wifi_screen_init(){//wifi初始化
     wifi_g = lv_group_create();
-    lv_group_t* d_g = lv_group_get_default();
     lv_group_set_default(wifi_g);
     wifi_scr = lv_obj_create(NULL);
     lv_group_add_obj(wifi_g,wifi_scr);
@@ -672,6 +712,14 @@ void wifi_screen_init(){//wifi初始化
     lv_obj_set_flex_flow(wifi_scr, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(wifi_scr,LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
+    if(!wifi_list_mutex_p){
+        pthread_mutex_init(&wifi_list_mutex, NULL);
+        wifi_list_mutex_p = &wifi_list_mutex;
+    }
+}
+
+
+static void wifi_screen_open(){ 
     lv_obj_t *wifi_setting = lv_obj_create(wifi_scr);
     lv_obj_set_size(wifi_setting,LV_PCT(WIFI_SETTING_WIDTH_PCT),LV_PCT(100));
     lv_obj_set_style_border_side(wifi_setting, LV_BORDER_SIDE_RIGHT, 0);
@@ -708,48 +756,48 @@ void wifi_screen_init(){//wifi初始化
    
     lv_obj_add_event_cb(wifi_lists, wifi_lists_event_handle, LV_EVENT_ALL, 0);
 
-    wifi_save_obj = create_list_sub_wifi_text_obj(wifi_lists, STR_WIFI_SAVED);
     int i=0;
-
-    for (hccast_wifi_ap_info_t * res = sysdata_get_wifi_info_by_index(i); res != NULL; res = sysdata_get_wifi_info_by_index(++i)){
+    if(network_wifi_module_get() && (app_wifi_connect_status_get() || is_reconn)){
+        hccast_wifi_ap_info_t * res = sysdata_get_wifi_info_by_index(0);
         int quatity = res->quality;
+#if 0
         void *img = (quatity<=100 && quatity>=75) ? &wifi4 :
                     (quatity<75 && quatity>50) ? &wifi3 :
                     (quatity<50 && quatity>25) ? &wifi2 : &wifi1;
-        create_list_sub_wifi_btn_obj0(wifi_lists, img, res->ssid, STR_BT_SAVED);
+#else
+        void *img = (quatity>=68) ? &wifi4 :
+                    (quatity<68 && quatity>=46) ? &wifi3 :
+                    (quatity<46 && quatity>=24) ? &wifi2 :
+                    (quatity<24) ? &wifi1: &wifi1;
+#endif
+        create_list_sub_wifi_btn_obj0(wifi_lists,img, res->ssid, STR_BT_CONN);
+        lv_obj_clear_flag(get_list_sub_wifi_prompt_obj(0), LV_OBJ_FLAG_HIDDEN);
+        i = 1;
     }
+
+    wifi_save_obj = create_list_sub_wifi_text_obj(wifi_lists, STR_WIFI_SAVED);
+    if(network_wifi_module_get()){
+        for (hccast_wifi_ap_info_t * res = sysdata_get_wifi_info_by_index(i); res != NULL; res = sysdata_get_wifi_info_by_index(++i)){
+            int quatity = res->quality;
+            void *img = (quatity>=68) ? &wifi4 :
+                        (quatity<68 && quatity>=46) ? &wifi3 :
+                        (quatity<46 && quatity>=24) ? &wifi2 :
+                        (quatity<24) ? &wifi1: &wifi1;
+            create_list_sub_wifi_btn_obj0(wifi_lists, img, res->ssid, STR_BT_SAVED);
+        }        
+    }
+
     
     wifi_nearby_obj = create_list_sub_wifi_text_obj(wifi_lists,STR_WIFI_NEARBY);
-
-
-    lv_group_set_default(d_g);
+    if (!searching_label){
+        searching_label = lv_label_create(wifi_nearby_obj);
+        lv_obj_align(searching_label, LV_ALIGN_TOP_RIGHT, 0,0);
+       
+        lv_obj_set_size(searching_label, LV_PCT(SEARCHING_LABEL_HOR_PCT), LV_PCT(100));//23
+        lv_label_set_text(searching_label, " ");
+        lv_obj_set_style_text_color(searching_label, lv_color_white(), 0);     
+    }
 }
-
-
-
-
-// lv_obj_t* create_list_obj1(lv_obj_t *parent, int w, int h){
-//     lv_obj_t *obj = lv_list_create(parent);
-//     lv_obj_set_style_radius(obj, 0, 0);
-//     lv_obj_set_style_border_width(obj, 0, 0);
-//     lv_obj_set_style_outline_width(obj, 0, 0);
-
-//     lv_obj_set_scrollbar_mode(obj, LV_SCROLLBAR_MODE_OFF);
-//     lv_obj_scroll_to_view(obj, LV_ANIM_OFF);
-//     lv_obj_set_style_bg_opa(obj, LV_OPA_0, 0);
-//     lv_obj_set_size(obj, LV_PCT(w), LV_PCT(h));
-//     lv_obj_align(obj, LV_ALIGN_CENTER, 0, 0);
-//     lv_group_add_obj(lv_group_get_default(), obj);
-//     return obj;
-// }
-
-// lv_obj_t* create_list_sub_text_obj1(lv_obj_t *parent, int w, int h, int str1){
-//     list_sub_param param;
-//     param.str_id = str1;
-//     lv_obj_t *list_label =  create_list_sub_text_obj(parent,w,h,param, LIST_PARAM_TYPE_INT);
-//     return list_label;
-// }
-
 
 lv_obj_t* create_list_sub_wifi_text_obj(lv_obj_t *parent, int str1){
     list_sub_param param;
@@ -769,7 +817,6 @@ static lv_obj_t* create_list_sub_text_obj(lv_obj_t *parent,int w, int h, list_su
     }
     
     lv_obj_set_style_pad_ver(list_label, 0, 0);
-    //lv_obj_set_style_pad_left(list_label,LV_PCT(1), 0);
 
     lv_obj_set_style_border_side(list_label, LV_BORDER_SIDE_FULL, LV_STATE_CHECKED);
     lv_obj_set_style_border_width(list_label, 0, 0);
@@ -784,7 +831,6 @@ static lv_obj_t* create_list_sub_text_obj(lv_obj_t *parent,int w, int h, list_su
     lv_obj_set_style_text_color(list_label, lv_color_white(), 0);
 
     if(type == LIST_PARAM_TYPE_INT){
-       //language_choose_add_label1(list_label, param.str_id);
        set_label_text2(list_label, param.str_id, FONT_NORMAL);
     }else if(type == LIST_PARAM_TYPE_STR){
         lv_label_set_text(list_label, param.str);
@@ -866,16 +912,13 @@ static lv_obj_t* create_list_sub_wifi_setting_btn_obj(lv_obj_t *parent, void *ic
     } else{
         lv_obj_t *label = lv_label_create(list_btn);
         lv_obj_align(label, LV_ALIGN_RIGHT_MID, 0, 0);
-        //language_choose_add_label1(label, id);
         set_label_text2(label, id, FONT_NORMAL);
         lv_obj_set_style_pad_ver(label, 0, 0);
-        //lv_obj_set_style_text_font(label, &lv_font_montserrat_26, 0);
     }
 
 
     lv_obj_set_size(list_btn,LV_PCT(100),LV_PCT(25));
 
-    //lv_obj_set_style_pad_gap(list_btn,40, 0);
 
     lv_obj_set_style_border_side(list_btn, LV_BORDER_SIDE_FULL, 0);
     lv_obj_set_style_border_width(list_btn, 2, 0);
@@ -922,12 +965,29 @@ static lv_obj_t* get_list_sub_wifi_prompt_obj(int id){
     }
 }
 
+static void list_sub_wifi_ssid_set(int id, char* ssid){
+    if(id>=0 && id < lv_obj_get_child_cnt(wifi_lists)){
+        lv_obj_t* label = lv_obj_get_child(lv_obj_get_child(wifi_lists, id), 1);
+        if(label){
+            lv_label_set_text(label, ssid);
+        }
+    }
+}
+
+static void list_sub_wifi_sig_strength_set(int id, void* img){
+    if(id>=0 && id < lv_obj_get_child_cnt(wifi_lists)){
+        lv_obj_t* img_obj = lv_obj_get_child(lv_obj_get_child(wifi_lists, id), 0);
+        if(img_obj && img_obj->class_p == &lv_img_class){
+            lv_img_set_src(img_obj, img);
+        }
+    }
+}
+
 static lv_obj_t* create_list_sub_wifi_btn_obj0(lv_obj_t *parent, void *icon, char* str1, int str2){
     lv_obj_t *list_btn;
     list_btn = lv_list_add_btn(parent, NULL, NULL);
     lv_obj_set_style_bg_opa(list_btn, LV_OPA_0, 0);
 
-    //lv_obj_set_style_pad_hor(list_btn, 0, 0);
     lv_group_remove_obj(list_btn);
     lv_obj_set_flex_align(list_btn, LV_FLEX_ALIGN_SPACE_AROUND, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_size(list_btn,LV_PCT(100),LV_PCT(10));
@@ -970,10 +1030,7 @@ static lv_obj_t* create_list_sub_wifi_btn_obj0(lv_obj_t *parent, void *icon, cha
         lv_obj_center(label);
         lv_obj_set_style_bg_color(label, lv_color_make(23,54,112), 0);
         lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-        //lv_label_set_text(label, str2);
-        //language_choose_add_label1(label, str2);
-        set_label_text2(label, str2, FONT_NORMAL);
-        //lv_obj_set_style_text_font(label, osd_font_get(FONT_MID), 0);   
+        set_label_text2(label, str2, FONT_NORMAL);  
         lv_obj_set_style_text_color(label, lv_color_white(), 0);     
     }
 
@@ -981,7 +1038,6 @@ static lv_obj_t* create_list_sub_wifi_btn_obj0(lv_obj_t *parent, void *icon, cha
     obj = lv_img_create(list_btn);
     lv_img_set_src(obj, &prompt_icon);
     lv_obj_set_flex_grow(obj, WIFI_SUB_LIST_FLEX_GROUP3);
-    //lv_obj_set_style_radius(obj, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_border_width(obj, 2, LV_STATE_FOCUSED);
     lv_obj_set_style_border_color(obj, lv_palette_main(LV_PALETTE_BLUE), LV_STATE_FOCUSED);
     lv_group_add_obj(lv_group_get_default(), obj);
@@ -1024,11 +1080,6 @@ static void list_sub_wifi_btn_3_event_handle(lv_event_t *e){
         }
     }else if(code == LV_EVENT_PRESSED){
         if(cur_wifi_id==0){
-            // hccast_wifi_status_result_t res = {0};
-            // int ret = wifi_ctrl_get_status(udhcp_result.ifname, HCCAST_WIFI_MODE_STA, &res);
-            // if (ret < 0) {
-            //     return;
-            // }
             char mac[6] = {0};
             if(!api_get_mac_addr(mac)){
                 char buffer[19] = {0};
@@ -1065,12 +1116,7 @@ void new_pwd_btns_event_handle(lv_event_t *e){
              if(btnms->btn_id_sel == 0 || btnms->btn_id_sel == 1){    
                 if(btnms->btn_id_sel == 1){
                     if(!kb_enter_btn_run_cb0()){
-                        hccast_wifi_ap_info_t *info_p = NULL;
-                        info_p = sysdata_get_wifi_info(get_list_sub_wifi_ssid(cur_wifi_conning_id));
-                        if(info_p){
-                            strcpy(info_p->pwd, lv_textarea_get_text(lv_obj_get_child(lv_obj_get_child(wifi_conn_widget, 0), 1)));
-                        }
-                        app_wifi_reconnect(info_p);
+
                     }else{
                         return;
                     }
@@ -1080,12 +1126,6 @@ void new_pwd_btns_event_handle(lv_event_t *e){
                     cur_wifi_conning_id = -1;
                 }
                 slave_scr_clear();
-                // lv_group_focus_obj(wifi_lists);
-                // lv_obj_set_style_bg_opa(lv_layer_top(), LV_OPA_0, 0);
-                // lv_obj_del(obj->parent);
-                // wifi_conn_widget = NULL;
-                // lv_obj_del(kb);
-                // kb=NULL;
              }
         }else if(key == LV_KEY_UP){
             lv_btnmatrix_clear_btn_ctrl(obj, lv_btnmatrix_get_selected_btn(obj), LV_BTNMATRIX_CTRL_CHECKED);
@@ -1093,6 +1133,10 @@ void new_pwd_btns_event_handle(lv_event_t *e){
         }else if(key == LV_KEY_DOWN){
             lv_btnmatrix_clear_btn_ctrl(obj, lv_btnmatrix_get_selected_btn(obj), LV_BTNMATRIX_CTRL_CHECKED);
             lv_group_focus_obj(kb);
+        }else if(key == LV_KEY_ESC){
+            set_label_text2(lv_obj_get_child(get_list_sub_wifi_status_obj(cur_wifi_conning_id), 0), STR_BT_SAVED, FONT_NORMAL);
+            cur_wifi_conning_id = -1;
+            slave_scr_clear();
         }
     }else if(code == LV_EVENT_FOCUSED){
         btnms->btn_id_sel = 1;
@@ -1119,40 +1163,23 @@ void btns_event_handle(lv_event_t *e){
             if(btnms->btn_id_sel == 0 || btnms->btn_id_sel == 1){    
                 if(btnms->btn_id_sel == 1){
                     if(strlen(lv_textarea_get_text(lv_obj_get_child(wifi_conn_widget, 6)))==0){
-                        if(!lv_obj_is_valid(msg_box)){
-                            msg_box=create_message_box((char *)api_rsc_string_get(STR_WIFI_PWD_NULL));
-                        }
+                            create_message_box((char *)api_rsc_string_get(STR_WIFI_PWD_NULL));
+                        
                         return;
                     } else if(strlen(lv_textarea_get_text(lv_obj_get_child(wifi_conn_widget, 6)))<8 || strlen(lv_textarea_get_text(lv_obj_get_child(wifi_conn_widget, 6)))>32){
-                        if(!lv_obj_is_valid(msg_box)){
-                            msg_box=create_message_box((char *)api_rsc_string_get(STR_ENTER_WORD));
-                            //herer
-                        }
+                        create_message_box((char *)api_rsc_string_get(STR_ENTER_WORD));
                         return;
                     }
-                        if (strlen(lv_textarea_get_text(lv_obj_get_child(wifi_conn_widget, 6)))<8)
-                        {
-                            return;
-                        }
-                        
-                        wifi_connect(lv_textarea_get_text(lv_obj_get_child(wifi_conn_widget, 0)), lv_textarea_get_text(lv_obj_get_child(wifi_conn_widget, 6)));
+                    wifi_connect(lv_textarea_get_text(lv_obj_get_child(wifi_conn_widget, 0)), lv_textarea_get_text(lv_obj_get_child(wifi_conn_widget, 6)));
                 }    
                 slave_scr_clear();
-                // lv_group_focus_obj(wifi_lists);
-                // lv_obj_set_style_bg_opa(lv_layer_top(), LV_OPA_0, 0);
-                // lv_obj_del(obj->parent);
-                // wifi_conn_widget = NULL;
-                // lv_obj_del(kb);
-                // kb=NULL;
-                
-
             }
         } else if(key == LV_KEY_UP){
             lv_btnmatrix_clear_btn_ctrl(obj, lv_btnmatrix_get_selected_btn(obj), LV_BTNMATRIX_CTRL_CHECKED);
             lv_group_focus_obj(lv_obj_get_child(obj->parent, 7));
         }else if(key == LV_KEY_DOWN){
-            lv_btnmatrix_clear_btn_ctrl(obj, lv_btnmatrix_get_selected_btn(obj), LV_BTNMATRIX_CTRL_CHECKED);
-            lv_group_focus_obj(kb);
+        }else if(key == LV_KEY_ESC){
+            slave_scr_clear();
         }
     } else if(code == LV_EVENT_FOCUSED){
         btnms->btn_id_sel = 1;
@@ -1168,14 +1195,12 @@ static void checkout_event_handle(lv_event_t*e){
     if(code == LV_EVENT_KEY){
         uint16_t key = lv_indev_get_key(lv_indev_get_act());
         if(key == LV_KEY_UP){
-            //lv_group_focus_obj(lv_obj_get_child(obj->parent, index-1));
             lv_group_focus_prev(lv_group_get_default());
             if(is_hidden){
                 lv_obj_clear_state(obj, LV_STATE_CHECKED);
             }
 
         } else if(key == LV_KEY_DOWN){
-            //lv_group_focus_obj(lv_obj_get_child(obj->parent, index+1));
             lv_group_focus_next(lv_group_get_default());
             if(!is_hidden){
                 lv_obj_add_state(obj, LV_STATE_CHECKED);
@@ -1188,6 +1213,9 @@ static void checkout_event_handle(lv_event_t*e){
                 lv_textarea_set_password_mode(ta, false);
                 is_hidden = false;
             }
+        }else if(key == LV_KEY_ESC){
+            cur_wifi_conning_id = -1;
+            slave_scr_clear();
         }
     } else if(code == LV_EVENT_FOCUSED){
         if(lv_obj_has_state(obj, LV_STATE_CHECKED)){
@@ -1221,10 +1249,6 @@ static void wifi_conne_kb_event_handle_(lv_event_t* e, run_cb cb){
             wifi_widget_x = lv_obj_get_x(wifi_conn_widget);
             wifi_widget_y = lv_obj_get_y(wifi_conn_widget);
             lv_obj_center(wifi_conn_widget);
-            // lv_obj_del();
-            // wifi_conn_widget = NULL;
-            //lv_group_focus_obj(wifi_lists);
-           //slave_scr_clear();
         }else if(key == LV_KEY_ENTER){
              const char * txt = lv_btnmatrix_get_btn_text(obj, lv_btnmatrix_get_selected_btn(obj));
              if (strcmp(txt, LV_SYMBOL_OK) == 0){      
@@ -1232,21 +1256,12 @@ static void wifi_conne_kb_event_handle_(lv_event_t* e, run_cb cb){
 					
                     return;
                 }
-                if(wifi_list_get_cur())
-                    wifi_connect(lv_textarea_get_text(lv_obj_get_child(wifi_conn_widget, 0)), lv_textarea_get_text(lv_obj_get_child(wifi_conn_widget, 6)));
-                // lv_group_focus_obj(wifi_lists);
-                // lv_obj_set_style_bg_opa(lv_layer_top(), LV_OPA_0, 0);
-                // lv_obj_del(kb);
-                // kb=NULL;
-                // lv_obj_del(wifi_conn_widget);
-                // wifi_conn_widget = NULL;
 				kb_g_onoff(false);
                 slave_scr_clear();
              
              }
         }else if (key == LV_KEY_UP) {
             lv_btnmatrix_t *btnm = &((lv_keyboard_t*)obj)->btnm;
-            printf("btn y1: %d\n", btnm->button_areas[btnm->btn_id_sel].y1);
             if(btnm->button_areas[sel_id].y1 == btnm->button_areas[0].y1){
                 kb_g_onoff(false);
                 lv_obj_del(kb);
@@ -1265,16 +1280,22 @@ static void wifi_conne_kb_event_handle_(lv_event_t* e, run_cb cb){
 
 static bool kb_enter_btn_run_cb0(){
     if(strlen(lv_textarea_get_text(lv_obj_get_child(lv_obj_get_child(wifi_conn_widget, 0), 1)))==0){
-        if(!lv_obj_is_valid(msg_box)){
-            msg_box=create_message_box((char *)api_rsc_string_get(STR_WIFI_PWD_NULL));
-        }
+        create_message_box((char *)api_rsc_string_get(STR_WIFI_PWD_NULL));
         return true;
     } else if(strlen(lv_textarea_get_text(lv_obj_get_child(lv_obj_get_child(wifi_conn_widget, 0), 1)))<8 || strlen(lv_textarea_get_text(lv_obj_get_child(lv_obj_get_child(wifi_conn_widget, 0), 1)))>16){
-        if(!lv_obj_is_valid(msg_box)){
-            msg_box=create_message_box((char *)api_rsc_string_get(STR_ENTER_WORD));
-        }
+        create_message_box((char *)api_rsc_string_get(STR_ENTER_WORD));
         return true;
     }
+    hccast_wifi_ap_info_t *info_p = NULL;
+    info_p = sysdata_get_wifi_info(get_list_sub_wifi_ssid(cur_wifi_conning_id));
+    if(info_p){
+        strcpy(info_p->pwd, lv_textarea_get_text(lv_obj_get_child(lv_obj_get_child(wifi_conn_widget, 0), 1)));
+    }
+    set_label_text2(lv_obj_get_child(get_list_sub_wifi_status_obj(cur_wifi_conning_id), 0), STR_WIFI_CONNING,FONT_NORMAL);
+    if(app_wifi_reconnect(info_p) == 0){
+        wifi_is_conning = true;
+    }
+    
     return false;
 }
 
@@ -1284,16 +1305,16 @@ static void wifi_new_pwd_conne_kb_event_handle(lv_event_t *e){
 
 static bool kb_enter_btn_run_cb1(){
     if(strlen(lv_textarea_get_text(lv_obj_get_child(wifi_conn_widget, 6)))==0){
-        if(!lv_obj_is_valid(msg_box)){
-            msg_box=create_message_box((char *)api_rsc_string_get(STR_WIFI_CONNING));;
-        }
+        create_message_box((char *)api_rsc_string_get(STR_WIFI_CONNING));;
         return true;
     } else if(strlen(lv_textarea_get_text(lv_obj_get_child(wifi_conn_widget, 6)))<8 || strlen(lv_textarea_get_text(lv_obj_get_child(wifi_conn_widget, 6)))>16){
-        if(!lv_obj_is_valid(msg_box)){
-            msg_box=create_message_box((char *)api_rsc_string_get(STR_ENTER_WORD));
-        }
+        
+            create_message_box((char *)api_rsc_string_get(STR_ENTER_WORD));
+        
         return true;
     }
+    wifi_connect(lv_textarea_get_text(lv_obj_get_child(wifi_conn_widget, 0)), lv_textarea_get_text(lv_obj_get_child(wifi_conn_widget, 6)));
+                
     return false;
 }
 static void wifi_conne_kb_event_handle(lv_event_t* e){
@@ -1322,6 +1343,8 @@ static void pwd_event_handle(lv_event_t *e){
             lv_obj_align(wifi_conn_widget,LV_ALIGN_TOP_LEFT, wifi_widget_x, wifi_widget_y);
             kb = create_keypad_widget(lv_obj_get_child(obj->parent, 8), wifi_conne_kb_event_handle,0);
             lv_keyboard_set_textarea(kb, obj);
+        }else if(key == LV_KEY_ESC){
+            slave_scr_clear();
         }
 
     }else if(code == LV_EVENT_DRAW_PART_BEGIN){
@@ -1392,9 +1415,7 @@ static void ip_msg_btn_event_handle1(lv_event_t *e){
         if(key == LV_KEY_ENTER){
             if(cur_conne_p){
                 if(wifi_is_conning){
-                    if(!lv_obj_is_valid(msg_box)){
-                        msg_box = create_message_box(api_rsc_string_get(STR_WIFI_CONNING));                       
-                    }
+                        create_message_box(api_rsc_string_get(STR_WIFI_CONNING));                       
                     return;
                 }
                hccast_wifi_mgr_disconnect();
@@ -1409,21 +1430,12 @@ static void ip_msg_btn_event_handle1(lv_event_t *e){
                     }
                     scan_type = WIFI_SCAN_SEARCH;
                     projector_wifi_scan();
-                    //lv_event_send(wifi_show, LV_EVENT_REFRESH, "");
-					//main_page_prompt_status_set(MAIN_PAGE_PROMPT_WIFI, MAIN_PAGE_PROMPT_STATUS_OFF);
                 }else{
 					if(index>=0){
 						sysdata_wifi_ap_set_nonauto(index);
 						projector_sys_param_save();
 					}
 				}
-                
-                //lv_obj_set_style_bg_opa(lv_layer_top(), LV_OPA_0, 0);
-                // if(show_ip_widget){
-                //     lv_obj_del(show_ip_widget);
-                //     show_ip_widget = NULL;
-                // }
-                //lv_group_focus_obj(wifi_lists);  
                 slave_scr_clear();
             }            
         }else if (key == LV_KEY_ESC){
@@ -1446,17 +1458,35 @@ static void ip_msg_btn_event_handle1(lv_event_t *e){
 }
 
 
+//tranfer encry mode by the dropdown encry list.
+static int wifi_encryMode_transfer(int index)
+{
+    int encryptMode = HCCAST_WIFI_ENCRYPT_MODE_NONE;
 
+    switch (index)
+    {
+    case 0:
+        encryptMode = HCCAST_WIFI_ENCRYPT_MODE_NONE;
+        break;
+    case 1:
+        encryptMode = HCCAST_WIFI_ENCRYPT_MODE_OPEN_WEP;
+        break;
+    case 2:
+        encryptMode = HCCAST_WIFI_ENCRYPT_MODE_SHARED_WEP;
+        break;
+    case 3:
+        encryptMode = HCCAST_WIFI_ENCRYPT_MODE_WPAPSK_AES;
+        break;
+    case 4:
+        encryptMode = HCCAST_WIFI_ENCRYPT_MODE_WPA2PSK_AES;
+        break;
+    case 5:
+        encryptMode = HCCAST_WIFI_ENCRYPT_MODE_WPA2PSK_SAE;
+        break;
 
-
-
-
-
-
-
-
-
-
+    }
+    return encryptMode;
+}
 
 
 //添加隐藏wifi 事件处理
@@ -1477,8 +1507,8 @@ static void wifi_add_hidden_net_sure(){
     }
     strcpy(hidden_ap_info.pwd,text);
 
-    hidden_ap_info.encryptMode = (int)lv_dropdown_get_selected(lv_obj_get_child(lv_obj_get_child(wifi_add_hidden_net_widget, 3), 0));
-    printf("encryptMode%d\n", hidden_ap_info.encryptMode);
+    int encrypt_mode = (int)lv_dropdown_get_selected(lv_obj_get_child(lv_obj_get_child(wifi_add_hidden_net_widget, 3), 0));
+    hidden_ap_info.encryptMode = wifi_encryMode_transfer(encrypt_mode);
     hidden_ap_info.keyIdx = 1;
     hidden_ap_info.special_ap = 1;
     hidden_ap_info.quality = 75;
@@ -1503,7 +1533,6 @@ static void wifi_add_hidden_net_kb_event_handle(lv_event_t *e){
             wifi_widget_x = lv_obj_get_x(wifi_add_hidden_net_widget);
             wifi_widget_y = lv_obj_get_y(wifi_add_hidden_net_widget);
             lv_obj_center(wifi_add_hidden_net_widget);
-            // wifi_add_hidden_net_widget = NULL;
         }else if(key == LV_KEY_ENTER){
             const char * txt = lv_btnmatrix_get_btn_text(obj, lv_btnmatrix_get_selected_btn(obj));
             if(strlen(lv_textarea_get_text(((lv_keyboard_t*)obj)->ta))==((lv_textarea_t*)(((lv_keyboard_t*)obj)->ta))->max_length){
@@ -1513,6 +1542,7 @@ static void wifi_add_hidden_net_kb_event_handle(lv_event_t *e){
                 char *ssid = lv_textarea_get_text(lv_obj_get_child(wifi_add_hidden_net_widget, 1));
                 if(sysdata_get_wifi_info(ssid)){
                     //加一个提示
+                    create_message_box(api_rsc_string_get(STR_BT_SAVED));
                     return;
                 }
                 wifi_add_hidden_net_sure();
@@ -1544,6 +1574,8 @@ static void wifi_add_hidden_net_name_event_handle(lv_event_t *e){
         uint16_t key = lv_indev_get_key(lv_indev_get_act());
         if(key == LV_KEY_DOWN){
             lv_group_focus_obj(lv_obj_get_child(obj->parent, 2));
+        }else if(key == LV_KEY_ESC){
+            slave_scr_clear();
         }else if(key == LV_KEY_ENTER){
             if (kb){
                 lv_group_focus_obj(kb);
@@ -1553,10 +1585,8 @@ static void wifi_add_hidden_net_name_event_handle(lv_event_t *e){
             lv_keyboard_set_textarea(kb, obj);
         }
     }else if (code == LV_EVENT_FOCUSED){
-        //wifi_add_hidden_net_widget->user_data = obj;
         
     }else if(code == LV_EVENT_DRAW_PART_BEGIN){
-        //if(lv_group_get_focused(lv_group_get_default()) == obj){
             lv_obj_draw_part_dsc_t* dsc = lv_event_get_draw_part_dsc(e);
             if(dsc && lv_group_get_focused(default_g) == obj){
                 dsc->rect_dsc->bg_opa = LV_OPA_10;
@@ -1576,6 +1606,8 @@ static void wifi_add_hidden_net_pwd_event_handle(lv_event_t *e){
             lv_group_focus_obj(lv_obj_get_child(obj->parent, 3));
         }else if(key == LV_KEY_UP){
             lv_group_focus_obj(lv_obj_get_child(obj->parent, 1));
+        }else if(key == LV_KEY_ESC){
+            slave_scr_clear();
         }else if(key == LV_KEY_ENTER){
             if (kb){
                 lv_group_focus_obj(kb);
@@ -1585,12 +1617,8 @@ static void wifi_add_hidden_net_pwd_event_handle(lv_event_t *e){
             lv_keyboard_set_textarea(kb, obj);
         }
     }else if (code == LV_EVENT_FOCUSED){
-         //wifi_add_hidden_net_widget->user_data = obj;
-         //lv_keyboard_set_textarea(kb, obj);
     }else if(code == LV_EVENT_DRAW_PART_BEGIN){
-       // if(lv_group_get_focused(lv_group_get_default()) == obj){
             lv_obj_draw_part_dsc_t* dsc = lv_event_get_draw_part_dsc(e);
-            //dsc->rect_dsc->outline_color = lv_color_make(255,255,0);  
             if(dsc && lv_group_get_focused(default_g) == obj){
                 dsc->rect_dsc->bg_opa = LV_OPA_10;
                 dsc->rect_dsc->outline_width = 0;
@@ -1634,6 +1662,8 @@ static void wifi_add_hidden_net_security_event_handle(lv_event_t *e){//安全协
             if(lv_dropdown_is_open(drop_obj)){
                 parem = LV_KEY_ESC;
                 lv_event_send(drop_obj, LV_EVENT_KEY, &parem);
+            }else{
+                slave_scr_clear();
             }
         }
     }else if (code == LV_EVENT_DRAW_PART_BEGIN){
@@ -1658,6 +1688,7 @@ static void wifi_add_hidden_net_btnm_event_handle(lv_event_t *e){
             char *ssid = lv_textarea_get_text(lv_obj_get_child(wifi_add_hidden_net_widget, 1));
             if(sysdata_get_wifi_info(ssid)){
                 //加一个提示
+                create_message_box(api_rsc_string_get(STR_BT_SAVED));
                 return;
             }
             wifi_add_hidden_net_sure();
@@ -1666,9 +1697,7 @@ static void wifi_add_hidden_net_btnm_event_handle(lv_event_t *e){
     }else if(code == LV_EVENT_FOCUSED){
         btnm->btn_id_sel = 0;
         lv_btnmatrix_set_btn_ctrl(obj, 0, LV_BTNMATRIX_CTRL_CHECKED);
-        //wifi_add_hidden_net_widget->user_data = obj;
     }else if(code == LV_EVENT_DEFOCUSED){
-        //lv_btnmatrix_clear_btn_ctrl(obj, btnm->btn_id_sel, LV_BTNMATRIX_CTRL_CHECKED);//有bug
     }else if(code == LV_EVENT_DRAW_PART_BEGIN){
         lv_obj_draw_part_dsc_t* dsc = lv_event_get_draw_part_dsc(e);
 
@@ -1687,6 +1716,8 @@ static void wifi_add_hidden_net_btnm_event_handle(lv_event_t *e){
                 lv_btnmatrix_clear_btn_ctrl(obj, btnm->btn_id_sel, LV_BTNMATRIX_CTRL_CHECKED);
                 lv_group_focus_obj(kb);
             }
+        }else if(key == LV_KEY_ESC){
+            slave_scr_clear();
         }
     }
 }
@@ -1775,9 +1806,7 @@ static lv_obj_t* create_ip_msg_widget(char* ssid,char* net_mode, char* ip_addr, 
     lv_obj_set_style_bg_opa(foot, LV_OPA_0, 0);
     lv_obj_set_flex_flow(foot, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(foot, LV_FLEX_ALIGN_SPACE_AROUND, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    //lv_obj_set_flex_flow(foot, LV_FLEX_FLOW_ROW);
     lv_obj_align(foot, LV_ALIGN_BOTTOM_MID, 0, 0);
-    //lv_group_focus_obj(list);
     return show_ip_widget;
 }
 
@@ -1802,7 +1831,6 @@ static void create_wifi_conne_widget_(char* name, char* strength, char *security
     lv_obj_set_style_bg_opa(obj, LV_OPA_0, 0);
     lv_obj_set_style_text_color(obj, lv_color_white(), 0);
     lv_obj_set_size(obj,LV_PCT(100),LV_PCT(15));
-    //lv_obj_set_width(obj, lv_pct(100));
     lv_obj_set_style_pad_ver(obj, 0, 0);
     lv_textarea_add_text(obj, name);
     lv_textarea_set_one_line(obj, true);
@@ -1953,7 +1981,6 @@ static void create_wifi_new_pwd_conne_widget(){//修改密码ui
     lv_obj_set_flex_grow(ta, 9);
     lv_textarea_set_one_line(ta, true);
     lv_textarea_set_max_length(ta, 16);
-   // lv_textarea_set_password_mode(ta, false);
     lv_textarea_set_placeholder_text(ta, "New password");
     lv_textarea_set_password_bullet(ta, ".");
     lv_obj_set_style_border_side(ta, LV_BORDER_SIDE_NONE, 0);
@@ -2106,18 +2133,25 @@ void create_wifi_add_hidden_net_widget(){//添加隐藏wifi ui
                                   "WEP\n"
                                   "SHARED WEP\n"
                                   "WPA-PSK\n"
-                                  "WPA2-PSK");
+                                  "WPA2-PSK"
+                                  #ifdef __linux__
+                                  "\nWPA3"
+                                  #endif
+                                  );
     lv_obj_set_size(drop_obj, LV_PCT(STR_WIFI_ADD_HIDDEN_DROP_OBJ_W), LV_PCT(100));
-    lv_dropdown_set_selected(drop_obj, 6);
+    #ifdef __linux__
+     int sel =  5;
+    #else
+      int sel =  4;
+    #endif
+    lv_dropdown_set_selected(drop_obj, sel);
     lv_obj_set_style_pad_ver(drop_obj, 0, 0);
     lv_obj_set_style_border_width(drop_obj, 0, 0);
     lv_dropdown_set_dir(drop_obj, LV_DIR_RIGHT);
     lv_dropdown_set_symbol(drop_obj, LV_SYMBOL_RIGHT);
     lv_obj_set_style_text_color(drop_obj, lv_color_white(), 0);
     lv_obj_set_style_text_font(drop_obj, osd_font_get_by_langid(LANGUAGE_ENGLISH, FONT_MID), 0);
-    //lv_dropdown_set_text(obj, "security");
     lv_obj_set_style_bg_opa(drop_obj, LV_OPA_0, LV_PART_MAIN);
-    //lv_obj_add_event_cb(drop_obj, wifi_add_hidden_net_dropdown_obj_event_handle, LV_EVENT_ALL, 0);
    
     lv_obj_t *list = lv_dropdown_get_list(drop_obj);
     lv_obj_set_style_text_font(list, osd_font_get(FONT_MID), 0);
@@ -2318,15 +2352,11 @@ void wifi_onoff_event_handle(lv_event_t *e){
         if(key == LV_KEY_ENTER){
             if(lv_obj_has_state(lv_obj_get_child(obj, 1) , LV_STATE_CHECKED)){
                 if(wifi_is_scaning){
-                    if(!lv_obj_is_valid(msg_box)){
-                        msg_box = create_message_box(api_rsc_string_get(STR_WIFI_SEARCHING));                       
-                    }
+                    create_message_box(api_rsc_string_get(STR_WIFI_SEARCHING));                       
                     return;
                 }
                 if(wifi_is_conning){
-                    if(!lv_obj_is_valid(msg_box)){
-                        msg_box = create_message_box(api_rsc_string_get(STR_WIFI_CONNING));                       
-                    }
+                    create_message_box(api_rsc_string_get(STR_WIFI_CONNING));                       
                     return;                   
                 }
                 lv_obj_clear_state(lv_obj_get_child(obj, 1) , LV_STATE_CHECKED);
@@ -2335,20 +2365,11 @@ void wifi_onoff_event_handle(lv_event_t *e){
                     hccast_wifi_mgr_disconnect();                  
                 }
 
-                // if(sta_mode){
-                //    //hccast_wifi_mgr_exit_sta_mode();     
-                //     sta_mode=false;               
-                // }
-
                 cur_wifi_id = -1;
             }else{
                 lv_obj_add_state(lv_obj_get_child(obj, 1) , LV_STATE_CHECKED);
                 projector_set_some_sys_param(P_WIFI_ONOFF, 1);
                 if(network_wifi_module_get()){
-                    //hccast_wifi_mgr_init(projector_wifi_mgr_callback_func);
-                    
-                   // sta_mode=true;
-                   //update_saved_wifi_list();
                     scan_type = WIFI_SCAN_ONOFF;
                     projector_wifi_scan();    
                 }
@@ -2388,21 +2409,17 @@ void wifi_search_event_handle(lv_event_t *e){
         if(key == LV_KEY_ENTER){
             if(!lv_obj_has_flag(wifi_lists, LV_OBJ_FLAG_HIDDEN)){  
                 if(wifi_is_scaning){
-                    if(!lv_obj_is_valid(msg_box)){
-                        msg_box = create_message_box(api_rsc_string_get(STR_WIFI_SEARCHING));                       
-                    }
+                    create_message_box(api_rsc_string_get(STR_WIFI_SEARCHING));                       
                     return;
                 }
                 if(wifi_is_conning){
-                    if(!lv_obj_is_valid(msg_box)){
-                        msg_box = create_message_box(api_rsc_string_get(STR_WIFI_CONNING));                       
-                    }
+                    create_message_box(api_rsc_string_get(STR_WIFI_CONNING));                       
                     return;                   
                 }     
                 if(network_wifi_module_get()){
                     projector_wifi_scan();                      
                 }else{
-                    create_message_box(api_rsc_string_get(STR_WIFI_NO_DEVICE));
+                    create_message_box(api_rsc_string_get(STR_WIFI_DEVICE_ABNORMAL));
                 }
              
             }
@@ -2440,15 +2457,11 @@ void wifi_add_event_handle(lv_event_t *e){
         uint16_t key = lv_indev_get_key(lv_indev_get_act());
         if(key == LV_KEY_ENTER){
             if(wifi_is_scaning){
-                if(!lv_obj_is_valid(msg_box)){
-                    msg_box = create_message_box(api_rsc_string_get(STR_WIFI_SEARCHING));                       
-                }
+                    create_message_box(api_rsc_string_get(STR_WIFI_SEARCHING));                       
                 return;
             }
             if(wifi_is_conning){
-                if(!lv_obj_is_valid(msg_box)){
-                    msg_box = create_message_box(api_rsc_string_get(STR_WIFI_CONNING));                       
-                }
+                create_message_box(api_rsc_string_get(STR_WIFI_CONNING));                       
                 return;                   
             }
            if(!lv_obj_has_flag(wifi_lists, LV_OBJ_FLAG_HIDDEN)){  
@@ -2536,9 +2549,19 @@ static void saved_wifi_event_handle(lv_event_t *e){
     if(code == LV_EVENT_PRESSED){
         if(lv_msgbox_get_active_btn(target) == 0){
             char *ssid = get_list_sub_wifi_ssid(cur_wifi_id);
-            if(sysdata_get_wifi_info(ssid))
-                wifi_connect(ssid, sysdata_get_wifi_info(ssid)->pwd);
-            end_handle = true;
+            hccast_wifi_ap_info_t* info = sysdata_get_wifi_info(ssid);
+            if(info){
+                if(info->encryptMode != HCCAST_WIFI_ENCRYPT_MODE_NONE){
+                    cur_wifi_conning_id = cur_wifi_id;
+                    reconn_msg_box = create_message_box1(STR_WIFI_RE_ENTER_PWD, STR_PROMPT_YES, STR_PROMPT_NO, saved_wifi_reconn_event_handle, WIFI_RECONN_MSG_BOX_W, WIFI_RECONN_MSG_BOX_H);  
+                    lv_obj_del(target);    
+                }else{
+                    wifi_connect(ssid, sysdata_get_wifi_info(ssid)->pwd);
+                    end_handle = true;                    
+                }
+                  
+            }
+
         }else if(lv_msgbox_get_active_btn(target) == 1){
 
             int i=sysdata_get_wifi_index_by_ssid(get_list_sub_wifi_ssid(cur_wifi_id));
@@ -2643,7 +2666,7 @@ void wifi_lists_event_handle(lv_event_t *e){
                 scroll_min = true;
             }
             if( cur_wifi_id< lv_obj_get_child_cnt(obj)){//cur_wifi_id >= 0 && 
-                printf("CUR ID: %d\n", cur_wifi_id);//26
+                log(DEMO,INFO,"CUR ID: %d\n", cur_wifi_id);//26
                 lv_obj_add_state(lv_obj_get_child(obj, cur_wifi_id), LV_STATE_CHECKED);
                 
                 if(scroll_min){
@@ -2665,6 +2688,10 @@ void wifi_lists_event_handle(lv_event_t *e){
         } else if( key == LV_KEY_ENTER){
 
             if(cur_wifi_id< lv_obj_get_index(wifi_save_obj)){
+                if(wifi_is_conning){
+                    create_message_box(api_rsc_string_get(STR_WIFI_CONNING));
+                    return;
+                }
                 cur_scr_focused_obj = obj;
                 lv_event_send(lv_obj_get_child(lv_obj_get_child(obj, 0), 3), LV_EVENT_PRESSED, NULL);
             }else if(cur_wifi_id < lv_obj_get_index(wifi_nearby_obj) && cur_wifi_id != lv_obj_get_index(wifi_save_obj)){
@@ -2672,6 +2699,7 @@ void wifi_lists_event_handle(lv_event_t *e){
                     create_message_box(api_rsc_string_get(STR_WIFI_CONNING));
                     return;
                 }
+                cur_scr_focused_obj = obj;
                 reconn_msg_box = create_message_box1(STR_NONE, STR_BT_MAKE_CONN, STR_BT_DELETE, saved_wifi_event_handle,
                                                 STR_WIFI_SAVED_CONNECT_MSG_BOX_W,STR_WIFI_SAVED_CONNECT_MSG_BOX_H);
 
@@ -2686,7 +2714,7 @@ void wifi_lists_event_handle(lv_event_t *e){
                     if(!wifi_conn_widget){
                         cur_scr_focused_obj = obj;
                         create_connection_widget(get_list_sub_wifi_ssid(cur_wifi_id),
-                        wifi_get_quality(wifi_list_get_cur()->res.quality), wifi_get_entryMode(wifi_list_get_cur()->res.encryptMode) );                                       
+                        wifi_get_quality(wifi_list_get_cur()->res.quality), wifi_get_encryMode_str(wifi_list_get_cur()->res.encryptMode) );                                       
                     }                  
                 }
 
@@ -2705,7 +2733,6 @@ void wifi_lists_event_handle(lv_event_t *e){
         }
         cur_wifi_id = 0;
         while (cur_wifi_id < lv_obj_get_child_cnt(obj) && lv_obj_get_child(obj, cur_wifi_id)->class_p == &lv_list_text_class){
-            //lv_event_send(lv_obj_get_child(lv_obj_get_child(obj, cur_wifi_id), 1), LV_EVENT_REFRESH, (void*)1);
             cur_wifi_id++;
         }
 
@@ -2735,38 +2762,6 @@ void wifi_lists_event_handle(lv_event_t *e){
 
 
 ////联网逻辑
-
-
-
-// static void wifi_msg_box_handle(lv_event_t *e){
-//     lv_event_code_t code = lv_event_get_code(e);
-//     lv_obj_t* obj = lv_event_get_current_target(e);
-
-//     if(code == LV_EVENT_KEY){
-//         uint16_t key = lv_indev_get_key(lv_indev_get_act());
-//         lv_btnmatrix_t* btns = (lv_btnmatrix_t*)lv_msgbox_get_btns(obj);
-//         if(key == LV_KEY_ENTER){
-//         if( lv_msgbox_get_active_btn(obj)==0){
-             
-//         }else{
-//             hccast_wifi_ap_info_t *ap_wifi=cur_conne_p;
-//             int index = sysdata_check_ap_saved(ap_wifi);
-//             printf("ssid index: %d\n",index);
-//             if(index >= 0)//set the index ap to first.
-//             {
-//                 sysdata_wifi_ap_delete(index);
-//             }
-//             sysdata_wifi_ap_save(ap_wifi);
-
-//             projector_sys_param_save();
-//             sleep(1);
-//         }
-//         lv_msgbox_close(obj);
-//          lv_group_focus_obj(wifi_lists);
-//         }
-//     }
-// }
-
 static void saved_wifi_reconn_event_handle(lv_event_t *e){
     lv_obj_t *target = lv_event_get_current_target(e);
     lv_event_code_t code = lv_event_get_code(e); 
@@ -2778,8 +2773,10 @@ static void saved_wifi_reconn_event_handle(lv_event_t *e){
             reconn_msg_box = NULL;
         }else if(lv_msgbox_get_active_btn(target) == 1){
             char *ssid = get_list_sub_wifi_ssid(cur_wifi_conning_id);
-            //wifi_connect(ssid, sysdata_get_wifi_info(ssid)->pwd);
-            app_wifi_reconnect(sysdata_get_wifi_info(ssid));
+            set_label_text2(lv_obj_get_child(get_list_sub_wifi_status_obj(cur_wifi_conning_id), 0), STR_WIFI_CONNING,FONT_NORMAL);
+            if(app_wifi_reconnect(sysdata_get_wifi_info(ssid)) == 0){
+                wifi_is_conning = true;
+            }
             end_handle = true;
         }
     }else if(code == LV_EVENT_KEY){
@@ -2788,8 +2785,12 @@ static void saved_wifi_reconn_event_handle(lv_event_t *e){
             end_handle = true;
              set_label_text2(lv_obj_get_child(get_list_sub_wifi_status_obj(cur_wifi_conning_id), 0), STR_BT_SAVED,FONT_NORMAL);
             cur_wifi_conning_id = -1;
-            cur_conne_p = NULL;
+            wifi_is_conning = false;
+
         }
+    }else if(code == LV_EVENT_FOCUSED){
+        lv_obj_t * btnm = lv_msgbox_get_btns(target);
+        lv_btnmatrix_set_selected_btn(btnm, 1);
     }
 
     if(end_handle){
@@ -2806,7 +2807,6 @@ static void saved_wifi_conn_faild_event_handle (lv_event_t *e){
     if(code == LV_EVENT_PRESSED){
         if(lv_msgbox_get_active_btn(target) == 0){
                 char *ssid = get_list_sub_wifi_ssid(cur_wifi_conning_id);
-                printf("pwd is: %s\n", sysdata_get_wifi_info(ssid)->pwd);
                 reconn_msg_box = create_message_box1(STR_WIFI_RE_ENTER_PWD, STR_PROMPT_YES, STR_PROMPT_NO, saved_wifi_reconn_event_handle, WIFI_RECONN_MSG_BOX_W, WIFI_RECONN_MSG_BOX_H);
 
                 lv_obj_del(target);
@@ -2825,6 +2825,7 @@ static void saved_wifi_conn_faild_event_handle (lv_event_t *e){
             }
             lv_obj_del(lv_obj_get_child(wifi_lists, cur_wifi_conning_id));
             cur_wifi_conning_id = -1;
+            wifi_is_conning = false;
             end_handle=true;
             scan_type =WIFI_SCAN_SEARCH;
             projector_wifi_scan();
@@ -2836,6 +2837,7 @@ static void saved_wifi_conn_faild_event_handle (lv_event_t *e){
             set_label_text2(lv_obj_get_child(get_list_sub_wifi_status_obj(cur_wifi_conning_id), 0), STR_BT_SAVED, FONT_NORMAL);
             cur_wifi_conning_id = -1;
             cur_conne_p = NULL;
+            wifi_is_conning = false;
         }
     }
 
@@ -2849,7 +2851,7 @@ static void saved_wifi_conn_faild_event_handle (lv_event_t *e){
 static void win_wifi_control(void* arg1, void* arg2){
     (void)arg2;
     control_msg_t *ctl_msg = (control_msg_t*)arg1;
-
+    log(DEMO,INFO,"[%s] event:%d\n", __FUNCTION__, ctl_msg->msg_type);
     switch (ctl_msg->msg_type)
     {
     case MSG_TYPE_NETWORK_WIFI_SCAN_DONE:
@@ -2870,10 +2872,10 @@ static void win_wifi_control(void* arg1, void* arg2){
             }
             
             int quatity = res->quality;
-            void *img = (quatity<=100 && quatity>=80) ? &wifi4 :
-                            (quatity<80 && quatity>=60) ? &wifi3 :
-                            (quatity<60 && quatity>=40) ? &wifi2 :
-                            (quatity<40 && quatity>=20) ? &wifi1: &wifi0;
+            void *img = (quatity>=68) ? &wifi4 :
+                        (quatity<68 && quatity>=46) ? &wifi3 :
+                        (quatity<46 && quatity>=24) ? &wifi2 :
+                        (quatity<24) ? &wifi1: &wifi1;
             i++;
             if(wifi_list_get_cur()->res.encryptMode == HCCAST_WIFI_ENCRYPT_MODE_NONE){
                 create_list_sub_wifi_btn_obj0(wifi_lists, img, res->ssid,STR_NONE);
@@ -2885,12 +2887,12 @@ static void win_wifi_control(void* arg1, void* arg2){
 
          lv_obj_set_style_text_align(searching_label, LV_TEXT_ALIGN_CENTER, 0);
         lv_label_set_text_fmt(searching_label, "%d", i);
-
+        update_saved_wifi_list();
         if(scan_type == WIFI_SCAN_ONOFF || scan_type == WIFI_SCAN_ENTER){
            if(saved_wifi_sig_strength_max_id>=0 && saved_wifi_sig_strength_max_id<MAX_WIFI_SAVE){
                 hccast_wifi_ap_info_t *info = sysdata_get_wifi_info_by_index(saved_wifi_sig_strength_max_id);
                 if(!cur_conne_p && info){
-                    update_saved_wifi_list();
+                    
                     cur_wifi_id = saved_wifi_sig_strength_max_id+lv_obj_get_index(wifi_save_obj)+1;
                     wifi_connect(info->ssid, info->pwd); 
                 }
@@ -2903,18 +2905,15 @@ static void win_wifi_control(void* arg1, void* arg2){
 
         break;
     case MSG_TYPE_NETWORK_WIFI_CONNECTED:
-         wifi_is_conning=false;
-        if(lv_obj_get_index(wifi_save_obj)>0){//之前有连接的wifi
-            if(cur_conne_p && sysdata_check_ap_saved(cur_conne_p)>=0){
-                //language_choose_add_label1(lv_obj_get_child(lv_obj_get_child(lv_obj_get_child(wifi_lists, 0), 2), 0), );
-                set_label_text2(lv_obj_get_child(lv_obj_get_child(lv_obj_get_child(wifi_lists, 0), 2), 0), STR_BT_SAVED, FONT_NORMAL);
-                if(cur_wifi_id == 0){
-                    cur_wifi_id = lv_obj_get_index(wifi_save_obj);
-                }
-                lv_obj_add_flag(get_list_sub_wifi_prompt_obj(0), LV_OBJ_FLAG_HIDDEN);
-                lv_obj_move_to_index(lv_obj_get_child(wifi_lists, 0), lv_obj_get_index(wifi_save_obj));
-
-            }          
+         
+        if(lv_obj_get_index(wifi_save_obj)>0){//之前有连接的wifi  
+            set_label_text2(lv_obj_get_child(lv_obj_get_child(lv_obj_get_child(wifi_lists, 0), 2), 0), STR_BT_SAVED, FONT_NORMAL);
+            if(cur_wifi_id == 0){
+                cur_wifi_id = lv_obj_get_index(wifi_save_obj);
+            }
+            lv_obj_add_flag(get_list_sub_wifi_prompt_obj(0), LV_OBJ_FLAG_HIDDEN);
+            lv_obj_move_to_index(lv_obj_get_child(wifi_lists, 0), lv_obj_get_index(wifi_save_obj));
+ 
         }    
         if(conn_type == WIFI_CONN_NORMAL){
             if(cur_wifi_conning_id<0){
@@ -2930,7 +2929,6 @@ static void win_wifi_control(void* arg1, void* arg2){
                 wifi_list_remove(cur_wifi_conning_node_p, true);
                 cur_wifi_conning_node_p = NULL;
             }else{
-                //printf("id:%d, ssid:%s\n", cur_wifi_conning_id, lv_label_get_text(lv_obj_get_child(lv_obj_get_child(wifi_lists, cur_wifi_conning_id), 1)));
                 hccast_wifi_ap_info_t *info = sysdata_get_wifi_info(get_list_sub_wifi_ssid(cur_wifi_conning_id));
                 if(info){
                     memcpy(&cur_conne, info, sizeof(hccast_wifi_ap_info_t));
@@ -2938,7 +2936,6 @@ static void win_wifi_control(void* arg1, void* arg2){
                 }
                 label = lv_obj_get_child(get_list_sub_wifi_status_obj(cur_wifi_conning_id),0);
             }
-            //language_choose_add_label1(label, );
             set_label_text2(label, STR_BT_CONN, FONT_NORMAL);    
             lv_obj_clear_flag(get_list_sub_wifi_prompt_obj(cur_wifi_conning_id), LV_OBJ_FLAG_HIDDEN);
             lv_obj_move_to_index(lv_obj_get_child(wifi_lists, cur_wifi_conning_id), 0);
@@ -2951,7 +2948,6 @@ static void win_wifi_control(void* arg1, void* arg2){
             }
             cur_wifi_conning_id=-1;             
 
-            // lv_btnmatrix_get_selected_btn(btns, 0);
 
         }else if(conn_type == WIFI_CONN_HIDDEN){
             memcpy(&cur_conne, &hidden_ap_info, sizeof(hccast_wifi_ap_info_t));
@@ -2971,42 +2967,28 @@ static void win_wifi_control(void* arg1, void* arg2){
 
         lv_obj_scroll_to_view(lv_obj_get_child(wifi_lists, 0), LV_ANIM_OFF);
 
-        // hccast_wifi_ap_info_t *ap_wifi=cur_conne_p;
-        // int index = sysdata_check_ap_saved(ap_wifi);
-        // printf("ssid index: %d\n",index);
-        // if(index >= 0)//set the index ap to first.
-        // {
-        //     sysdata_wifi_ap_delete(index);
-        // }
-        // sysdata_wifi_ap_save(ap_wifi);
-        // projector_sys_param_save(); 
-		if(lv_obj_get_index(wifi_nearby_obj)-lv_obj_get_index(wifi_save_obj) - 1 > MAX_WIFI_SAVE){
-			update_saved_wifi_list();
-		}
+        update_saved_wifi_list();
+     
+        wifi_is_conning=false;
         sleep(1);        
 
         break;
     case MSG_TYPE_NETWORK_WIFI_CONNECT_FAIL:
     case MSG_TYPE_NETWORK_WIFI_DISCONNECTED:
-        wifi_is_conning=false;
-        // lv_event_send(wifi_show, LV_EVENT_REFRESH, "");
         if(lv_obj_get_index(wifi_save_obj)>0){
             if(cur_conne_p && sysdata_check_ap_saved(cur_conne_p)>=0){
-                //lv_label_set_text(lv_obj_get_child(lv_obj_get_child(lv_obj_get_child(wifi_lists, 0), 2), 0), "已保存");
-                //language_choose_add_label1(lv_obj_get_child(lv_obj_get_child(lv_obj_get_child(wifi_lists, 0), 2), 0), );
+                
                 set_label_text2(lv_obj_get_child(lv_obj_get_child(lv_obj_get_child(wifi_lists, 0), 2), 0), STR_BT_SAVED, FONT_NORMAL);
                 if(cur_wifi_id==0){
                     cur_wifi_id = lv_obj_get_index(wifi_save_obj);
                 }
                 lv_obj_add_flag(get_list_sub_wifi_prompt_obj(0), LV_OBJ_FLAG_HIDDEN);
                 lv_obj_move_to_index(lv_obj_get_child(wifi_lists, 0), lv_obj_get_index(wifi_save_obj));
-                //cur_wifi_id = lv_obj_get_index(wifi_nearby_obj)-1;
             }
         }
         if (ctl_msg->msg_type == MSG_TYPE_NETWORK_WIFI_CONNECT_FAIL){
             if(cur_wifi_conning_id>(int)lv_obj_get_index(wifi_nearby_obj)){
                 if(cur_wifi_conning_node_p->res.encryptMode == HCCAST_WIFI_ENCRYPT_MODE_NONE){
-                    //language_choose_add_label1(lv_obj_get_child(get_list_sub_wifi_status_obj(cur_wifi_conning_id), 0), );
                     set_label_text2(lv_obj_get_child(get_list_sub_wifi_status_obj(cur_wifi_conning_id), 0), STR_NONE, FONT_NORMAL);
                     lv_label_set_text(lv_obj_get_child(get_list_sub_wifi_status_obj(cur_wifi_conning_id), 0),"");
                 }else{
@@ -3025,6 +3007,8 @@ static void win_wifi_control(void* arg1, void* arg2){
                 
             }              
         }
+        
+        recon_count = 0;
         cur_wifi_conning_id=-1;
         cur_conne_p = NULL;
         conn_type = WIFI_CONN_NORMAL;  
@@ -3036,6 +3020,38 @@ static void win_wifi_control(void* arg1, void* arg2){
             create_message_box(api_rsc_string_get(STR_WIFI_CONN_FAILED));
         
         }        
+
+        if(is_reconn){
+            is_reconn = false;
+            if(lv_obj_get_index(wifi_nearby_obj) - lv_obj_get_index(wifi_save_obj) > 2){
+                sleep(1);
+                conn_type = WIFI_CONN_NORMAL;
+                cur_wifi_conning_id = lv_obj_get_index(wifi_save_obj) + 2;
+                char *ssid = get_list_sub_wifi_ssid(cur_wifi_conning_id);
+                set_label_text2(lv_obj_get_child(get_list_sub_wifi_status_obj(cur_wifi_conning_id), 0), STR_WIFI_CONNING,FONT_NORMAL);
+                if(app_wifi_reconnect(sysdata_get_wifi_info(ssid)) == 0){
+                    wifi_is_conning = true;
+                }else{
+                    wifi_is_conning = false;
+                }
+            }
+        }else{
+            wifi_is_conning=false;
+        }
+        
+        break;
+        case MSG_TYPE_USB_WIFI_PLUGOUT:
+            //exit to main menu.
+            change_screen(SCREEN_CHANNEL_MAIN_PAGE);
+        break;
+    case MSG_TYPE_NETWORK_WIFI_RECONNECTE:
+        is_reconn = true;
+        lv_obj_set_style_bg_opa(lv_layer_top(), LV_OPA_50, 0);
+        set_remote_control_disable(true);
+        prompt_box = loader_with_arc((char*)api_rsc_string_get(STR_WIFI_CONNING),  wifi_reconne_exec_cb); 
+        break;
+    case MSG_TYPE_NETWORK_WIFI_RECONNECTED:
+        is_reconn = false;
         break;
     default:
         break;
@@ -3043,19 +3059,19 @@ static void win_wifi_control(void* arg1, void* arg2){
 }
 
 static void wifi_scan_task(void* parm){
-    hccast_wifi_scan_result_t *scan_res = (hccast_wifi_scan_result_t *)calloc(1, sizeof(hccast_wifi_scan_result_t));
+    hccast_wifi_scan_result_t scan_res = {0};// = (hccast_wifi_scan_result_t *)calloc(1, sizeof(hccast_wifi_scan_result_t));
     int ret = 0;
     int i = 0;
-    ret = hccast_wifi_mgr_scan(scan_res);
+    ret = hccast_wifi_mgr_scan(&scan_res);
     if(ret != 0){
         if(ret == HCCAST_WIFI_ERR_CMD_WPAS_NO_RUN){
-            create_message_box(api_rsc_string_get(STR_WIFI_READY));
+            create_message_box(api_rsc_string_get(STR_WIFI_NOT_READY));
+
         }else{
-            printf("%s:%d: hccast_wifi_mgr_scan failed, ret=%d\n", __func__, __LINE__, ret);
+            log(DEMO,INFO,"%s:%d: hccast_wifi_mgr_scan failed, ret=%d\n", __func__, __LINE__, ret);
         }
         
     }
-    free(scan_res);
     wifi_is_scaning = false;   
 #ifdef __HCRTOS__    
     vTaskDelete(NULL);
@@ -3068,18 +3084,15 @@ static void seaching_timer_handle(lv_timer_t* t){
     if (!wifi_is_scaning){
         lv_timer_del(t);
         timer_scan = NULL;
-        if(searching_label){
-           
-           // lv_obj_add_flag(searching_label, LV_OBJ_FLAG_HIDDEN);
-        } 
         return;
     }
     
     static int i=0;
     i = (++i)%4;
     char *dot_str = i == 0 ? " " : i == 1 ? "." : i==2 ? ".." : "...";
-   
-    lv_label_set_text_fmt(searching_label, "%s%s", (char*)api_rsc_string_get(STR_WIFI_SEARCHING), dot_str);
+   if(searching_label){
+        lv_label_set_text_fmt(searching_label, "%s%s", (char*)api_rsc_string_get(STR_WIFI_SEARCHING), dot_str);
+   }
     
 }
 
@@ -3094,34 +3107,23 @@ int projector_wifi_scan(){
         int size = lv_obj_get_child_cnt(wifi_lists);
         int j = lv_obj_get_index(wifi_nearby_obj)+1;
         for(int i = j; i<size; i++){
-            printf("%d/%d\n",size, i);
             lv_obj_del(lv_obj_get_child(wifi_lists, j));
         }      
 
         wifi_is_scaning = true;
-        if (!searching_label){
-            searching_label = lv_label_create(wifi_nearby_obj);
-            lv_obj_align(searching_label, LV_ALIGN_TOP_RIGHT, 0,0);
-           
-            lv_obj_set_size(searching_label, LV_PCT(SEARCHING_LABEL_HOR_PCT), LV_PCT(100));//23
-            lv_label_set_text(searching_label, (char*)api_rsc_string_get(STR_WIFI_SEARCHING));
-            //set_label_text2(searching_label, STR_WIFI_SEARCHING, FONT_NORMAL);
-            lv_obj_set_style_text_color(searching_label, lv_color_white(), 0);  
-                   
-        }
-        //lv_obj_clear_flag(searching_label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_style_text_align(searching_label, LV_TEXT_ALIGN_LEFT, 0);
         if(!timer_scan){
             timer_scan = lv_timer_create(seaching_timer_handle, 300, NULL);
             lv_timer_reset(timer_scan);           
         }
+        wifi_list_clean();
     #ifdef __HCRTOS__
-        xTaskCreate(wifi_scan_task, "wifi scan", 0x1000,NULL , portPRI_TASK_NORMAL ,NULL );
+        xTaskCreate(wifi_scan_task, "wifi scan", 0x2000,NULL , portPRI_TASK_NORMAL ,NULL );
     #else
         pthread_t thread_id = 0;
         pthread_attr_t attr;
         pthread_attr_init(&attr);
-        pthread_attr_setstacksize(&attr, 0x1000);
+        pthread_attr_setstacksize(&attr, 0x2000);
         pthread_attr_setdetachstate(&attr,PTHREAD_CREATE_DETACHED); //release task resource itself
         pthread_create(&thread_id, &attr, wifi_scan_task, NULL);
         pthread_attr_destroy(&attr);
@@ -3131,25 +3133,8 @@ int projector_wifi_scan(){
     return 0;
 }
 
-
-// static void wifi_conne_task(void* parm){
-//     hccast_wifi_ap_info_t *ap_info = (hccast_wifi_ap_info_t *)parm;
-
-//     hccast_wifi_mgr_connect(ap_info);
-//     if (hccast_wifi_mgr_get_connect_status()){
-//         printf("hccast_wifi_mgr_get_connect_status: %d\n", hccast_wifi_mgr_get_connect_status());
-//         hccast_wifi_mgr_udhcpc_start();
-//     }else{
-// 		hccast_wifi_mgr_disconnect();
-// 	}
-
-//     vTaskDelete(NULL);
-// }
-
-
 int wifi_connect(char *ssid , char *pwd){
-    printf("CONNECTION\n");
-
+    log(DEMO,INFO,"CONNECTION\n");
     hccast_wifi_ap_info_t *ap_info = NULL;
 
     if((cur_wifi_id>lv_obj_get_index(wifi_save_obj) && cur_wifi_id<lv_obj_get_index(wifi_nearby_obj)) || cur_wifi_id==-1){//-1表示打开wifi后自动连接
@@ -3162,6 +3147,8 @@ int wifi_connect(char *ssid , char *pwd){
         if(!(ap_info->encryptMode == HCCAST_WIFI_ENCRYPT_MODE_NONE)){
             strcpy(ap_info->pwd, pwd); 
         }
+    }else if(cur_wifi_id == lv_obj_get_index(wifi_save_obj) || cur_wifi_id == lv_obj_get_index(wifi_nearby_obj)){
+        return -1;
     }
     
     ap_info->keyIdx = 1;
@@ -3171,17 +3158,12 @@ int wifi_connect(char *ssid , char *pwd){
     lv_obj_center(label);
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER,0);
-    //language_choose_add_label1(label, );
     set_label_text2(label, STR_WIFI_CONNING, FONT_NORMAL); 
 
     cur_wifi_conning_id = cur_wifi_id;
     if(cur_wifi_conning_id>lv_obj_get_index(wifi_nearby_obj)){
         cur_wifi_conning_node_p = wifi_list.p_n;
-    }
-    
-    //app_wifi_switch_work_mode(WIFI_MODE_STATION);
-    //xTaskCreate(wifi_conne_task, "wifi conne", 0x1000,(void*)ap_info , portPRI_TASK_NORMAL ,NULL );
-    // hccast_wifi_mgr_udhcpc_stop();     
+    }    
     if(!app_wifi_reconnect(ap_info)){
         wifi_is_conning = true;
     }

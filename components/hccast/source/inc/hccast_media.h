@@ -46,6 +46,8 @@ typedef enum
     HCCAST_MEDIA_EVENT_SET_VOLUME,
     HCCAST_MEDIA_EVENT_GET_MIRROR_ROTATION,
     HCCAST_MEDIA_EVENT_GET_FLIP_MODE,
+    HCCAST_MEDIA_EVENT_URL_START_PLAY,//New url start play event with more info.
+    HCCAST_MEDIA_EVENT_GET_ZOOM_INFO,
 } hccast_media_event_e;
 
 typedef enum
@@ -77,6 +79,7 @@ typedef struct
     void *player1;//for audio url
     int ready1;//for audio url
     int is_double_url;
+    int media_play_idx;
 } hccast_media_player_t;
 
 typedef enum
@@ -111,6 +114,31 @@ typedef struct
     hccast_media_url_mode_e url_mode;
     hccast_media_type_e media_type;
 } hccast_media_url_t;
+
+
+typedef struct
+{
+    hccast_media_type_e media_type;
+    hccast_media_url_mode_e url_mode;
+    int enable_url_play; /*Whether to allow this playback is controlled by the APP[0-disable, 1-enable].*/
+    int interface_valid; /*The APP controls whether to use this interface[0-disable, 1-enable].*/
+} hccast_media_play_info_t;
+
+typedef struct
+{
+    unsigned short x;		//!< Horizontal start point.
+    unsigned short y;		//!< Vertical start point.
+    unsigned short w;	        //!< Horizontal size.
+    unsigned short h;		//!< Vertical size.
+} hccast_media_av_area_t;
+
+typedef struct
+{
+    int enable;
+    hccast_media_av_area_t src_rect;
+    hccast_media_av_area_t dst_rect;
+} hccast_media_zoom_info_t;
+
 
 typedef void (*hccast_media_event_callback)(hccast_media_event_e event_type, void* param);
 typedef void (*hccast_media_air_event_callback)(int event_type, void* param);

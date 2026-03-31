@@ -27,7 +27,7 @@
 #include "glist.h"
 #include "factory_setting.h"
 
-static bool m_closevp = true,  m_fillblack = false;
+static bool m_closevp = false,  m_fillblack = false;
 static void *media_monitor_task(void *arg);
 static int media_monitor_deinit(media_handle_t *media_hld);
 static int media_monitor_init(media_handle_t *media_hld);

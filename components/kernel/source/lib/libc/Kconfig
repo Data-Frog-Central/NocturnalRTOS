@@ -1,9 +1,5 @@
 menu "Memory Management"
 
-config CONFIG_MEM_NR_MMZ
-	int "Multi media memory zone number"
-	default 1
-
 config CONFIG_MEM_DEBUG_STORE
 	bool "Memory store check"
 	default n

@@ -159,6 +159,12 @@ lv_font_t *osd_font_get_by_langid(int lang_id, int font_idx);
 #define DEFAULT_LV_DISP_H 720
 int lv_xpixel_transform(int x);
 int lv_ypixel_transform(int y);
+void win_data_buffing_label_set(char* user_str);
+bool win_data_buffing_is_open(void);
+void win_msgbox_msg_open_on_top(int str_msg_id, uint32_t timeout, msg_timeout_func timeout_func, void *user_data);
+void win_msgbox_msg_close_on_top(void);
+int string_fmt_conv_to_utf8(unsigned char* buff,char* out_buff);
+void win_clear_popup(void);
 
 typedef enum Font_size
 {
@@ -176,6 +182,7 @@ void win_del_lvmbox_standby(void);
 #endif
 
 lv_obj_t *api_scr_go_back(void);
+void win_msgbox_msg_set_pos(lv_align_t align,lv_coord_t x_ofs, lv_coord_t y_ofs);
 
 #ifdef __cplusplus
 } /*extern "C"*/

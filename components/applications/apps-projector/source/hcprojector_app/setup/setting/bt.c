@@ -1,6 +1,3 @@
-
-//#define SUPPORT_BLUETOOTH 1
-
 #include <stdio.h>
 #include <fcntl.h>
 #include <stdlib.h>
@@ -9,7 +6,7 @@
 #include <sys/ioctl.h>
 #include <sys/types.h>
 #include <hcuapi/input-event-codes.h>
-
+#include "app_log.h"
 #include "app_config.h"
 #include "screen.h"
 #include "factory_setting.h"
@@ -23,19 +20,15 @@
 extern lv_font_t *select_middle_font[3];
 
 #ifdef BLUETOOTH_SUPPORT
+#include <bluetooth.h>
 
 #ifdef LVGL_RESOLUTION_240P_SUPPORT
 #define BT_LIST_FONT SiYuanHeiTi_Light_3500_12_1b
 #else
 #define BT_LIST_FONT SIYUANHEITI_LIGHT_3000_28_1B
 #endif
-
-#include <bluetooth.h>
-
-
-
-//#ifdef SUPPORT_BLUETOOTH
-#define bt_dev_len  5
+#define MAX_BT_SAVE 1
+#define BT_DEV_MAX_LEN  10
 
 typedef enum wait_type_{
     SCAN_WAIT,
@@ -43,13 +36,9 @@ typedef enum wait_type_{
     POWER_ON_WAIT
 } wait_type;
 
-
-
-
-
 typedef enum conn_type_{
-    CONN_TYPE_IS_CONNECTEDE,
-    CONN_TYPE_CONNECT,
+    CONN_TYPE_IS_SAVED,
+    CONN_TYPE_NORMAL,
     CONN_TYPE_POWER_ON
 } conn_type; //bluetooth_is_connected(),bluetooth_connect(), power_on()都有可能触发BLUETOOTH_EVENT_SLAVE_DEV_CONNECTED事件
 
@@ -57,8 +46,8 @@ enum bt_list_refresh_event{
     BT_LIST_EVENT_ADD_CONN,
     BT_LIST_EVENT_REMOVE_CONN,
     BT_LIST_EVENT_CREATE_NEW_BTN,
-    BT_LIST_EVENT_MOVE_LOC,
-    BT_LIST_EVENT_SWAP_LOC,
+    BT_LIST_EVENT_REFRESH_SAVED,
+    BT_LIST_EVENT_DEL_BTN,
 };
 
 typedef struct{
@@ -71,35 +60,26 @@ bt_refresh_event_param bt_refresh_param;
 
 extern lv_timer_t *timer_setting;
 extern lv_font_t* select_font_normal[3];
-
 extern lv_obj_t* slave_scr_obj;
 extern lv_obj_t *tab_btns;
 extern char* bt_v;
 extern SCREEN_TYPE_E cur_scr;
-
+static bool need_reset = false;
 static int sel_id = -1;
 static int connected_bt_id = -2;
 static bool active_disconn = false;
 static wait_type bt_wait_type = -1;
 static conn_type bt_conn_type = -1;
-
-struct bluetooth_slave_dev devs_info[bt_dev_len]={0};
-struct bluetooth_slave_dev *devs_info_t[bt_dev_len]={NULL, NULL, NULL, NULL,NULL};
-
-
+struct bluetooth_slave_dev devs_info[BT_DEV_MAX_LEN]={0};
 lv_obj_t *bluetooth_obj = NULL;
 lv_obj_t *wait_anim = NULL;
-
 lv_obj_t* bt_list_obj = NULL;
 lv_obj_t* my_dev = NULL;
 lv_obj_t* other_dev = NULL;
 static bool is_connected = false;
 static bool reset_timer = true;//重设置timer_setting
-
 static int found_bt_num=0;
 static lv_timer_t * wait_anim_timer = NULL;
-
-
 static bt_scan_status scan_status = BT_SCAN_STATUS_DEFAULT;
 static bt_connect_status_e connet_status = BT_CONNECT_STATUS_DEFAULT;
 static bt_connect_status_e mute_connet_status = BT_CONNECT_STATUS_DEFAULT;
@@ -114,7 +94,6 @@ static void get_bt_mac(char *name,unsigned char* mac);
 static void bluetooth_wait(wait_type type);
 static void event_cb(lv_event_t * e);
 int bt_event1(unsigned long event, unsigned long param);
- 
 static void remove_bt_dev(int i);
 static bool bt_mac_cmp(unsigned char* mac1, unsigned char* mac2);
 static void my_bt_dev_event_handle(lv_event_t *e);
@@ -123,7 +102,6 @@ static void bt_list_change_loc(lv_obj_t *prev, lv_obj_t *next);
 static bool bt_has_my_dev();
 static   void add_connected(int i);
 static void remove_connected(int i);
-
 lv_obj_t* create_bt_list_obj(lv_obj_t *parent, int w, int h);
 lv_obj_t* create_list_obj1(lv_obj_t *parent, int w, int h);
 static lv_obj_t* create_list_bt_obj(lv_obj_t *parent, int w, int h, lv_obj_t *btn);
@@ -132,28 +110,39 @@ static lv_obj_t* create_list_sub_obj(lv_obj_t *parent, char *str);
 static lv_obj_t* create_list_sub_btn_obj(lv_obj_t *parent);
 static lv_obj_t* create_list_sub_btn_obj1(lv_obj_t *parent, int str1, int str2);
 static lv_obj_t* create_list_sub_btn_obj2(lv_obj_t *parent, char* str1, int str2);
-
+static void bt_list_sub_obj_name_set(int id, char* name);
+static void bt_list_sub_obj_status_set(int id, int);
 static void create_list_bt_sub_obj(lv_obj_t *parent, char *str);
 static lv_obj_t* create_list_bt_sub_btn_obj(lv_obj_t *parent, list_sub_param, int, int str2);
-
 static void remove_list_sub_obj(lv_obj_t *parent, int id);
 static void remove_list_sub_objs(lv_obj_t *parent, int start, int end);
 static void hidden_on_list_sub_objs(lv_obj_t *parent, int start, int end);
 static void hidden_off_list_sub_obj(lv_obj_t *parent, int start, int end);
-static void bt_list_refresh_event_handle(lv_event_t *e);
-
+static void bt_my_dev_refresh();
 extern lv_obj_t* create_page_(lv_obj_t* parent, choose_item * data, int len);
 extern void set_remote_control_disable(bool b);
+
+void bt_need_reset_set(bool b){
+    need_reset = b;
+}
 
 bool app_bt_is_connected(){
     return is_connected;
 }
 
+bool app_bt_is_connecting(){
+    return connet_status == BT_CONNECT_STATUS_CONNECTING;
+}
+
+bool app_bt_is_scanning(){
+    return scan_status == BT_SCAN_STATUS_GET_DATA_SEARCHING;
+}
+
 void bt_screen_event_handle(lv_event_t *e){
     lv_event_code_t code = lv_event_get_code(e);
     if(code == LV_EVENT_SCREEN_LOADED){
-        if(projector_get_some_sys_param(P_BT_SETTING) && is_connected){
-            add_connected(3);
+        if(projector_get_some_sys_param(P_BT_SETTING)){
+            bt_my_dev_refresh();
         }
     }
 }
@@ -169,11 +158,23 @@ static void remove_connected(int i){
 }
 
 static void remove_bt_dev(int i){
-    printf("delete dev id %d\n", i);
-    for(int j=i; j+1<found_bt_num; j++){
+    if(i<0 || i>=BT_DEV_MAX_LEN){
+        return;
+    }
+    for(int j=i; j+1<BT_DEV_MAX_LEN; j++){
         memcpy(&devs_info[j], &devs_info[j+1], sizeof(struct bluetooth_slave_dev));
     }
     found_bt_num-=1;
+}
+
+static void add_bt_dev_head(struct bluetooth_slave_dev* dev_p){
+    for(int i = BT_DEV_MAX_LEN-2; i >= 0; i--){
+        memcpy(&devs_info[i+1], &devs_info[i], sizeof(struct bluetooth_slave_dev));
+    }
+    memcpy(&devs_info[0], dev_p, sizeof(struct bluetooth_slave_dev));
+    if(found_bt_num<BT_DEV_MAX_LEN){
+        found_bt_num++;
+    }
 }
 
 static int contain_bt_dev(char *name){
@@ -194,10 +195,13 @@ static bool bt_mac_cmp(unsigned char* mac1, unsigned char* mac2){
     return true;
 }
 
+static void printf_bt_mac(char* mac){
+    log(DEMO,INFO,"\n*mac addr: %02x, %02x, %02x, %02x, %02x, %02x\n", mac[0],mac[1],mac[2],mac[3],mac[4],mac[5]);
+}
+
 static void my_bt_dev_event_handle(lv_event_t *e){
     lv_event_code_t code = lv_event_get_code(e);
-    lv_obj_t *target = lv_event_get_target(e);
-     
+    lv_obj_t *target = lv_event_get_target(e); 
     if(code == LV_EVENT_KEY){
         uint16_t key = lv_indev_get_key(lv_indev_get_act());
         if(key == LV_KEY_ENTER){
@@ -205,7 +209,8 @@ static void my_bt_dev_event_handle(lv_event_t *e){
             if(sel == 0 ){
                 if(is_connected){
                     //connet_status = BT_CONNECT_STATUS_DISCONNECTING;
-                    //bluetooth_disconnect();
+                    bluetooth_disconnect();
+                    usleep(2000);
                 }               
                 lv_obj_del(lv_obj_get_child(bt_list_obj, 3));
                 struct bluetooth_slave_dev temp;
@@ -221,34 +226,33 @@ static void my_bt_dev_event_handle(lv_event_t *e){
                     sel_id=3;
                 }else{
                     active_disconn = true;
-                    bt_conn_type = CONN_TYPE_CONNECT;
+                    bt_conn_type = CONN_TYPE_IS_SAVED;
                     char* mac = projector_get_bt_mac();
+                    connet_status = BT_CONNECT_STATUS_CONNECTING;
                     if(bluetooth_connect(mac)==0){
                         if(bt_mac_invalid(mac)){
                             bluetooth_stop_scan();
-                            // bluetooth_disconnect();
-                            printf("invalid mac address\n");    
+                            log(DEMO,DEBUG,"invalid mac address\n"); 
+                            connet_status = BT_CONNECT_STATUS_DEFAULT;   
                             sel_id = 3;                       
                         }else{
-                            connet_status = BT_CONNECT_STATUS_CONNECTING;
                             api_set_bt_connet_status(BT_CONNECT_STATUS_CONNECTING);
                             bluetooth_wait(CONN_WAIT);
                             reset_timer = false;                            
                         }
                     }else{
+                        connet_status = BT_CONNECT_STATUS_DEFAULT; 
                         bt_conn_type = -1;
                         sel_id = 3;
-                        create_message_box(get_some_language_str("BT Connection Failed\0蓝牙连接失败\0BT Connection Failed",projector_get_some_sys_param(P_OSD_LANGUAGE))); 
+                        create_message_box(api_rsc_string_get(STR_BT_CONN_FAILED)); 
                     }
-                }
-               
+                }       
             }
             if(sel_id>-1){
                 lv_group_focus_obj(bt_list_obj);
             }
             lv_obj_del(target);
             slave_scr_obj = NULL;
-
         }else if(key == LV_KEY_DOWN){
             lv_obj_clear_state(lv_obj_get_child(target, 0), LV_STATE_CHECKED);
             lv_obj_add_state(lv_obj_get_child(target, 1), LV_STATE_CHECKED);
@@ -266,7 +270,6 @@ static void my_bt_dev_event_handle(lv_event_t *e){
     }
 }
 
-
 static void bt_setting_event_handle1(lv_event_t *e){
     lv_event_code_t code = lv_event_get_code(e);
     lv_obj_t *target = lv_event_get_target(e);
@@ -274,16 +277,21 @@ static void bt_setting_event_handle1(lv_event_t *e){
         if(timer_setting)
             lv_timer_pause(timer_setting);
         reset_timer = true;      
-        uint16_t key = lv_indev_get_key(lv_indev_get_act());
-        
+        uint16_t key = lv_indev_get_key(lv_indev_get_act());   
         if(key == LV_KEY_ENTER){
             if(sel_id == 0){
                 if(projector_get_some_sys_param(P_BT_SETTING) == BLUETOOTH_ON){
+
                 #if PROJECTER_C2_D3000_VERSION
                     bluetooth_disconnect();
                 #else
                     bluetooth_poweroff();
                 #endif
+                    if(need_reset){
+                        need_reset = false;
+                        usleep(1000);
+                        bluetooth_ioctl(BLUETOOTH_SET_RESET, NULL);
+                    }                    
                     found_bt_num = 0;
                     is_connected = false;
                     api_set_bt_connet_status(BT_CONNECT_STATUS_DEFAULT);
@@ -295,9 +303,7 @@ static void bt_setting_event_handle1(lv_event_t *e){
                     if(3 != lv_obj_get_index(other_dev)){
                        remove_connected(3);
                     }
-                   
-                    hidden_on_list_sub_objs(bt_list_obj, 1, lv_obj_get_index(other_dev)+1);
-                  
+                    hidden_on_list_sub_objs(bt_list_obj, 1, lv_obj_get_index(other_dev)+1);           
                     projector_set_some_sys_param(P_BT_SETTING, BLUETOOTH_OFF);
                     set_label_text2(lv_obj_get_child(lv_obj_get_child(bt_list_obj, 0), 1), STR_OFF, FONT_NORMAL);
                 }else{
@@ -305,17 +311,17 @@ static void bt_setting_event_handle1(lv_event_t *e){
                     
                     if(bluetooth_poweron() == 0){
                         projector_set_some_sys_param(P_BT_SETTING, BLUETOOTH_ON);
-                        printf("Device exists\n");
+                        log(DEMO,DEBUG,"Device exists\n");
                         hidden_off_list_sub_obj(bt_list_obj, 1, lv_obj_get_index(other_dev)+1);
                         set_label_text2(lv_obj_get_child(lv_obj_get_child(bt_list_obj, 0), 1), STR_ON, FONT_NORMAL);
-					#if PROJECTER_C2_D3000_VERSION
-						bluetooth_scan();
-					#endif
+                    #if PROJECTER_C2_D3000_VERSION
+                        bluetooth_scan();
+                    #endif
                         scan_status = BT_SCAN_STATUS_GET_DATA_SEARCHING;
                         connet_status = BT_CONNECT_STATUS_CONNECTING;
                         bt_conn_type = CONN_TYPE_POWER_ON;
                         active_disconn = true;
-                        printf("scan bluettoth!");
+                        log(DEMO,DEBUG,"scan bluettoth!");
                         bluetooth_wait(POWER_ON_WAIT);
                         reset_timer = false;
                     }else{
@@ -329,20 +335,17 @@ static void bt_setting_event_handle1(lv_event_t *e){
                     if(bluetooth_scan() == 0){
                         scan_status = BT_SCAN_STATUS_GET_DATA_SEARCHING;
                         active_disconn = true;
-                       
-                        printf("scan bluettoth!");
+                        log(DEMO,DEBUG,"scan bluettoth!");
                         bluetooth_wait(SCAN_WAIT);
                         reset_timer = false;
                     }
-                }
-                
+                }            
             }else if(sel_id>2){
                 if(connet_status == BT_CONNECT_STATUS_DISCONNECTING){
                     return;
                 }
                 if(sel_id == 3){
                     if(projector_get_some_sys_param(P_BT_SETTING) == BLUETOOTH_OFF){
-                        printf("bt off\n");
                         return;
                     } 
                     saved_bt_widget = create_list_obj1(setup_slave_root, 18, 10);
@@ -370,38 +373,31 @@ static void bt_setting_event_handle1(lv_event_t *e){
                     }              
                     return;
                 }
-
                 char *text = lv_label_get_text(lv_obj_get_child(lv_obj_get_child(bt_list_obj, sel_id), 0));
-                unsigned char mac[6] = {0};
-               
+                unsigned char mac[6] = {0};             
                 get_bt_mac(text, mac);
-
                 if(bt_mac_invalid(mac)){
-                    printf("invalid mac address!\n");
+                    log(DEMO,DEBUG,"invalid mac address!\n");
                     remove_bt_dev(sel_id-(int)lv_obj_get_index(other_dev)-1); 
                     remove_list_sub_obj(bt_list_obj, sel_id); 
                     sel_id = 1;
                     lv_obj_add_state(lv_obj_get_child(target, sel_id), LV_STATE_CHECKED);
                     return;
-                }
-                
+                }            
                 active_disconn = true;
-                bt_conn_type = CONN_TYPE_CONNECT;
-                
+                bt_conn_type = CONN_TYPE_NORMAL;
+                connet_status = BT_CONNECT_STATUS_CONNECTING;
                 if(bluetooth_connect(mac)==0){
-                    for(int i=0; i<6; i++){
-                        printf("%02x,", mac[i]);
-                    }
-                    printf("\n");
-                   connected_bt_id = sel_id;
-                    connet_status = BT_CONNECT_STATUS_CONNECTING;
+                    printf_bt_mac(mac);
+                    log(DEMO,DEBUG,"connect %s\n", text);
+                    connected_bt_id = sel_id;
                     // api_set_bt_connet_status(BT_CONNECT_STATUS_CONNECTING);
                     bluetooth_wait(CONN_WAIT);
                     reset_timer = false;
                 }else{
+                    connet_status == BT_CONNECT_STATUS_DEFAULT;
                     bt_conn_type = -1;
                 }
-
             }
         }else if(key == LV_KEY_DOWN || key == LV_KEY_RIGHT){
             lv_obj_clear_state(lv_obj_get_child(target, sel_id), LV_STATE_CHECKED);
@@ -413,7 +409,6 @@ static void bt_setting_event_handle1(lv_event_t *e){
                     lv_obj_has_flag(lv_obj_get_child(target, sel_id), LV_OBJ_FLAG_HIDDEN))){
                 sel_id +=1;
             }
-  
             if(sel_id == (int)lv_obj_get_child_cnt(target)){
                 lv_group_focus_obj(tab_btns);
                 return;
@@ -422,9 +417,8 @@ static void bt_setting_event_handle1(lv_event_t *e){
                 lv_label_set_long_mode(lv_obj_get_child(lv_obj_get_child(target, sel_id), 0), LV_LABEL_LONG_SCROLL_CIRCULAR);
             }                      
             lv_obj_add_state(lv_obj_get_child(target, sel_id), LV_STATE_CHECKED);
-           
+            lv_obj_scroll_to_view(lv_obj_get_child(target, sel_id), false);
         }else if(key == LV_KEY_UP || key == LV_KEY_LEFT){
-
             lv_obj_clear_state(lv_obj_get_child(target, sel_id), LV_STATE_CHECKED);
             if(sel_id>1){
                 lv_label_set_long_mode(lv_obj_get_child(lv_obj_get_child(target, sel_id), 0), LV_LABEL_LONG_DOT);
@@ -442,12 +436,10 @@ static void bt_setting_event_handle1(lv_event_t *e){
                 lv_label_set_long_mode(lv_obj_get_child(lv_obj_get_child(target, sel_id), 0), LV_LABEL_LONG_SCROLL_CIRCULAR);
             }     
             lv_obj_add_state(lv_obj_get_child(target, sel_id), LV_STATE_CHECKED);
-    
-
+            lv_obj_scroll_to_view(lv_obj_get_child(target, sel_id), false);
         }else if(key == LV_KEY_HOME){
             turn_to_main_scr();
             return;
-
         }else if(key == LV_KEY_ESC){
             turn_to_main_scr();
             return;
@@ -459,40 +451,37 @@ static void bt_setting_event_handle1(lv_event_t *e){
     }else if(code == LV_EVENT_FOCUSED){
         if(act_key_code == KEY_UP){
             sel_id = (int)lv_obj_get_child_cnt(target)-1;
+            lv_obj_scroll_to_view(lv_obj_get_child(target, sel_id), false);
             while (sel_id > -1 && (lv_obj_get_child(target, sel_id)->class_p == &lv_list_text_class ||
                 lv_obj_has_flag(lv_obj_get_child(target, sel_id), LV_OBJ_FLAG_HIDDEN))){
                 sel_id-=1;
-            }
-            if(sel_id>1){
-                lv_label_set_long_mode(lv_obj_get_child(lv_obj_get_child(target, sel_id), 0), LV_LABEL_LONG_SCROLL_CIRCULAR);               
             }
         }else if(act_key_code == KEY_DOWN || act_key_code == KEY_OK){
             if(sel_id == -1){//没有修改默认值时置为0
                 sel_id = 0;
             }
         }
-        if(sel_id>-1)
+        if(sel_id>-1){
             lv_obj_add_state(lv_obj_get_child(target, sel_id), LV_STATE_CHECKED);
+            lv_label_set_long_mode(lv_obj_get_child(lv_obj_get_child(target, sel_id), 0), LV_LABEL_LONG_SCROLL_CIRCULAR);
+        }
     }else if(code == LV_EVENT_DEFOCUSED){
-        if(sel_id<(int)lv_obj_get_child_cnt(target)){
+        if(sel_id >=0 && sel_id<(int)lv_obj_get_child_cnt(target)){
             lv_obj_clear_state(lv_obj_get_child(target, sel_id), LV_STATE_CHECKED);
+            lv_label_set_long_mode(lv_obj_get_child(lv_obj_get_child(target, sel_id), 0), LV_LABEL_LONG_DOT);
         }
         sel_id = -1;
-
+        lv_obj_scroll_to_view(lv_obj_get_child(target, 0), false);
 
     }else if(code == LV_EVENT_DRAW_PART_BEGIN){
       
     }
 }
 
-
-
-
-
 static bool str_is_black(char *str){
     for(int i=0; i<strlen(str); i++){
         int c = str[i];
-        printf("%02x\n", c);
+        log(DEMO,INFO,"%02x\n", c);
         if( c != 1 && !isspace(c)){
             return false;
         }
@@ -502,12 +491,12 @@ static bool str_is_black(char *str){
 
 static bool bt_mac_invalid(unsigned char* mac){
     for(int i=0; i<6; i++){
-        printf("%2x ", mac[i]);
+        log(DEMO,INFO,"%2x ", mac[i]);
         if(mac[i] != 0){
             return false;
         }
     }
-    printf("\n");
+    log(DEMO,INFO,"\n");
     return true;
 }
 
@@ -532,182 +521,172 @@ static bool bt_has_my_dev(){
     return lv_obj_get_index(my_dev)+1 != lv_obj_get_index(other_dev);
 }
 
+static void bt_my_dev_refresh(){
+    int id = lv_obj_get_index(my_dev)+1;
+    for(int i = 0; i < MAX_BT_SAVE; i++){
+        struct bluetooth_slave_dev* dev_p = projector_get_bt_dev(i);
+        if(!dev_p || strlen(dev_p->name) == 0){
+            for(int j = id; id < lv_obj_get_index(other_dev); j++){
+                lv_obj_del(lv_obj_get_child(bt_list_obj, j));
+            }
+            return;
+        }
+        int bt_status = i == 0 && is_connected ? STR_BT_CONN : STR_BT_DISCONN;
+        if(id < lv_obj_get_index(other_dev)){
+            bt_list_sub_obj_name_set(id, dev_p->name);
+            bt_list_sub_obj_status_set(id, bt_status);
+            id++;
+        }else{
+            list_sub_param pa;
+            pa.str = dev_p->name;
+            lv_obj_t * obj = create_list_bt_sub_btn_obj(bt_list_obj, pa, LIST_PARAM_TYPE_STR, bt_status);
+            lv_obj_move_to_index(obj, lv_obj_get_index(other_dev));        
+        }
+    }
+}
+
+static void bt_other_dev_refresh(){
+    for(int i = lv_obj_get_index(other_dev) + 1; i < lv_obj_get_child_cnt(bt_list_obj);){
+        lv_obj_del(lv_obj_get_child(bt_list_obj, i));
+    }
+
+    for(int i = 0; i < found_bt_num; i++){
+        list_sub_param pa;
+        pa.str = devs_info[i].name;
+        lv_obj_t * obj = create_list_bt_sub_btn_obj(bt_list_obj, pa, LIST_PARAM_TYPE_STR, STR_NONE);
+    }
+}
+
 int bt_event1(unsigned long event, unsigned long param){
+    static bool get_connected_msg = false;
     control_msg_t ctl_msg = {0};
      switch (event){
         case BLUETOOTH_EVENT_SLAVE_DEV_SCANNED:
-            printf("BT_AD6956F_EVENT_SLAVE_DEV_SCANNED\n");
+            log(DEMO,DEBUG,"BT_AD6956F_EVENT_SLAVE_DEV_SCANNED\n");
             scan_status=BT_SCAN_STATUS_GET_DATA_SEARCHED;
+            connet_status=BT_CONNECT_STATUS_DEFAULT;
+            struct bluetooth_slave_dev* dev_p = (struct bluetooth_slave_dev*)param;
+            printf_bt_mac(dev_p->mac);
             if(param==0)break;
-            if(found_bt_num>=5){
+            if(found_bt_num>=BT_DEV_MAX_LEN){
                 break;
             }
-           
-            devs_info_t[found_bt_num]=(struct bluetooth_slave_dev*)param;
-            if(strlen(devs_info_t[found_bt_num]->name) == 0 || str_is_black(devs_info_t[found_bt_num]->name)){
+            if(strlen(dev_p->name) == 0 || str_is_black(dev_p->name)){
                 break;
             }
             if(!wait_anim_timer){
                 break;
             }
-            if(bt_dev_contained(devs_info_t[found_bt_num]->mac)){
+            if(bt_dev_contained(dev_p->mac)){
                 break;
             }
-            if(strncmp(projector_get_bt_mac(), devs_info_t[found_bt_num]->mac, 6) == 0){
+            if(memcmp(projector_get_bt_mac(), dev_p->mac, 6) == 0){
                 break;
             }
-            memcpy(devs_info+found_bt_num, devs_info_t[found_bt_num],sizeof(struct bluetooth_slave_dev));
-            printf("dev %d: %s\n",found_bt_num, devs_info[found_bt_num].name);
+            memcpy(devs_info+found_bt_num, dev_p,sizeof(struct bluetooth_slave_dev));
+            log(DEMO,DEBUG,"dev %d: %s\n",found_bt_num, dev_p->name);
             if(bt_list_obj){
-                bt_refresh_param.id = BT_LIST_EVENT_CREATE_NEW_BTN;
-                bt_refresh_param.param1 = (void*)devs_info[found_bt_num].name;
-                bt_refresh_param.param2 = 0;
-                lv_event_send(bt_list_obj, LV_EVENT_REFRESH, &bt_refresh_param);
-                //create_list_bt_sub_btn_obj(bt_list_obj, param, LIST_PARAM_TYPE_STR, STR_BT_DISCONN);
+                ctl_msg.msg_type = MSG_TYPE_BT_SCANED;
+                api_control_send_msg(&ctl_msg);
             }
-               found_bt_num += 1;
+            found_bt_num += 1;
             scan_status = BT_SCAN_STATUS_GET_DATA_SEARCHING;
             break;
         case BLUETOOTH_EVENT_SLAVE_DEV_SCAN_FINISHED:
-            printf("BLUETOOTH_EVENT_SLAVE_DEV_SCAN_FINISHED\n");
+            log(DEMO,DEBUG,"BLUETOOTH_EVENT_SLAVE_DEV_SCAN_FINISHED\n");
             scan_status = BT_SCAN_STATUS_GET_DATA_FINISHED;
+            connet_status=BT_CONNECT_STATUS_DEFAULT;
             break;
         case BLUETOOTH_EVENT_SLAVE_DEV_DISCONNECTED:
-            printf("BLUETOOTH_EVENT_SLAVE_DEV_DISCONNECTED 1\n");
-            is_connected = false;
+           log(DEMO,DEBUG,"BLUETOOTH_EVENT_SLAVE_DEV_DISCONNECTED\n");
             api_set_bt_connet_status(BT_CONNECT_STATUS_DISCONNECTED);
             api_set_i2so_gpio_mute(false);//api_set_i2so_gpio_mute_auto();
-            if(bt_list_obj){
-                printf("bluetooth_obj exit\n");
-                if(lv_obj_get_child(bt_list_obj, 3) != other_dev){
-                    bt_refresh_param.id = BT_LIST_EVENT_REMOVE_CONN;
-                    bt_refresh_param.param1 = (void*)3;
-                    lv_event_send(bt_list_obj, LV_EVENT_REFRESH, &bt_refresh_param);
-                }
-                if(connet_status == BT_CONNECT_STATUS_CONNECTED && !active_disconn){
-                    create_message_box(get_some_language_str("BT Disconnected\0蓝牙已断开\0BT Disconnected", projector_get_some_sys_param(P_OSD_LANGUAGE)));
-                }                    
+            if(is_connected){
+                is_connected = false;
+                ctl_msg.msg_type = MSG_TYPE_BT_DISCONNECTED;
+                api_control_send_msg(&ctl_msg);                
             }
-            if(bt_conn_type == CONN_TYPE_POWER_ON){
-                create_message_box(get_some_language_str("BT Connection Failed\0蓝牙连接失败\0BT Connection Failed",
-                projector_get_some_sys_param(P_OSD_LANGUAGE)));
+            if(connet_status != BT_CONNECT_STATUS_CONNECTING){
+                connet_status = BT_CONNECT_STATUS_DISCONNECTED;
             }
-            ctl_msg.msg_type = MSG_TYPE_BT_DISCONNECTED;
-            api_control_send_msg(&ctl_msg);
-            connet_status = BT_CONNECT_STATUS_DISCONNECTED;
             break;
-        //case BLUETOOTH_EVENT_SLAVE_DEV_CONNECTED: 
+        case BLUETOOTH_EVENT_SLAVE_DEV_CONNECTED:
+            log(DEMO,DEBUG,"BLUETOOTH_EVENT_SLAVE_DEV_CONNECTED\n");
+            get_connected_msg = true;
+            break;
         case BLUETOOTH_EVENT_SLAVE_DEV_GET_CONNECTED_INFO:
-            active_disconn = false;
-            is_connected = true;
-            
-            ctl_msg.msg_type = MSG_TYPE_BT_CONNECTED;
-            api_control_send_msg(&ctl_msg);
-            printf("BLUETOOTH_EVENT_SLAVE_DEV_CONNECTED 1\n");
+            active_disconn = false;          
+           log(DEMO,DEBUG,"%s connected\n",((struct bluetooth_slave_dev*)param)->name);
+            printf_bt_mac(((struct bluetooth_slave_dev*)param)->mac);
+            if(!is_connected && get_connected_msg){
+                is_connected = true;
+                get_connected_msg = false;
 
-            if(bt_conn_type == CONN_TYPE_CONNECT){
-                if(connected_bt_id>(int)lv_obj_get_index(other_dev)){
-
-                    if (bt_has_my_dev()){
-                        struct bluetooth_slave_dev temp;
-                        memcpy(&temp, projector_get_bt_dev(), sizeof(struct bluetooth_slave_dev));
-
-                        projector_set_bt_dev(&devs_info[connected_bt_id-(int)lv_obj_get_index(other_dev)-1]);
-                        printf("%d is: %s\n", connected_bt_id-(int)lv_obj_get_index(other_dev)-1, devs_info[connected_bt_id-(int)lv_obj_get_index(other_dev)-1].name);
-                        memcpy(&devs_info[connected_bt_id-(int)lv_obj_get_index(other_dev)-1], &temp, sizeof(struct bluetooth_slave_dev));                       
-
-                    }else{
-                        projector_set_bt_dev(&devs_info[connected_bt_id-(int)lv_obj_get_index(other_dev)-1]);
-                        remove_bt_dev(connected_bt_id-(int)lv_obj_get_index(other_dev)-1);
-                    }
-                    if(bt_has_my_dev()){
-                        if(bt_list_obj){
-                            bt_refresh_param.id = BT_LIST_EVENT_SWAP_LOC;
-                            bt_refresh_param.param1 = (void*)3;
-                            bt_refresh_param.param2 = (void*)connected_bt_id;
-                            lv_event_send(bt_list_obj, LV_EVENT_REFRESH, &bt_refresh_param);
-                        }
-                        //lv_obj_swap(lv_obj_get_child(bt_list_obj, 3), lv_obj_get_child(bt_list_obj, connected_bt_id));
-                    }else{
-                        if(bt_list_obj){
-                            bt_refresh_param.id = BT_LIST_EVENT_MOVE_LOC;
-                            bt_refresh_param.param2 = (void*)3;
-                            bt_refresh_param.param1 = (void*)connected_bt_id;
-                            lv_event_send(bt_list_obj, LV_EVENT_REFRESH, &bt_refresh_param);                          
-                        }
-                       //lv_obj_move_to_index(lv_obj_get_child(bt_list_obj, connected_bt_id), 3);
+                if(bt_conn_type == CONN_TYPE_NORMAL){
+                    remove_bt_dev(connected_bt_id-(int)lv_obj_get_index(other_dev)-1);
+                    sel_id = 3;
+                    if(strlen(projector_get_bt_name()) > 0){
+                        add_bt_dev_head(projector_get_bt_dev());
+                    }                    
+                }else{
+                    int id = contain_bt_dev(((struct bluetooth_slave_dev*)param)->name);
+                    if(id >= 0){
+                        remove_bt_dev(id);
                     }
                 }
-                sel_id = 3;
-            }else if(bt_conn_type == CONN_TYPE_POWER_ON){
-                if(!bt_has_my_dev()){
-                    projector_set_bt_dev((struct bluetooth_slave_dev *)param);
-                    if(bt_list_obj){
-                        bt_refresh_param.id = BT_LIST_EVENT_CREATE_NEW_BTN;
-                        bt_refresh_param.param1 = (void*)projector_get_bt_name();
-                        bt_refresh_param.param2 = (void*)3;
-                        lv_event_send(bt_list_obj, LV_EVENT_REFRESH, &bt_refresh_param);
-                    }
-                }
-               if(wait_anim_timer && wait_anim){
-                    sel_id = 1;           
-                    lv_group_focus_obj(bt_list_obj);
-                    if(wait_anim_timer){
-                        lv_timer_pause(wait_anim_timer);
-                        lv_timer_del(wait_anim_timer);
-                        wait_anim_timer = NULL;
-                    }
-                    if(wait_anim){
-                        lv_obj_add_flag(wait_anim, LV_OBJ_FLAG_HIDDEN);
-                    } 
-               }
+                projector_set_bt_dev((struct bluetooth_slave_dev*)param);                
+                ctl_msg.msg_type = MSG_TYPE_BT_CONNECTED;
+                api_control_send_msg(&ctl_msg);                
             }
-			api_set_bt_connet_status(BT_CONNECT_STATUS_CONNECTED);
+            api_set_bt_connet_status(BT_CONNECT_STATUS_CONNECTED);
             api_set_i2so_gpio_mute(true);//api_set_i2so_gpio_mute_auto();
-            //if(bt_conn_type == CONN_TYPE_CONNECT || bt_conn_type == CONN_TYPE_POWER_ON)
-            {
-                printf("connect_state: %d\n", connet_status);
-                if(bt_list_obj){
-                    bt_refresh_param.id = BT_LIST_EVENT_ADD_CONN;
-                    bt_refresh_param.param1 = (void*)3;
-                    lv_event_send(bt_list_obj, LV_EVENT_REFRESH, &bt_refresh_param);
-                }
-                create_message_box(get_some_language_str("BT Connected\0蓝牙已连接\0BT Connected", projector_get_some_sys_param(P_OSD_LANGUAGE)));
-            }
+            
             bt_conn_type = -1;
             connected_bt_id = -1;
-            
             connet_status = BT_CONNECT_STATUS_CONNECTED;
             break;
-       
-
+        case BLUETOOTH_EVENT_SLAVE_DEV_GET_INIT_WORKING_STATE:
+            if(api_get_bt_connet_status() != BT_CONNECT_STATUS_CONNECTED && projector_get_some_sys_param(P_BT_SETTING)){
+                bluetooth_ioctl(BLUETOOTH_SET_POWERON, NULL);
+            }
+            break;
         }
     return 0;
 }
     
-
-
+void setup_bt_control(void *arg1, void *arg2){
+    (void)arg2;
+     control_msg_t *ctl_msg = (control_msg_t*)arg1;
+    switch (ctl_msg->msg_type){
+        case MSG_TYPE_BT_SCANED:
+            bt_other_dev_refresh();
+            break;
+        case MSG_TYPE_BT_CONNECTED:
+            bt_my_dev_refresh();
+            bt_other_dev_refresh();
+            break;
+        case MSG_TYPE_BT_DISCONNECTED:
+            bt_my_dev_refresh();
+            if(bt_conn_type == CONN_TYPE_POWER_ON){
+                create_message_box(api_rsc_string_get(STR_BT_CONN_FAILED));
+            }
+            break;
+        case MSG_TYPE_BT_SCAN_FINISH:
+            break;
+    }
+}
 
 static lv_obj_t* create_list_bt_sub_btn_obj(lv_obj_t *parent,list_sub_param param1,int type1,  int str2){
-    
     if(type1 == LIST_PARAM_TYPE_INT){
         return create_list_sub_btn_obj1(parent, param1.str_id, str2);
     }else if(type1 == LIST_PARAM_TYPE_STR){
         return create_list_sub_btn_obj2(parent, param1.str, str2);
-    }
-    
+    } 
 }
-
-
-
-
-
 
 static lv_obj_t* create_list_sub_obj(lv_obj_t *parent, char *str){
     lv_obj_t *list_btn;
     list_btn = lv_list_add_text(parent, str);
-
-
     lv_obj_set_size(list_btn,100,17);
     lv_obj_set_style_pad_top(list_btn, 5, 0);
     lv_obj_set_style_text_align(list_btn, LV_TEXT_ALIGN_CENTER, 0);
@@ -723,28 +702,27 @@ static lv_obj_t* create_list_sub_obj(lv_obj_t *parent, char *str){
     return list_btn;
 }
 
+static void bt_list_sub_obj_name_set(int id, char* name){
+    lv_label_set_text(lv_obj_get_child(lv_obj_get_child(bt_list_obj, id), 0), name);
+}
 
-
-
+static void bt_list_sub_obj_status_set(int id, int str_id){
+    set_label_text2(lv_obj_get_child(lv_obj_get_child(bt_list_obj, id), 1), str_id, FONT_NORMAL);  
+}
 
 static lv_obj_t* create_list_sub_btn_obj(lv_obj_t *parent){
     lv_obj_t *list_btn;
     list_btn = lv_list_add_btn(parent, NULL, " ");
     lv_group_remove_obj(list_btn);
-
     lv_obj_set_size(list_btn,LV_PCT(100),LV_PCT(11));
-    //lv_obj_set_style_pad_top(list_btn, 5, 0);
-    //lv_obj_set_style_text_align(list_btn, LV_TEXT_ALIGN_LEFT, 0);
     lv_obj_set_style_border_side(list_btn, LV_BORDER_SIDE_FULL, 0);
     lv_obj_set_style_border_width(list_btn, 2, 0);
     lv_obj_set_style_border_color(list_btn, lv_color_white(), 0);
     lv_obj_set_style_border_opa(list_btn, LV_OPA_0, 0);
     lv_obj_set_style_border_opa(list_btn, LV_OPA_100, LV_STATE_CHECKED);
-
     lv_obj_set_style_bg_opa(list_btn, LV_OPA_0, 0);
     lv_obj_set_style_bg_opa(list_btn, LV_OPA_100, LV_STATE_CHECKED);
     lv_obj_set_style_bg_color(list_btn, lv_palette_main(LV_PALETTE_BLUE), LV_STATE_CHECKED);
-
     lv_obj_set_style_text_color(list_btn, lv_color_white(), 0);
     lv_obj_set_style_text_color(list_btn, lv_color_black(), LV_STATE_CHECKED);
 
@@ -761,10 +739,7 @@ static lv_obj_t* create_list_sub_btn_obj(lv_obj_t *parent){
 }
 
 static lv_obj_t* create_list_sub_btn_obj1(lv_obj_t *parent, int str1, int str2){
-
     lv_obj_t *list_btn = create_list_sub_btn_obj(parent);
-
-
     lv_obj_t *label = lv_obj_get_child(list_btn, 0);
     if(str1>=0){  
         set_label_text2(label, str1, FONT_NORMAL);     
@@ -784,14 +759,12 @@ static lv_obj_t* create_list_sub_btn_obj1(lv_obj_t *parent, int str1, int str2){
 
 static lv_obj_t* create_list_sub_btn_obj2(lv_obj_t *parent, char* str1, int str2){
     lv_obj_t *list_btn = create_list_sub_btn_obj(parent);
-
     lv_obj_t *label = lv_obj_get_child(list_btn, 0);
     lv_label_set_text(label, str1);
     lv_obj_set_style_text_font(label,&LISTFONT_3000, 0);
     lv_label_set_long_mode(label, LV_LABEL_LONG_DOT);
-    
+    lv_obj_set_height(label, lv_pct(140));
     label = lv_obj_get_child(list_btn, 1);
-
     if(str2>=0){      
          set_label_text2(label, str2, FONT_NORMAL);
     }else{
@@ -806,7 +779,6 @@ static void remove_list_sub_obj(lv_obj_t *parent, int id){
         return;
     }
     lv_obj_del(lv_obj_get_child(parent, id));
-
 }
 
 static void remove_list_sub_objs(lv_obj_t *parent, int start, int end){
@@ -851,13 +823,9 @@ lv_obj_t* create_bt_list_obj(lv_obj_t *parent, int w, int h){
     return obj;
 }
 
-
-
-
 lv_obj_t* create_list_bt_obj1(lv_obj_t *parent, int w, int h){
     lv_obj_t* obj = create_list_obj1(parent, w, h);
     lv_obj_add_event_cb(obj, bt_setting_event_handle1, LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(obj, bt_list_refresh_event_handle, LV_EVENT_REFRESH, NULL);
     return obj;
 }
 
@@ -869,12 +837,10 @@ static lv_obj_t* create_list_sub_bt_text_obj1(lv_obj_t *parent, int w, int h, in
     return obj;
 }
 
-
-
 static void get_bt_mac(char *name,unsigned char* mac){
     for(int i=0; i<4; i++){
         if(strcmp(name, devs_info[i].name) == 0){
-            strncpy((char*)mac, (char*)devs_info[i].mac, 6);
+            memcpy(mac,devs_info[i].mac, 6);
         }
     }
 }
@@ -883,42 +849,36 @@ static bool del_wait = false;
 static uint total_wait_time = 0;
 static void bluetooth_wait_timer_handle(lv_timer_t *timer_){
     static uint8_t i = 0;
-    
-   
     int radius1 = lv_disp_get_hor_res(lv_disp_get_default())/100*1.6;
     int radius2 = lv_disp_get_hor_res(lv_disp_get_default())/50;
     total_wait_time += 500;
     if(timer_setting){
         lv_timer_pause(timer_setting);
     }
-    
     if( (total_wait_time > 20000 ||
         bt_wait_type == POWER_ON_WAIT && (scan_status == BT_SCAN_STATUS_GET_DATA_FINISHED || connet_status == BT_CONNECT_STATUS_CONNECTED)) ||
         (bt_wait_type == SCAN_WAIT && (scan_status == BT_SCAN_STATUS_GET_DATA_FINISHED)) ||
     (bt_wait_type == CONN_WAIT && connet_status == BT_CONNECT_STATUS_CONNECTED) ){
         i=0;
-        printf("total_wait_timer: %d", total_wait_time);
+        log(DEMO,INFO,"total_wait_timer: %d", total_wait_time);
         if(total_wait_time > 20000){
             is_connected = false;
             sel_id=1;
-            bluetooth_stop_scan();
+            
             if(scan_status == BT_SCAN_STATUS_GET_DATA_SEARCHING || scan_status == BT_SCAN_STATUS_GET_DATA_SEARCHED){
-                printf("scan_status: %d\n", scan_status); 
+                log(DEMO,INFO,"scan_status: %d\n", scan_status); 
+                bluetooth_stop_scan();
             }
-            if(connet_status == BT_CONNECT_STATUS_CONNECTING){
-                printf("connet_status: %d\n", connet_status);
-                create_message_box(get_some_language_str("BT Connection Failed\0蓝牙连接失败\0BT Connection Failed", projector_get_some_sys_param(P_OSD_LANGUAGE)));
+            else if(connet_status == BT_CONNECT_STATUS_CONNECTING){
+                log(DEMO,INFO,"connet_status: %d\n", connet_status);
+                create_message_box(api_rsc_string_get(STR_BT_CONN_FAILED));
                 if(connected_bt_id>(int)lv_obj_get_index(other_dev)){
-                    remove_bt_dev(connected_bt_id-(int)lv_obj_get_index(other_dev)-1);
-                    remove_list_sub_obj(bt_list_obj, connected_bt_id); 
                     connected_bt_id = -1;
                   
                 }
            }
         }
-
         total_wait_time = 0;
-        printf("reset timer\n");
         bt_conn_type = -1;
         if(timer_setting){
             lv_timer_resume(timer_setting);
@@ -928,8 +888,7 @@ static void bluetooth_wait_timer_handle(lv_timer_t *timer_){
         if(connet_status != BT_CONNECT_STATUS_CONNECTED){
             connet_status = BT_CONNECT_STATUS_DISCONNECTED;
         }
-        set_remote_control_disable(false);
-        lv_group_focus_obj(bt_list_obj);
+        
         if(wait_anim_timer){
             lv_timer_pause(wait_anim_timer);
             lv_timer_del(wait_anim_timer);
@@ -938,6 +897,8 @@ static void bluetooth_wait_timer_handle(lv_timer_t *timer_){
         if(wait_anim){
             lv_obj_add_flag(wait_anim, LV_OBJ_FLAG_HIDDEN);
         }
+        lv_group_focus_obj(bt_list_obj);
+        set_remote_control_disable(false);
         return;
     }
     
@@ -945,17 +906,13 @@ static void bluetooth_wait_timer_handle(lv_timer_t *timer_){
         lv_obj_set_style_radius(lv_obj_get_child(wait_anim, i), radius1, 0);
         lv_obj_set_size(lv_obj_get_child(wait_anim, i), LV_PCT(20), LV_PCT(40));
         lv_obj_set_style_bg_color(lv_obj_get_child(wait_anim, i), lv_palette_lighten(LV_PALETTE_GREY, 2), 0);
-    
-
         i = (i+1)%3;
         lv_obj_set_style_radius(lv_obj_get_child(wait_anim, i), radius2, 0);
         lv_obj_set_size(lv_obj_get_child(wait_anim, i), LV_PCT(26), LV_PCT(50));
         lv_obj_set_style_bg_color(lv_obj_get_child(wait_anim, i), lv_palette_main(LV_PALETTE_BLUE), 0);        
     }
 
-    if(bt_wait_type == CONN_WAIT && connet_status != BT_CONNECT_STATUS_CONNECTED){
-        connet_status = BT_CONNECT_STATUS_CONNECTING;
-    }else if(bt_wait_type == SCAN_WAIT){
+    if(bt_wait_type == SCAN_WAIT){
         scan_status = BT_SCAN_STATUS_GET_DATA_SEARCHING;
    }else if(bt_wait_type == POWER_ON_WAIT){
 
@@ -967,10 +924,9 @@ void del_bt_wait_anim(){
         lv_timer_pause(wait_anim_timer);
         lv_timer_del(wait_anim_timer);
         wait_anim_timer = NULL;
-    }          
+    }       
     if(wait_anim ){
-        lv_obj_del(wait_anim);
-        wait_anim = NULL;
+        lv_obj_add_flag(wait_anim, LV_OBJ_FLAG_HIDDEN);
     }
     
     if(bt_wait_type == SCAN_WAIT && cur_scr != SCREEN_SETUP){
@@ -985,8 +941,8 @@ static void bluetooth_wait_handle(lv_event_t *e){
 
     if(code == LV_EVENT_KEY){
         uint16_t key = lv_indev_get_key(lv_indev_get_act());
-        if(key == LV_KEY_ESC && bt_wait_type == SCAN_WAIT && scan_status != BT_SCAN_STATUS_GET_DATA_SEARCHED){
-            printf("stop scan\n");
+           if(key == LV_KEY_ESC && (bt_wait_type == POWER_ON_WAIT || bt_wait_type == SCAN_WAIT ) && scan_status != BT_SCAN_STATUS_GET_DATA_SEARCHED){
+            log(DEMO,DEBUG,"stop scan\n");
             bluetooth_stop_scan();  
             scan_status = BT_SCAN_STATUS_DEFAULT;
             sel_id = 1;
@@ -1009,26 +965,22 @@ void BT_first_power_on(){
     if(projector_get_some_sys_param(P_BT_SETTING)){
         bt_conn_type = CONN_TYPE_POWER_ON;
         if(bluetooth_poweron() == 0){
-            printf("Device exist\n");
+            log(DEMO,DEBUG,"Device exist\n");
             unsigned char *mac = projector_get_bt_mac();
-            printf("bt name is : %s\n", projector_get_bt_name());            
+            log(DEMO,INFO,"bt name is : %s\n", projector_get_bt_name());            
             for(int i=0; i<6; i++){
-                printf("%02x,", mac[i]);
+                log(DEMO,INFO,"%02x,", mac[i]);
             }            
             #if PROJECTER_C2_D3000_VERSION
-            //bt_conn_type = CONN_TYPE_CONNECT;
             if(bluetooth_connect(mac) == 0){
                 if(bt_mac_invalid(mac)){
                     bluetooth_stop_scan();
-                    // bluetooth_disconnect();
-                    printf("invalid mac address\n");
+                    log(DEMO,DEBUG,"invalid mac address\n");
                     return;
                 }
-                    printf("mac\n");
                     connet_status = BT_CONNECT_STATUS_CONNECTING;
             }else{
                 bluetooth_stop_scan();
-                // bluetooth_disconnect();
                 bt_conn_type = -1;
             }
             #else
@@ -1049,8 +1001,6 @@ void BT_first_power_on(){
     }
 }
 
-
-
 static void bluetooth_wait(wait_type type){
     if(wait_anim){
         lv_obj_clear_flag(wait_anim, LV_OBJ_FLAG_HIDDEN);
@@ -1065,9 +1015,7 @@ static void bluetooth_wait(wait_type type){
         lv_obj_set_scrollbar_mode(wait_anim, LV_SCROLLBAR_MODE_OFF);
         // prev_obj = lv_group_get_focused(lv_group_get_default());
         lv_group_add_obj(lv_group_get_default(), wait_anim);
-        
         lv_obj_add_event_cb(wait_anim, bluetooth_wait_handle, LV_EVENT_ALL, 0);
-
 
         lv_obj_t *ball = lv_obj_create(wait_anim);
         lv_obj_set_scrollbar_mode(ball, LV_SCROLLBAR_MODE_OFF);
@@ -1075,7 +1023,6 @@ static void bluetooth_wait(wait_type type){
         int radius = lv_disp_get_hor_res(lv_disp_get_default())/100*1.6;
         lv_obj_set_style_radius(ball, radius, 0);
         lv_obj_set_size(ball, LV_PCT(20), LV_PCT(40));
-
         lv_obj_set_style_bg_color(ball, lv_palette_lighten(LV_PALETTE_GREY, 2), 0);
 
         ball = lv_obj_create(wait_anim);
@@ -1104,11 +1051,8 @@ static void bluetooth_wait(wait_type type){
         lv_timer_reset(wait_anim_timer);
     }
     
-
- 
     if(timer_setting){
         lv_timer_pause(timer_setting);
-        printf("pause timer\n");
     }
         
     if(bt_wait_type == CONN_WAIT){
@@ -1116,71 +1060,31 @@ static void bluetooth_wait(wait_type type){
     }
 }
 
-
-
-static void bt_list_refresh_event_handle(lv_event_t *e){
-    lv_obj_t* obj = lv_event_get_target(e);
-    bt_refresh_event_param *param = (bt_refresh_event_param*)lv_event_get_param(e);
-
-    switch (param->id){
-        case BT_LIST_EVENT_ADD_CONN:{
-            int id = (int)(param->param1);
-            add_connected(id);            
-        }
-            break;
-        case BT_LIST_EVENT_REMOVE_CONN:{
-            int id = (int)(param->param1);
-            remove_connected(id);
-        }
-            break;
-        case BT_LIST_EVENT_CREATE_NEW_BTN:{
-            list_sub_param pa;
-            pa.str = (char*)(param->param1);
-            lv_obj_t * obj = create_list_bt_sub_btn_obj(bt_list_obj, pa, LIST_PARAM_TYPE_STR, STR_BT_DISCONN);
-            int loc = (int)(param->param2);
-            if(loc){
-                lv_obj_move_to_index(obj, loc);
-            }            
-        }
-            break;
-        case BT_LIST_EVENT_MOVE_LOC:{
-            int loc1 = (int)(param->param1);
-            int loc2 = (int)(param->param2);
-            lv_obj_move_to_index(lv_obj_get_child(bt_list_obj, loc1), loc2);            
-        }
-
-            break;
-        case BT_LIST_EVENT_SWAP_LOC:{
-            int loc1 = (int)(param->param1);
-            int loc2 = (int)(param->param2);           
-            lv_obj_swap(lv_obj_get_child(bt_list_obj, loc1), lv_obj_get_child(bt_list_obj, loc2));            
-        }
-            break;
-    }
-
-}
-
 void bt_init(){
     const char *devpath=NULL;
+    const char *status=NULL;
     int np = fdt_node_probe_by_path("/hcrtos/bluetooth");
     if(np>0)
     {
-        if(!fdt_get_property_string_index(np, "devpath", 0, &devpath))
+        if(!fdt_get_property_string_index(np, "devpath", 0, &devpath) && !fdt_get_property_string_index(np, "status", 0, &status))
         {
-            if(bluetooth_init(devpath, bt_event1) == 0){
-                printf("%s %d bluetooth_init ok\n",__FUNCTION__,__LINE__);
-            }else{
-                printf("%s %d bluetooth_init error\n",__FUNCTION__,__LINE__);
+            if(!strcmp(status, "okay"))
+            {
+                if(bluetooth_init(devpath, bt_event1) == 0){
+                    log(DEMO,DEBUG,"%s %d bluetooth_init ok\n",__FUNCTION__,__LINE__);
+                }else{
+                    log(DEMO,DEBUG,"%s %d bluetooth_init error\n",__FUNCTION__,__LINE__);
+                }
             }
+
         }
     }
     else
-        printf("%s %d bluetooth_init error\n",__FUNCTION__,__LINE__);
+        log(DEMO,DEBUG,"%s %d bluetooth_init error\n",__FUNCTION__,__LINE__);
 }
 
 lv_obj_t* create_bt_page(lv_obj_t* parent){
     lv_obj_t *obj = create_page_(parent, NULL, 0);
-    //pthread_mutex_init(&bt_mutex)
     
     bt_list_obj = create_list_bt_obj1(obj, 82, 100);
     lv_obj_set_style_pad_all(bt_list_obj, 0, 0);
@@ -1192,6 +1096,7 @@ lv_obj_t* create_bt_page(lv_obj_t* parent){
     create_list_bt_sub_btn_obj(bt_list_obj, param, LIST_PARAM_TYPE_INT,bt_model_str2);
     param.str_id = STR_SEARCH_BT;
     create_list_bt_sub_btn_obj(bt_list_obj, param, LIST_PARAM_TYPE_INT,BLANK_SPACE_STR);
+
     my_dev = create_list_sub_bt_text_obj1(bt_list_obj,100,11, STR_BT_MY_DEV);
     char* mac = projector_get_bt_mac();
     if(!bt_mac_invalid(mac)){
@@ -1209,7 +1114,6 @@ lv_obj_t* create_bt_page(lv_obj_t* parent){
 
     bt_init();
 }
-
 #endif
 
 

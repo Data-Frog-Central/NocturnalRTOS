@@ -33,6 +33,7 @@
 #include <nuttx/fs/ioctl.h>
 #include <hcuapi/iocbase.h>
 #include <linux/spinlock.h>
+#include <uapi/linux/i2c.h>
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -93,9 +94,9 @@
  */
 
 #define I2C_M_READ           0x0001 /* Read data, from slave to master */
-#define I2C_M_TEN            0x0002 /* Ten bit address */
+//#define I2C_M_TEN            0x0002 /* Ten bit address */ /* use uapi/linux/i2c.h */
 #define I2C_M_NOSTOP         0x0040 /* Message should not end with a STOP */
-#define I2C_M_NOSTART        0x0080 /* Message should not begin with a START */
+//#define I2C_M_NOSTART        0x0080 /* Message should not begin with a START */ /* use uapi/linux/i2c.h */
 
 /* I2c bus speed */
 

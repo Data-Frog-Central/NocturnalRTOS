@@ -32,7 +32,6 @@
 static LIST_HEAD(lcd_map_list);
 static DEFINE_SPINLOCK(lcd_map_lock);
 
-volatile uint32_t *sys_lvds_gpio = (void *)0xb8800174;
 static struct lcd_map_list *seek_lcd_map(const char *name)
 {
 	struct lcd_map_list *map = NULL;
@@ -74,7 +73,8 @@ int lcd_map_register(struct lcd_map_list *map)
 	spin_unlock(&lcd_map_lock);
 	return 0;
 }
-
+#ifdef CONFIG_SOC_HC16XX
+volatile uint32_t *sys_lvds_gpio = (void *)0xb8800174;
 static void lvds_gpio_set_output_high(unsigned int padctl)
 {
 	uint32_t bit = BIT(padctl % 32);
@@ -107,9 +107,11 @@ static void lvds_set_gpio_output(struct lvds_set_gpio *pad)
 	else
 		lvds_gpio_set_output_low(pad->padctl);
 }
+#endif
 
 void lcd_gpio_set_output(uint8_t padctl, bool value)
 {
+	#ifdef CONFIG_SOC_HC16XX
 	struct lvds_set_gpio pad;
 	if(padctl >= PINPAD_LVDS_DP0 && padctl < PINPAD_LVDS_MAX)
 	{
@@ -118,5 +120,6 @@ void lcd_gpio_set_output(uint8_t padctl, bool value)
 		lvds_set_gpio_output(&pad);
 	}
 	else
+	#endif
 		gpio_set_output(padctl,value);
 }

@@ -122,4 +122,7 @@
 #define noinline
 #endif
 
+#define smp_mb__before_atomic()	smp_mb__before_llsc()
+#define smp_mb__after_atomic()	smp_llsc_mb()
+
 #endif /* __LINUX_COMPILER_H */

@@ -30,7 +30,10 @@
 #include "subtitles.h"
 #include "libavutil/bprint.h"
 #include "libavutil/dict.h"
+#include "avio_internal.h"
+#include "libavutil/common.h"
 
+#include "libavutil/intreadwrite.h"
 typedef struct LRCContext {
     FFDemuxSubtitlesQueue q;
     int64_t ts_offset; // offset metadata item
@@ -77,7 +80,8 @@ static int64_t count_ts(const char *p)
 static int64_t read_ts(const char *p, int64_t *start)
 {
     int64_t offset = 0;
-    uint64_t mm, ss, cs;
+    uint64_t mm, ss;
+    uint16_t cs;
 
     while(p[offset] == ' ' || p[offset] == '\t') {
         offset++;
@@ -85,10 +89,11 @@ static int64_t read_ts(const char *p, int64_t *start)
     if(p[offset] != '[') {
         return 0;
     }
-    if(sscanf(p, "[-%"SCNu64":%"SCNu64".%"SCNu64"]", &mm, &ss, &cs) == 3) {
+
+    if(sscanf(p, "[-%"SCNu64":%"SCNu64".%02d]", &mm, &ss, &cs) == 3) {
         /* Just in case negative pts, players may drop it but we won't. */
         *start = -(int64_t) (mm*60000 + ss*1000 + cs*10);
-    } else if(sscanf(p, "[%"SCNu64":%"SCNu64".%"SCNu64"]", &mm, &ss, &cs) == 3) {
+    } else if(sscanf(p, "[%"SCNu64":%"SCNu64".%02d]", &mm, &ss, &cs) == 3) {
         *start = mm*60000 + ss*1000 + cs*10;
     } else {
         return 0;
@@ -122,35 +127,73 @@ static int lrc_probe(const AVProbeData *p)
     int64_t mm;
     uint64_t ss, cs;
     const AVMetadataConv *metadata_item;
+    const unsigned char *ptr = p->buf;
+    char *buf;
+    int size = 0;
+    char *dst_buf = NULL;
+    character_encoding type = 0;
+    int score = 0;
 
-    if(!memcmp(p->buf, "\xef\xbb\xbf", 3)) { // Skip UTF-8 BOM header
-        offset += 3;
+    if(!memcmp(ptr, "\xef\xbb\xbf", 3)) { // Skip UTF-8 BOM header
+        ptr += 3;
+    } else if (!memcmp(ptr, "\xff\xfe", 2)) {
+        ptr += 2;  /* skip UTF-16 LE */
+        type = CHAR_ENC_UTF_16_LE;
+    } else if (!memcmp(ptr, "\xfe\xff", 2)) {
+        ptr += 2;  /* skip UTF-16 BE */
+        type = CHAR_ENC_UTF_16_BE;
     }
-    while(p->buf[offset] == '\n' || p->buf[offset] == '\r') {
+    if (type == CHAR_ENC_UTF_16_LE || type == CHAR_ENC_UTF_16_BE) {
+        size = p->buf_size / 2;
+        if (p->buf_size % 2) {
+            size += 1;
+        }
+        dst_buf = malloc(size);
+        if (!dst_buf) {
+            printf("lrc probe:utf16 trans to 8 buff malloc fail\n");
+            return 0;
+        }
+        ff_trans_char_enc_to_utf8(type, ptr, dst_buf, size);
+        buf = dst_buf;
+    } else {
+        buf = ptr;
+    }
+
+    while(buf[offset] == '\n' || buf[offset] == '\r') {
         offset++;
     }
-    if(p->buf[offset] != '[') {
-        return 0;
+    if(buf[offset] != '[') {
+        score = 0;
+        goto end;
     }
     offset++;
     // Common metadata item but not exist in ff_lrc_metadata_conv
-    if(!memcmp(p->buf + offset, "offset:", 7)) {
-        return 40;
+    if(!memcmp(buf + offset, "offset:", 7)) {
+        score = 40;
+        goto end;
     }
-    if(sscanf(p->buf + offset, "%"SCNd64":%"SCNu64".%"SCNu64"]",
+    if(sscanf(buf + offset, "%"SCNd64":%"SCNu64".%"SCNu64"]",
               &mm, &ss, &cs) == 3) {
-        return 50;
+        score = 50;
+        goto end;
     }
     // Metadata items exist in ff_lrc_metadata_conv
     for(metadata_item = ff_lrc_metadata_conv;
         metadata_item->native; metadata_item++) {
         size_t metadata_item_len = strlen(metadata_item->native);
-        if(p->buf[offset + metadata_item_len] == ':' &&
-           !memcmp(p->buf + offset, metadata_item->native, metadata_item_len)) {
-            return 40;
+        if(buf[offset + metadata_item_len] == ':' &&
+           !memcmp(buf + offset, metadata_item->native, metadata_item_len)) {
+            score =  40;
+            goto end;
         }
     }
-    return 5; // Give it 5 scores since it starts with a bracket
+    score = 5; // Give it 5 scores since it starts with a bracket
+end:
+    if (dst_buf) {
+        free (dst_buf);
+        dst_buf = NULL;
+    }
+    return score;
 }
 
 static int lrc_read_header(AVFormatContext *s)
@@ -158,6 +201,9 @@ static int lrc_read_header(AVFormatContext *s)
     LRCContext *lrc = s->priv_data;
     AVBPrint line;
     AVStream *st;
+    AVIOContext *dst_pb = NULL;
+    int ret;
+    AVIOContext *pb;
 
     st = avformat_new_stream(s, NULL);
     if(!st) {
@@ -168,9 +214,15 @@ static int lrc_read_header(AVFormatContext *s)
     st->codecpar->codec_type = AVMEDIA_TYPE_SUBTITLE;
     st->codecpar->codec_id   = AV_CODEC_ID_TEXT;
     av_bprint_init(&line, 0, AV_BPRINT_SIZE_UNLIMITED);
+    ret = ff_trans_utf16_to_utf8(s->pb, &dst_pb);
+    if (ret && dst_pb) {
+        pb = dst_pb;
+    } else {
+        pb = s->pb;
+    }
 
-    while(!avio_feof(s->pb)) {
-        int64_t pos = read_line(&line, s->pb);
+    while(!avio_feof(pb)) {
+        int64_t pos = read_line(&line, pb);
         int64_t header_offset = find_header(line.str);
         if(header_offset >= 0) {
             char *comma_offset = strchr(line.str, ':');
@@ -213,6 +265,9 @@ static int lrc_read_header(AVFormatContext *s)
                 sub->duration = -1;
             }
         }
+    }
+    if (dst_pb) {
+        ffio_free_dyn_buf(&dst_pb);
     }
     ff_subtitles_queue_finalize(s, &lrc->q);
     ff_metadata_conv_ctx(s, NULL, ff_lrc_metadata_conv);

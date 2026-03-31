@@ -15,6 +15,10 @@
 #define STANDBY_LOCKER_REQUEST			_IOW(STANDBY_IOCBASE, 5, struct standby_locker)
 #define STANDBY_LOCKER_RELEASE			_IOW(STANDBY_IOCBASE, 6, struct standby_locker)
 #define STANDBY_GET_BOOTUP_MODE			_IOR(STANDBY_IOCBASE, 7, enum standby_bootup_mode)
+#define STANDBY_SET_WAKEUP_TIME			_IO (STANDBY_IOCBASE, 8)
+
+#define STANDBY_FLAG_COLD_BOOT 0xa5
+#define STANDBY_FLAG_WARM_BOOT 0x5a
 
 typedef enum standby_bootup_mode {
 	STANDBY_BOOTUP_COLD_BOOT,

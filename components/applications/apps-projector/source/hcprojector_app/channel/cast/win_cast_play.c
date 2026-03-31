@@ -77,10 +77,17 @@ static bool win_cast_play_wait_open(uint32_t timeout)
 {
     uint32_t count;
     count = timeout/20;
+    int play_en = 0;
 
     while(count--){
-        if (m_win_cast_play_open)
+        play_en = win_cast_get_play_request_flag();
+        if (m_win_cast_play_open || !play_en){
+            if (!play_en){
+                printf("%s(), Exiting wireless menu.\n", __func__);
+                return 0;
+            }
             break;
+        }
         api_sleep_ms(20);
     }
     printf("%s(), m_win_cast_play_open(%d):%d\n", __func__, (int)m_win_cast_play_open, (int)count);
@@ -127,9 +134,11 @@ static int win_cast_play_close(void *arg)
         if (MSG_TYPE_CAST_AIRMIRROR_START == cast_type){
             hccast_air_service_stop();
             hccast_air_service_start();
-        }else{
-            hccast_mira_disconnect();
         }
+    }
+
+    if (MSG_TYPE_CAST_MIRACAST_START == cast_type){
+        hccast_mira_service_stop();
     }
 
    if (m_cast_play_group){
@@ -138,11 +147,12 @@ static int win_cast_play_close(void *arg)
         lv_group_set_default(NULL);
     }
 
-    win_msgbox_msg_close();
 	m_win_cast_play_open = false;
     printf("%s(), line: %d!\n", __func__, __LINE__);
 
     api_hotkey_disable_clear();
+
+    win_clear_popup();
     return API_SUCCESS;
 }
 

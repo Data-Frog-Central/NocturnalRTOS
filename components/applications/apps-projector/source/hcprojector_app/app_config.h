@@ -134,4 +134,8 @@ app_config.h: the global config header file for application
   #define USB_AUTO_UPGRADE
 #endif
 
+#ifdef USBMIRROR_SUPPORT
+//#define USB_MIRROR_FAST_SUPPORT
+#endif
+
 #endif

@@ -77,7 +77,7 @@
 #else
 #define HCRTOS_BOOTMEM_SIZE (0x2000000)
 #endif
-#define HCRTOS_BOOTMEM_OFFSET (((HCRTOS_SYSMEM_SIZE < 0xc000000 ? HCRTOS_SYSMEM_SIZE : 0xc000000) - 0x1000000) & 0xffff0000)
+#define HCRTOS_BOOTMEM_OFFSET (((HCRTOS_SYSMEM_SIZE < 0xc000000 ? HCRTOS_SYSMEM_SIZE : 0xc000000) - HCRTOS_BOOTMEM_SIZE) & 0xffff0000)
 
 #define CONFIG_FRAMEBUFFER_STATIC_PHYS (HCRTOS_SYSMEM_OFFSET + HCRTOS_SYSMEM_SIZE)
 
@@ -424,13 +424,13 @@ hcrtos {
 	key-adc@0 {
 		status = "okay";
 		adc_ref_voltage = <1890>; //range:0-2000mV
-        	key-num = <6>;          //demo---map2--projector
-        	key-map = <300 560 105>,// up 0.41 ->left
-			<600 880 106>,// down 0.75 ->right
-			<850 1110 116>,//left 1.02 -> power
-			<1120 1320 0x16d>,//right 1.23->setup
-			<1340 1560 0x160>,//OK 1.43->ok
-			<1600 1840 174>;//exit 1.74->exit
+			key-num = <6>;          //demo---map2--projector
+			key-map = <310 510 103>,// up
+			<650 850 108>,// down 0.75
+			<920 1120 105>,//left 1.02
+			<1121 1300 106>,//right 1.23
+			<1330 1530 0x160>,//OK 1.43
+			<1640 1840 174>;//exit 1.74
 	};
 
 	persistentmem {
@@ -441,7 +441,7 @@ hcrtos {
 
 	sfspi {
 		pinmux-active = <PINPAD_T15 1 PINPAD_T16 1 PINPAD_T17 1 PINPAD_T18 1>;
-		sclk = <50000000>;
+		sclk = <27000000>;
 		dma-mode = <1>;
 		status = "okay";
 
@@ -629,7 +629,7 @@ hcrtos {
 		//clock-names = "biu", "ciu";
 		interrupts = <10>;
 		
-		pinmux-active = <PINPAD_T00 25 PINPAD_T01 25 PINPAD_T02 25 PINPAD_T03 25 PINPAD_T04 25 PINPAD_T05 25>;
+		pinmux-active = <PINPAD_T00 249 PINPAD_T01 249 PINPAD_T02 249 PINPAD_T03 249 PINPAD_T04 249 PINPAD_T05 249>;
 		
 		status = "okay";
 		

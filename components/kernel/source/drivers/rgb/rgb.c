@@ -46,9 +46,9 @@ static int rgb_probe(const char *node)
 	{
 		printf("rgb-clk-inv = %d\n",tmpVal);
 		if(tmpVal == 0)
-			REG32_CLR_BIT(SYSTEM_CLOCK_CONTROL_REG, 15);
+			REG32_CLR_BIT(SYSTEM_CLOCK_CONTROL_REG, BIT(15));
 		else
-			REG32_SET_BIT(SYSTEM_CLOCK_CONTROL_REG, 15);
+			REG32_SET_BIT(SYSTEM_CLOCK_CONTROL_REG, BIT(15));
 	}
 
 	hc_clk_enable(RGB_CLK);

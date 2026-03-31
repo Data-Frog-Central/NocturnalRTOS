@@ -296,7 +296,6 @@ int hccast_media_get_volume(void)
 
 void hccast_media_set_volume(int vol)
 {
-    hccast_set_volume(vol);
     hccast_media_callback_event(HCCAST_MEDIA_EVENT_SET_VOLUME, (void*)vol);
 }
 
@@ -501,6 +500,7 @@ void hccast_media_stop(void)
             }
 			
             g_media_type = HCCAST_MEDIA_INVALID;
+            g_mediaplayer_t->media_play_idx++;
             pthread_mutex_unlock(&g_mediaplayer_t->mutex);
             return;
         }
@@ -642,6 +642,7 @@ void hccast_media_stop_by_key(void)
             }
 			
             g_media_type = HCCAST_MEDIA_INVALID;
+            g_mediaplayer_t->media_play_idx++;
             pthread_mutex_unlock(&g_mediaplayer_t->mutex);
             return;
         }
@@ -934,7 +935,27 @@ void hccast_media_init_arg(hccast_media_url_t *mp_url)
 
     if(g_media_type == HCCAST_MEDIA_PHOTO)
     {
-        args.img_dis_mode = IMG_DIS_REALSIZE;
+        hccast_media_zoom_info_t zoom_info;
+        memset(&zoom_info, 0, sizeof(hccast_media_zoom_info_t));
+        hccast_media_callback_event(HCCAST_MEDIA_EVENT_GET_ZOOM_INFO, &zoom_info);
+
+        if (zoom_info.enable)
+        {
+            args.src_area.x = zoom_info.src_rect.x;
+            args.src_area.y = zoom_info.src_rect.y;
+            args.src_area.w = zoom_info.src_rect.w;
+            args.src_area.h = zoom_info.src_rect.h;
+            args.dst_area.x = zoom_info.dst_rect.x;
+            args.dst_area.y = zoom_info.dst_rect.y;
+            args.dst_area.w = zoom_info.dst_rect.w;
+            args.dst_area.h = zoom_info.dst_rect.h;
+            args.preview_enable = 1;
+            args.img_dis_mode = IMG_DIS_AUTO;
+        }
+        else
+        {
+            args.img_dis_mode = IMG_DIS_REALSIZE;
+        }
     }
     else
     {
@@ -980,16 +1001,16 @@ void hccast_media_init_arg(hccast_media_url_t *mp_url)
 void hccast_media_seturl(hccast_media_url_t *mp_url)
 {
     hccast_log(LL_NOTICE,"[media]:>>>>>>>>>>>>>enter: %s\n", __func__);
+    hccast_media_play_info_t media_url_info = {0};
+    int play_idx = 0;
+    
     if (g_mediaplayer_t)
     {
-
-        player_url_mode = mp_url->url_mode == HCCAST_MEDIA_URL_AIRCAST ? 1 : 0;
-        if (player_url_mode)
+        if (mp_url->url_mode == HCCAST_MEDIA_URL_AIRCAST)
         {
             hccast_scene_switch(HCCAST_SCENE_AIRCAST_PLAY);
-            hccast_media_callback_event(HCCAST_MEDIA_EVENT_URL_FROM_AIRCAST, (void*)mp_url->media_type);
         }
-        else
+        else if(mp_url->url_mode == HCCAST_MEDIA_URL_DLNA)
         {
             /*when is playing dlna,and this time dlna and air-mirror switching at the same time,will cause air switch wait dlna service stop,
                 dlna switch wait air-mirror stop.
@@ -1001,67 +1022,111 @@ void hccast_media_seturl(hccast_media_url_t *mp_url)
                 return ;
             }
             hccast_scene_switch(HCCAST_SCENE_DLNA_PLAY);
-            hccast_media_callback_event(HCCAST_MEDIA_EVENT_URL_FROM_DLNA, (void*)mp_url->media_type);
-        }
-
-        pthread_mutex_lock(&g_mediaplayer_t->mutex);
-        hccast_log(LL_NOTICE,"[media]:g_media_type: %d, mp_url->media_type: %d\n",g_media_type,mp_url->media_type);
-        //here for not received stop cmd before seturl.
-        if (g_mediaplayer_t->status != HCCAST_MEDIA_STATUS_STOP)
-        {
-            hccast_log(LL_NOTICE,"%s %d\n",__func__,__LINE__);
-            if (g_mediaplayer_t->player)
-            {
-            	//fix for some app seturl music not stop first.show music logo. 
-                if((g_media_type == HCCAST_MEDIA_MUSIC) && (mp_url->media_type == HCCAST_MEDIA_MUSIC))
-                {
-                    hccast_log(LL_NOTICE,"%s %d,not close vp\n",__func__,__LINE__);
-                    hcplayer_stop2(g_mediaplayer_t->player,0,0);	
-                }	
-                else
-                {
-                    hcplayer_stop(g_mediaplayer_t->player);
-                }
-                
-                g_mediaplayer_t->player = NULL;
-            }
-
-            if (g_mediaplayer_t->player1)
-            {
-                hcplayer_multi_destroy(g_mediaplayer_t->player1);
-                g_mediaplayer_t->player1 = NULL;
-            }
-            hccast_log(LL_NOTICE,"%s %d\n",__func__,__LINE__);
-
-            hccast_media_ytb_playlist_buf_reset();
-            if(g_media_type == HCCAST_MEDIA_PHOTO)
-            {
-                hccast_media_reset_aspect_mode();
-                hccast_meida_pic_effect_enable(0);
-            }
-            g_media_type = HCCAST_MEDIA_INVALID;
-
-        }
-
-
-
-        if(mp_url->media_type == HCCAST_MEDIA_PHOTO)
-        {
-            hccast_set_aspect_mode(DIS_TV_AUTO,DIS_NORMAL_SCALE, DIS_SCALE_ACTIVE_IMMEDIATELY);
-        }
-		
-        g_media_type = mp_url->media_type;
-
-        if(mp_url->url && mp_url->url1)//double url.
-        {
-            hccast_media_ytb_set_m3u8_playlist(HCCAST_MEDIA_YTB_VIDEO,mp_url->ytb_m3u8[HCCAST_MEDIA_YTB_VIDEO]);
-            hccast_media_ytb_set_m3u8_playlist(HCCAST_MEDIA_YTB_AUDIO,mp_url->ytb_m3u8[HCCAST_MEDIA_YTB_AUDIO]);
-            hccast_media_double_url_init_args(mp_url);
         }
         else
         {
-            hccast_media_init_arg(mp_url);
+            hccast_log(LL_NOTICE, "%s Invalid url media mode.\n", __func__);
+            return ;
         }
+
+        pthread_mutex_lock(&g_mediaplayer_t->mutex);
+        play_idx = ++g_mediaplayer_t->media_play_idx;    
+        pthread_mutex_unlock(&g_mediaplayer_t->mutex);
+
+        media_url_info.media_type = mp_url->media_type;
+        media_url_info.url_mode = mp_url->url_mode;
+        media_url_info.enable_url_play = 1;//default enable play.
+        hccast_media_callback_event(HCCAST_MEDIA_EVENT_URL_START_PLAY, (void*)&media_url_info);
+        if (media_url_info.interface_valid)
+        {
+            if (!media_url_info.enable_url_play)
+            {
+                hccast_log(LL_NOTICE, "[%s]:Skip This time URL play back\n", __func__);
+                return ;
+            }
+        }
+        else
+        {
+            //use old callback.
+            if(mp_url->url_mode == HCCAST_MEDIA_URL_AIRCAST)
+            {
+                hccast_media_callback_event(HCCAST_MEDIA_EVENT_URL_FROM_AIRCAST, (void*)mp_url->media_type);
+            }
+            else if(mp_url->url_mode == HCCAST_MEDIA_URL_DLNA)
+            {
+                hccast_media_callback_event(HCCAST_MEDIA_EVENT_URL_FROM_DLNA, (void*)mp_url->media_type);
+            }
+        }    
+            
+        pthread_mutex_lock(&g_mediaplayer_t->mutex);
+        if (play_idx == g_mediaplayer_t->media_play_idx)
+        {
+            player_url_mode = mp_url->url_mode;
+            hccast_log(LL_NOTICE,"[media]:last_media_type: %d, cur_media_type: %d, url_mode: %d\n", \
+                g_media_type, mp_url->media_type, player_url_mode);
+            
+            //here for not received stop cmd before seturl.
+            if (g_mediaplayer_t->status != HCCAST_MEDIA_STATUS_STOP)
+            {
+                hccast_log(LL_NOTICE,"%s %d\n",__func__,__LINE__);
+                if (g_mediaplayer_t->player)
+                {
+                	//fix for some app seturl music not stop first.show music logo. 
+                    if((g_media_type == HCCAST_MEDIA_MUSIC) && (mp_url->media_type == HCCAST_MEDIA_MUSIC))
+                    {
+                        hccast_log(LL_NOTICE,"%s %d,not close vp\n",__func__,__LINE__);
+                        hcplayer_stop2(g_mediaplayer_t->player,0,0);	
+                    }	
+                    else
+                    {
+                        hcplayer_stop(g_mediaplayer_t->player);
+                    }
+                    
+                    g_mediaplayer_t->player = NULL;
+                }
+
+                if (g_mediaplayer_t->player1)
+                {
+                    hcplayer_multi_destroy(g_mediaplayer_t->player1);
+                    g_mediaplayer_t->player1 = NULL;
+                }
+                hccast_log(LL_NOTICE,"%s %d\n",__func__,__LINE__);
+
+                hccast_media_ytb_playlist_buf_reset();
+                if(g_media_type == HCCAST_MEDIA_PHOTO)
+                {
+                    hccast_media_reset_aspect_mode();
+                    hccast_meida_pic_effect_enable(0);
+                }
+                g_media_type = HCCAST_MEDIA_INVALID;
+
+            }
+
+
+
+            if(mp_url->media_type == HCCAST_MEDIA_PHOTO)
+            {
+                hccast_set_aspect_mode(DIS_TV_AUTO,DIS_NORMAL_SCALE, DIS_SCALE_ACTIVE_IMMEDIATELY);
+            }
+    		
+            g_media_type = mp_url->media_type;
+
+            if(mp_url->url && mp_url->url1)//double url.
+            {
+                hccast_media_ytb_set_m3u8_playlist(HCCAST_MEDIA_YTB_VIDEO,mp_url->ytb_m3u8[HCCAST_MEDIA_YTB_VIDEO]);
+                hccast_media_ytb_set_m3u8_playlist(HCCAST_MEDIA_YTB_AUDIO,mp_url->ytb_m3u8[HCCAST_MEDIA_YTB_AUDIO]);
+                hccast_media_double_url_init_args(mp_url);
+            }
+            else
+            {
+                hccast_media_init_arg(mp_url);
+            }
+        }
+        else
+        {
+            hccast_log(LL_NOTICE,"%s %d play_idx:%d, media_idx:%d\n",__func__,__LINE__, play_idx, g_mediaplayer_t->media_play_idx);
+        }
+        
         pthread_mutex_unlock(&g_mediaplayer_t->mutex);
     }
     hccast_log(LL_NOTICE,"[media]:>>>>>>>>>>>>>leave: %s\n", __func__);

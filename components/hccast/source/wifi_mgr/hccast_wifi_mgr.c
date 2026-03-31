@@ -28,7 +28,7 @@ char HCCAST_P2P_IP[32]      = {"192.168.49.1"};
 char HCCAST_P2P_MASK[32]    = {"255.255.255.0"};
 char HCCAST_P2P_GW[32]      = {0};
 
-#define HCCAST_WIFI_CONNECTING_TIMEOUT  (30)
+#define HCCAST_WIFI_CONNECTING_TIMEOUT  (60)
 #define HCCAST_WIFI_SCAN_TIMEOUT        (15)
 
 /**
@@ -147,7 +147,7 @@ int hccast_wifi_mgr_get_connect_ssid(char *ssid, size_t len)
         }
         else
         {
-            hccast_log(LL_WARNING, "ssid len overflow. (%d/%d)\n", strlen(res.ssid), len);
+            hccast_log(LL_WARNING, "ssid len overflow. (%ld/%ld)\n", strlen(res.ssid), len);
             memcpy(ssid, res.ssid, len);
         }
 
@@ -191,12 +191,17 @@ int hccast_wifi_mgr_rm_list_net(char *net_id)
 }
 
 /**
- * It scans for available APs and returns the result in the `wifi_ctrl_scan_result_t` structure
+ * WiFi scan and retrieves the scan results within a timeout period.
  *
- * @param scan_res: the scan result
- * @return < 0: failed, 0:success
+ * @param scan_res A pointer to a structure that will hold the scan results.
+ * @param timeout The "timeout" parameter is the maximum time (in seconds) to wait for the scan to
+ * complete. If the scan takes longer than the specified timeout, the function will return with the
+ * current scan results. If the timeout is set to 0, the function will wait indefinitely until the scan
+ * is complete or scan abort.If the timeout is set to < 0, timeout will use default value, equal hccast_wifi_mgr_scan.
+ *
+ * @return an integer value.
  */
-int hccast_wifi_mgr_scan(hccast_wifi_scan_result_t *scan_res)
+int hccast_wifi_mgr_scan_timeout(hccast_wifi_scan_result_t *scan_res, int timeout)
 {
     int ret = HCCAST_WIFI_ERR_NO_ERROR;
     int cnt = 0;
@@ -205,11 +210,8 @@ int hccast_wifi_mgr_scan(hccast_wifi_scan_result_t *scan_res)
     int rescan = 1;
     struct timespec tv;
     struct timespec tv_last;
-
     hccast_net_set_if_updown(P2P_CTRL_IFACE_NAME, HCCAST_NET_IF_UP);
-
 RESCAN:
-
     clock_gettime(CLOCK_MONOTONIC, &tv_last);
 
     if (wifi_event_callback)
@@ -217,7 +219,14 @@ RESCAN:
         wifi_event_callback(HCCAST_WIFI_SCAN, NULL, NULL);
     }
 
+#ifdef HC_RTOS
+    p2p_ctrl_device_abort_scan();
+#endif
+
+    wifi_ctrl_set_scanning_by_user(true);
+
     ret = wifi_ctrl_do_scan();
+
     if (ret < 0)
     {
         hccast_log(LL_ERROR, "scan failed!\n");
@@ -225,11 +234,18 @@ RESCAN:
     }
     else
     {
+        int time_out = HCCAST_WIFI_SCAN_TIMEOUT;
+
+        if (timeout >= 0)
+        {
+            time_out = timeout;
+        }
+
 #ifdef __linux__
 #ifdef SUPPORT_MIRACAST
         if (hccast_mira_get_stat())
         {
-            ret = wifi_ctrl_wait_scan_timeout(HCCAST_WIFI_SCAN_TIMEOUT);
+            ret = wifi_ctrl_wait_scan_timeout(time_out);
             hccast_log(LL_NOTICE, "wifi_ctrl_wait_scan_timeout ret = %d.\n", ret);
             status = hccast_wifi_mgr_get_scan_status();
         }
@@ -237,45 +253,66 @@ RESCAN:
         {
             do
             {
-                usleep(500 * 1000);
+                usleep(100 * 1000);
                 status = hccast_wifi_mgr_get_scan_status();
+
+                if (!wifi_ctrl_is_scanning())
+                {
+                    ret = HCCAST_WIFI_ERR_USER_ABORT;
+                    hccast_log(LL_INFO, "user abort wifi scanning.\n");
+                    goto EXIT;
+                }
             }
-            while (++cnt <= (HCCAST_WIFI_SCAN_TIMEOUT / 5) * 10 && status && wifi_ctrl_is_scanning());
+            while (++cnt <= (time_out / 1) * 10 && status && wifi_ctrl_is_scanning());
         }
 #else
         do
         {
-            usleep(500 * 1000);
+            usleep(100 * 1000);
             status = hccast_wifi_mgr_get_scan_status();
+
+            if (!wifi_ctrl_is_scanning())
+            {
+                ret = HCCAST_WIFI_ERR_USER_ABORT;
+                hccast_log(LL_INFO, "user abort wifi scanning.\n");
+                goto EXIT;
+            }
         }
-        while (++cnt <= (HCCAST_WIFI_SCAN_TIMEOUT / 5) * 10 && status && wifi_ctrl_is_scanning());
+        while (++cnt <= (time_out / 1) * 10 && status && wifi_ctrl_is_scanning());
 #endif // SUPPORT_MIRACAST
 #else  // HC_RTOS
         do
         {
-            usleep(500 * 1000);
+            usleep(100 * 1000);
             status = hccast_wifi_mgr_get_scan_status();
+
+            if (!wifi_ctrl_is_scanning())
+            {
+                ret = HCCAST_WIFI_ERR_USER_ABORT;
+                hccast_log(LL_INFO, "user abort wifi scanning.\n");
+                goto EXIT;
+            }
         }
-        while (++cnt <= (HCCAST_WIFI_SCAN_TIMEOUT / 5) * 10 && status && wifi_ctrl_is_scanning());
+        while (++cnt <= (time_out / 1) * 10 && status);
 #endif // __linux__
     }
 
-    if (wifi_ctrl_is_scanning())
+    if (1)
     {
         clock_gettime(CLOCK_MONOTONIC, &tv);
-
         ret = wifi_ctrl_get_aplist(scan_res);
+
         if (ret < 0)
         {
             hccast_log(LL_ERROR, "scan get ap list failed!\n");
             goto EXIT;
         }
 
-        if (((tv.tv_sec - tv_last.tv_sec < 3) || (scan_res->ap_num == 0)) && (rescan == 1))
+        long diff = tv.tv_sec - tv_last.tv_sec;
+        if (((abs(diff) < 3) || (scan_res->ap_num == 0)) && rescan == 1 && wifi_ctrl_is_scanning())
         {
-            hccast_log(LL_NOTICE, "^^^^^ %ld To be rescan once time. ^^^^^\n", tv.tv_sec - tv_last.tv_sec);
+            hccast_log(LL_NOTICE, "^^^^^ %ld To be rescan once time. ^^^^^\n", diff);
             rescan = 0;
-            usleep(500 * 1000);
             goto RESCAN;
         }
 
@@ -286,10 +323,19 @@ RESCAN:
     }
 
 EXIT:
-
-    wifi_ctrl_do_op_reset();
-
+    wifi_ctrl_set_scanning_by_user(false);
     return ret;
+}
+
+/**
+ * It scans for available APs and returns the result in the `wifi_ctrl_scan_result_t` structure
+ *
+ * @param scan_res: the scan result
+ * @return < 0: failed, 0:success
+ */
+int hccast_wifi_mgr_scan(hccast_wifi_scan_result_t *scan_res)
+{
+    return hccast_wifi_mgr_scan_timeout(scan_res, -1);
 }
 
 int hccast_wifi_mgr_is_connecting(void)
@@ -300,6 +346,11 @@ int hccast_wifi_mgr_is_connecting(void)
 int hccast_wifi_mgr_is_scanning(void)
 {
     return wifi_ctrl_is_scanning();
+}
+
+int hccast_wifi_mgr_is_busy()
+{
+    return wifi_ctrl_is_busy();
 }
 
 /**
@@ -327,12 +378,19 @@ int hccast_wifi_mgr_op_reset()
 }
 
 /**
- * Used to connect to an AP.
- * @param ap_info: conn AP info
- * @return < 0: err (-2: wpas no run)
- * @return 0:failed, 1: success
+ * connects to a WiFi access point with a timeout.
+ *
+ * @param ap_info A pointer to a structure containing information about the access point (AP) to
+ * connect to. This structure likely includes fields such as the SSID (network name) and authentication
+ * credentials (e.g., password).
+ * @param timeout The timeout parameter is the maximum time in seconds that the function will wait
+ * for the Wi-Fi connection to be established. If the connection is not established within this time,
+ * the function will return an error.If the timeout is set to 0, the function will wait indefinitely until the connect
+ * is complete or connect abort.If the timeout is set to < 0, timeout will use default value, equal hccast_wifi_mgr_connect.
+ *
+ * @return an integer value.
  */
-int hccast_wifi_mgr_connect(const hccast_wifi_ap_info_t *ap_info)
+int hccast_wifi_mgr_connect_timeout(const hccast_wifi_ap_info_t *ap_info, int timeout)
 {
     int cnt = 0;
     int status = 0;
@@ -343,19 +401,10 @@ int hccast_wifi_mgr_connect(const hccast_wifi_ap_info_t *ap_info)
         wifi_ctrl_init(wifi_event_callback);
     }
 
-    /*
-    ret = wifi_ctrl_hostap_interface_enable(0);
-    if (ret < 0)
-    {
-        printf("Err: %s %d ret = %d\n", __func__, __LINE__, ret);
-        return -1;
-    }
-    */
-
     hccast_net_set_if_updown(P2P_CTRL_IFACE_NAME, HCCAST_NET_IF_DOWN);
     wifi_ctrl_set_connecting_by_user(true);
-
     ret = wifi_ctrl_do_ap_connect(ap_info);
+
     if (ret < 0)
     {
         hccast_log(LL_ERROR, "connect failed!\n");
@@ -368,30 +417,62 @@ int hccast_wifi_mgr_connect(const hccast_wifi_ap_info_t *ap_info)
             wifi_event_callback(HCCAST_WIFI_CONNECT, (void *)ap_info->ssid, NULL);
         }
 
+        int time_out = HCCAST_WIFI_CONNECTING_TIMEOUT;
+
+        if (timeout >= 0)
+        {
+            time_out = timeout;
+        }
+
 #ifdef __linux__
-        ret = wifi_ctrl_wait_connect_timeout(HCCAST_WIFI_CONNECTING_TIMEOUT);
+        ret = wifi_ctrl_wait_connect_timeout(time_out);
         hccast_log(LL_INFO, "wifi_ctrl_wait_connect_timeout ret = %d.\n", ret);
         status = hccast_wifi_mgr_get_connect_status();
+
+        if (!wifi_ctrl_is_connecting())
+        {
+            ret = HCCAST_WIFI_ERR_USER_ABORT;
+            hccast_log(LL_INFO, "user abort wifi connecting.\n");
+            goto EXIT;
+        }
+
 #else
+
         do
         {
-            usleep(200 * 1000);
+            usleep(100 * 1000);
             status = hccast_wifi_mgr_get_connect_status();
+
+            if (!wifi_ctrl_is_connecting())
+            {
+                ret = HCCAST_WIFI_ERR_USER_ABORT;
+                hccast_log(LL_INFO, "user abort wifi connecting.\n");
+                goto EXIT;
+            }
         }
-        while (++cnt <= (HCCAST_WIFI_CONNECTING_TIMEOUT / 2) * 10 && !status && wifi_ctrl_is_connecting());
+        while (++cnt <= (time_out / 1) * 10 && !status);
+
 #endif
     }
 
     ret = status;
     hccast_log(LL_INFO, "connect_status = %s.\n", status ? "connected" : "disconnect");
-
 EXIT:
-    wifi_ctrl_do_op_reset();
-
     hccast_net_set_if_updown(P2P_CTRL_IFACE_NAME, HCCAST_NET_IF_UP);
     wifi_ctrl_set_connecting_by_user(false);
-
     return ret;
+}
+
+/**
+ * Used to connect to an AP.
+ * @param ap_info: conn AP info
+ * @return < 0: err (-2: wpas no run)
+ * @return 0:failed, 1: success
+ */
+int hccast_wifi_mgr_connect(const hccast_wifi_ap_info_t *ap_info)
+{
+    hccast_wifi_mgr_disconnect_no_message();
+    return hccast_wifi_mgr_connect_timeout(ap_info, -1);
 }
 
 /**
@@ -573,8 +654,7 @@ int hccast_wifi_mgr_get_current_freq()
         }
     }
 
-    hccast_log(LL_NOTICE, "channel: %d\n", channel);
-
+    hccast_log(LL_INFO, "channel: %d\n", channel);
     return channel;
 }
 
@@ -597,6 +677,7 @@ int hccast_wifi_mgr_get_signal_poll(hccast_wifi_signal_poll_result_t *result)
  */
 int hccast_wifi_mgr_hostap_get_sta_num(hccast_wifi_hostap_status_result_t *result)
 {
+    (void)result;
     static int num = 0;
     hccast_wifi_hostap_status_result_t hostap_result;
 
@@ -850,7 +931,13 @@ int hccast_wifi_mgr_udhcpc_stop()
 int hccast_wifi_mgr_hostap_enable()
 {
 #ifdef HC_RTOS
-    wifi_ctrl_hostap_interface_enable(true);
+    if (2 == hostap_en)
+    {
+        pthread_mutex_lock(&g_hostap_mutex);
+        hostap_en = 1;
+        wifi_ctrl_hostap_interface_enable(true);
+        pthread_mutex_unlock(&g_hostap_mutex);
+    }
 #else
     wifi_ctrl_hostap_interface_enable(false);
     usleep(500);
@@ -865,7 +952,20 @@ int hccast_wifi_mgr_hostap_enable()
  */
 int hccast_wifi_mgr_hostap_disenable()
 {
-    return wifi_ctrl_hostap_interface_enable(false);
+    int ret = 0;
+#ifdef HC_RTOS
+    if (1 == hostap_en)
+    {
+        pthread_mutex_lock(&g_hostap_mutex);
+        hostap_en = 2;
+        ret = wifi_ctrl_hostap_interface_enable(false);
+        pthread_mutex_unlock(&g_hostap_mutex);
+        return ret;
+    }
+#else
+    ret = wifi_ctrl_hostap_interface_enable(false);
+#endif
+    return ret;
 }
 
 /**
@@ -1283,13 +1383,12 @@ int hccast_wifi_mgr_trigger_scan(char *inf)
 #include <uapi/linux/wireless.h>
 int hccast_wifi_mgr_get_best_channel(int argc, int **argv)
 {
-    (void)argc;
-    (void)argv;
     uint32_t val = 0;;
     struct iwreq iwr;
     int ioctl_sock = -1;
     memset(&iwr, 0, sizeof(iwr));
     ioctl_sock = socket(PF_INET, SOCK_DGRAM, 0);
+
     if (ioctl_sock < 0)
     {
         hccast_log(LL_ERROR, "socket[PF_INET,SOCK_DGRAM]");
@@ -1299,6 +1398,7 @@ int hccast_wifi_mgr_get_best_channel(int argc, int **argv)
     strlcpy(iwr.ifr_name, "wlan0", IFNAMSIZ);
     iwr.u.data.pointer = &val;
     iwr.u.data.length = sizeof(val);
+
     if (ioctl(ioctl_sock, IW_PRIV_IOCTL_BEST_CHANNEL, &iwr) < 0)
     {
         hccast_log(LL_ERROR, "ioctl[IW_PRIV_IOCTL_BEST_CHANNEL]");
@@ -1306,16 +1406,15 @@ int hccast_wifi_mgr_get_best_channel(int argc, int **argv)
         return HCCAST_WIFI_ERR_IOCTL_FAILED;
     }
 
-    hccast_log(LL_NOTICE, "%s:%d,2.4G: %lu, 5G: %lu\n", __func__, __LINE__, val & 0xFFFF, (val >> 16) & 0xFFFF);
+    hccast_log(LL_NOTICE, "%s:%d,2.4G: %u, 5G: %u\n", __func__, __LINE__, val & 0xFFFF, (val >> 16) & 0xFFFF);
 
     if (argc >= 1)
     {
-        argv[0] = val & 0xFFFF;
-        argv[1] = (val >> 16) & 0xFFFF;
+        argv[0] = (int *)(val & 0xFFFF);
+        argv[1] = (int *)((val >> 16) & 0xFFFF);
     }
 
     close(ioctl_sock);
-
     return HCCAST_WIFI_ERR_NO_ERROR;
 }
 

@@ -232,6 +232,7 @@ void vApplicationIdleHook( void )
 {
 	idlehook_item_s *sp;
 
+	sys_hcprogrammer_check();
 	list_for_each_entry (sp, &idlehook_list, entries) {
 		if (sp->callback != NULL)
 		{

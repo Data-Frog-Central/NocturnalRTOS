@@ -649,7 +649,7 @@ void api_system_reboot(void)
 {
     printf("%s(): reboot now!!\n", __func__);
 #ifdef __linux__
-    system("reboot");
+    system("reboot -f");
 #else
     extern int reset(void);
     reset();

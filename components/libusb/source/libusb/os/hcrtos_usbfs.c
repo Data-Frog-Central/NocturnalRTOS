@@ -967,6 +967,17 @@ static int initialize_device(struct libusb_device *dev, uint8_t busnum,
 	r = usbfs_get_active_config(dev, fd);
 	if (fd != wrapped_fd)
 		close(fd);
+	
+	/* hichip note:
+	*  When casting screen on Apple phone, the device will be switched
+	*  to gadget mode, which will lead to the usb device files under
+	*  the path of /dev/bus/usb/{bus_num}/{devaddr} can not be deleted.
+	*  So the "LIBUSB_ERROR_NO_DEVICE" can be ignored.
+	*/
+	if(r == LIBUSB_ERROR_NO_DEVICE) {
+		log_e("usb dev (%d/%d) cannot access\n", busnum, devaddr);
+		r = LIBUSB_SUCCESS;
+	}
 
 	return r;
 }
@@ -1172,12 +1183,12 @@ static int usbfs_scan_busdir(struct libusb_context *ctx, uint8_t busnum)
 			continue;
 
 		if (!parse_u8(entry->d_name, &devaddr)) {
-			printf("unknown dir entry %s", entry->d_name);
+			printf("unknown dir entry %s\n", entry->d_name);
 			continue;
 		}
 
 		if (linux_enumerate_device(ctx, busnum, devaddr, NULL)) {
-			printf("==> failed to enumerate dir entry %s", entry->d_name);
+			printf("==> failed to enumerate dir entry %s\n", entry->d_name);
 			continue;
 		}
 

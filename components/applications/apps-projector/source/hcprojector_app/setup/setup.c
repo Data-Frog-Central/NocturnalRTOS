@@ -8,27 +8,22 @@
 #include <unistd.h>
 #include <hcuapi/snd.h>
 #include <sys/types.h>
-
+#include "app_log.h"
 #include "app_config.h"
 #include <sys/stat.h>
-
 #include <fcntl.h>
 #include <sys/ioctl.h>
-
 #ifdef BLUETOOTH_SUPPORT
 #include <bluetooth.h>
 #endif
 #include <hcfota.h>
-
 #ifdef __HCRTOS__
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/event_groups.h>
 #include <kernel/lib/fdt_api.h>
 #endif
-
 #include <pthread.h>
-
 #include "factory_setting.h"
 #include "../channel/local_mp/local_mp_ui.h"
 #include "com_api.h"
@@ -71,19 +66,12 @@
     #define ADJUST_BAR_W_PCT 5
 #endif
 
-//#define ASPECT_RATIO_DISABLE 0
-
-
-
 
 uint16_t tabv_act_id = TAB_MAX/2;
-
 lv_obj_t *setup_scr = NULL;
 lv_obj_t *setup_root = NULL;
 lv_group_t *setup_g = NULL;
 lv_timer_t *timer_setting = NULL, *timer_setting_clone = NULL;
-
-
 static sys_param_t *sys_param_p;
 lv_obj_t* setup_slave_root = NULL;
 static uint16_t last_setting_key=0;
@@ -143,97 +131,88 @@ extern int set_flip_mode(flip_mode_e mode);
 extern int set_keystone(int top_w, int bottom_w);
 extern int set_color_temperature(int mode);
 extern int set_twotone(int mode, int bass, int treble);
-
+extern void set_remote_control_disable(bool b);
+extern void bt_screen_event_handle(lv_event_t *e);
 static void timer_cb1(lv_timer_t *timer);
 static void timer_cb2(lv_timer_t *timer);
-
 static void create_setup(void);
 static lv_obj_t* add_adjust_num_obj(lv_obj_t *parent,  uint32_t data);
-//static void clear_setup(void);
 static void event_handler(lv_event_t* e);
 static void slave_scr_event_handler(lv_event_t *e);
 static void time_cb(lv_timer_t* timer_setting);
-// void noise_reduction_btnmatrix_event(lv_event_t* e);
-
-void bt_setting_btnmatrix_event(lv_event_t* e);
-void color_temp_btnmatrix_event(lv_event_t* e);
-
-// int display_bar_event(lv_event_t* e, int num, int lower, int high, int div, int width);
-void picture_mode_event(lv_event_t* e);
-void contrast_event(lv_event_t* e);
-void brightness_event(lv_event_t* e);
-void color_event(lv_event_t* e);
-void hue_event(lv_event_t* e);
-void sharpness_event(lv_event_t* e);
-void color_temperature_event(lv_event_t* e);
-// void noise_reduction_event(lv_event_t* e);
-// int set_noise_redu(int v);
-void sound_mode_event(lv_event_t* e);
-
-void treble_event(lv_event_t* e);
-void version_info_event(lv_event_t *e);
-void bass_event(lv_event_t* e);
-void balance_event(lv_event_t* e);
-
-void change_volume_event(lv_event_t* e);
-
-void setup_item_event_(lv_event_t* e, widget widget1, int item);
-
+static void bt_setting_btnmatrix_event(lv_event_t* e);
+static void color_temp_btnmatrix_event(lv_event_t* e);
+static void picture_mode_event(lv_event_t* e);
+static void contrast_event(lv_event_t* e);
+static void brightness_event(lv_event_t* e);
+static void color_event(lv_event_t* e);
+static void hue_event(lv_event_t* e);
+static void sharpness_event(lv_event_t* e);
+static void color_temperature_event(lv_event_t* e);
+static void sound_mode_event(lv_event_t* e);
+static void treble_event(lv_event_t* e);
+static void version_info_event(lv_event_t *e);
+static void bass_event(lv_event_t* e);
+static void balance_event(lv_event_t* e);
+static void change_volume_event(lv_event_t* e);
+static void setup_item_event_(lv_event_t* e, widget widget1, int item);
 extern bool str_is_black(char *str);
-
-void osd_language_event(lv_event_t* e);
-void foot_event(lv_event_t* e);
-void flip_event(lv_event_t* e);
-//void aspect_radio_event(lv_event_t* e);
-//static void aspect_ratio_btnmatrix_event(lv_event_t *e);
-//static int aspect_ratio_btnmatrix_event_(int);
-void restore_factory_default_event(lv_event_t* e);
-void software_update_event(lv_event_t* e);
+static void osd_language_event(lv_event_t* e);
+static void flip_event(lv_event_t* e);
+static void restore_factory_default_event(lv_event_t* e);
+static void software_update_event(lv_event_t* e);
 static void software_update_bar_event(lv_event_t* e);
-void keystone_event(lv_event_t *e);
-void auto_sleep_event(lv_event_t *e);
-void osd_time_event(lv_event_t *e);
-void window_scale_event(lv_event_t *e);
-static int hcfota_report(hcfota_report_event_e event, unsigned long param, unsigned long usrdata);
+static void auto_sleep_event(lv_event_t *e);
+static void osd_time_event(lv_event_t *e);
+static void window_scale_event(lv_event_t *e);
+static void video_delay_event(lv_event_t *e);
 void btnmatrix_event(lv_event_t* e, btn_matrix_func f);
-void return_event(lv_event_t* e);
-void tabv_event(lv_event_t* e);
-void tabv_btns_event(lv_event_t* e);
-void btn_event(lv_event_t* e);
-void main_scr_event(lv_event_t* e);
+static void tabv_btns_event(lv_event_t* e);
 static void set_picture(const void *scr, lv_obj_draw_part_dsc_t *dsc);
 static bool obj_has_ancestor(lv_obj_t *self, lv_obj_t *ancestor);
 static bool is_digit(const char* str);
 extern void set_enhance1(int value, uint8_t op);
 extern int set_twotone(int mode, int bass, int treble);
 extern int set_balance(int v);
-
-lv_obj_t* create_item(lv_obj_t* section, choose_item * chooseItem);
+extern void osd_time_widget(lv_obj_t* btn);
+#ifdef SYS_ZOOM_SUPPORT
+extern void create_scale_widget(lv_obj_t* btn);
+#endif
+static lv_obj_t* create_item(lv_obj_t* section, choose_item * chooseItem);
 void set_adjustable_value(uint32_t item);
 lv_obj_t *new_widget_(lv_obj_t*, int title,const int*,uint32_t index, int len, int w, int h);
 lv_obj_t *create_widget_btnmatrix(lv_obj_t *parent,int w, int h,const int* btn_map, int len);
 extern void picture_mode_widget( lv_obj_t*);
-void volume_widget();
-void color_temp_widget(lv_obj_t*);
-lv_obj_t* create_picutre_page(lv_obj_t* parent);
-lv_obj_t* create_sound_page(lv_obj_t* parent);
-lv_obj_t* create_setting_page(lv_obj_t* parent);
-lv_obj_t* create_keystone_page(lv_obj_t* parent);
+static void color_temp_widget(lv_obj_t*);
+static lv_obj_t* create_picutre_page(lv_obj_t* parent);
+static lv_obj_t* create_sound_page(lv_obj_t* parent);
+static lv_obj_t* create_setting_page(lv_obj_t* parent);
+static lv_obj_t* create_keystone_page(lv_obj_t* parent);
 extern lv_obj_t* create_bt_page(lv_obj_t* parent);
 lv_obj_t* create_page_(lv_obj_t* parent, choose_item * data, int len);
 extern void sound_mode_widget(lv_obj_t* e);
 extern void osd_language_widget(lv_obj_t* e);
-void flip_widget(lv_obj_t* e);
-//void aspect_ratio_widget(lv_obj_t* e);
-void restore_factory_default_widget(lv_obj_t* e);
+static void flip_widget(lv_obj_t* e);
+static void restore_factory_default_widget(lv_obj_t* e);
 extern void software_update_widget(lv_obj_t* e);
 extern void auto_sleep_widget(lv_obj_t *btn);
-void swap_color(lv_color_t* color1, lv_color_t* color2);
-void flip(lv_color_t* buf, int dir);
-void delete_from_list_event(lv_event_t* e);
 void timer_setting_handler(lv_timer_t* timer_setting1);
 static void msg_timer_handle(lv_timer_t *timer_);
 static lv_obj_t* create_list_sub_text_obj(lv_obj_t *parent,int w, int h, list_sub_param param, int type, int font_id);
+static void setup_settings_update(void);
+
+static lv_obj_t *m_flip_mode = NULL;
+static void win_setup_control(void *arg1, void *arg2){
+    (void)arg2;
+     control_msg_t *ctl_msg = (control_msg_t*)arg1;
+     #ifdef BLUETOOTH_SUPPORT
+     setup_bt_control(arg1, arg2);
+     #endif
+    switch (ctl_msg->msg_type){
+        default:
+            break;
+    }
+}
 
 static lv_obj_t* create_root_obj(lv_obj_t* scr){
     lv_obj_t* root = lv_obj_create(scr);
@@ -267,11 +246,15 @@ void setup_screen_init(void){
     create_setup();
     lv_group_set_default(g);
     set_flip_mode(projector_get_some_sys_param(P_FLIP_MODE));
+
+    screen_entry_t setup_entry;
+    setup_entry.screen = setup_scr;
+    setup_entry.control = win_setup_control;
+    api_screen_regist_ctrl_handle(&setup_entry);
 }
 
 static void create_setup(void){
         lv_group_set_default(setup_g);
-
         tabv = lv_tabview_create(setup_root, LV_DIR_TOP,LV_PCT(TAB_SIZE_PCT));
         set_pad_and_border_and_outline(tabv);
         //lv_obj_set_style_pad_ver(tabv, 0, 0);
@@ -291,9 +274,7 @@ static void create_setup(void){
 #ifdef KEYSTONE_SUPPORT
         pgs[TAB_KEYSTONE-1] = lv_tabview_add_tab(tabv, " ");
 #endif
-        lv_tabview_add_tab(tabv, "#ffffff >#");
-
-        
+        lv_tabview_add_tab(tabv, "#ffffff >#");     
         create_picutre_page(pgs[TAB_PICTURE-1]);
         create_sound_page(pgs[TAB_SOUND-1]);
         create_setting_page(pgs[TAB_SETTING-1]);
@@ -307,7 +288,6 @@ static void create_setup(void){
 
         tab_btns = lv_tabview_get_tab_btns(tabv);
         lv_group_focus_obj(tab_btns);
-        
         lv_btnmatrix_set_btn_ctrl_all(tab_btns, LV_BTNMATRIX_CTRL_RECOLOR);
         lv_btnmatrix_clear_btn_ctrl_all(tab_btns, LV_BTNMATRIX_CTRL_CHECKABLE);
         lv_obj_set_style_pad_hor(tab_btns,(lv_coord_t)(pad_width*4), 0);
@@ -327,7 +307,6 @@ static void create_setup(void){
         lv_obj_set_style_pad_all(foot, 0, 0);
         lv_obj_set_style_pad_gap(foot,0,0);
         lv_obj_set_style_radius(foot,0,0 );
-      
         lv_obj_set_flex_flow(foot, LV_FLEX_FLOW_ROW);
         lv_obj_t *obj,*label,*img;
         lv_img_dsc_t* img_dsc[4] = {&MENU_IMG_LIST_MOVE, &MENU_IMG_LIST_TABLE, &MENU_IMG_LIST_OK, &MENU_IMG_LIST_MENU};
@@ -339,9 +318,7 @@ static void create_setup(void){
             lv_obj_set_style_pad_ver(obj, 2, 0);
             lv_obj_set_flex_flow(obj, LV_FLEX_FLOW_ROW);
             lv_obj_set_flex_align(obj, LV_FLEX_ALIGN_CENTER,LV_FLEX_ALIGN_CENTER,LV_FLEX_ALIGN_CENTER);
-            //lv_obj_set_style_pad_hor(obj, LV_PCT(20), 0);
             set_pad_and_border_and_outline(obj);
-            
             lv_obj_set_style_radius(obj, 0, 0);
             lv_obj_set_scrollbar_mode(obj, LV_SCROLLBAR_MODE_OFF);
             lv_obj_set_style_bg_opa(obj, LV_OPA_0, 0);
@@ -353,14 +330,9 @@ static void create_setup(void){
             lv_obj_align_to(label, img, LV_ALIGN_OUT_RIGHT_MID, 2, -10);
             lv_label_set_recolor(label, true);
             lv_obj_set_style_text_color(label, lv_color_white(), 0);
-    
-            //language_choose_add_label1(label, );
             set_label_text2(label, foot_map[i], FONT_NORMAL);
         }
-
-       
 }
-
 
 void create_balance_ball(lv_obj_t* parent, lv_coord_t radius, lv_coord_t width){
     lv_obj_t *obj = lv_obj_create(parent);
@@ -409,15 +381,8 @@ lv_obj_t * create_display_bar_main(lv_obj_t* parent, int w, int h, int ball_coun
     for(int i=0; i<ball_count; i++){
         create_balance_ball(container, 8, width);
     }
-    // if(ball_count>0){
-    //      lv_obj_t* first = lv_obj_get_child(container, 0);
-    //      lv_obj_align(first, LV_ALIGN_LEFT_MID, 5, 0);
-    // }
-   
-
     lv_obj_set_style_bg_color(container, lv_palette_darken(LV_PALETTE_GREY, 2), 0);
     lv_obj_set_size(container,LV_PCT(w),LV_PCT(h));
-    //set_pad_and_border_and_outline(container);
     lv_obj_set_style_outline_width(container, 0, 0);
     lv_obj_set_style_border_width(container, 0, 0);
     lv_obj_set_style_pad_ver(container, 0, 0);
@@ -425,7 +390,6 @@ lv_obj_t * create_display_bar_main(lv_obj_t* parent, int w, int h, int ball_coun
     lv_obj_set_style_pad_hor(container, 1, 0);
     lv_obj_set_scrollbar_mode(container, LV_SCROLLBAR_MODE_OFF);
     lv_obj_set_flex_flow(container, LV_FLEX_FLOW_ROW);
-    
     lv_group_add_obj(lv_group_get_default(), container);
     lv_group_focus_obj(container);
     return container;
@@ -450,8 +414,8 @@ lv_obj_t *create_display_bar_show(lv_obj_t* parent, int w, int h, int num){
     return obj;
 }
 
-
 lv_obj_t* slave_scr_obj = NULL;
+
 void del_setup_slave_scr_obj(){
      if(slave_scr_obj){
         lv_obj_del(slave_scr_obj);
@@ -462,10 +426,10 @@ void del_setup_slave_scr_obj(){
     del_bt_wait_anim();
 #endif
 }
+
 void timer_setting_handler(lv_timer_t* timer_setting1){
-   
     if(timer_setting){
-        printf("return main\n");
+        log(DEMO,DEBUG,"return main\n");
         change_screen(projector_get_some_sys_param(P_CUR_CHANNEL));
         del_setup_slave_scr_obj();
         lv_obj_set_style_bg_opa(setup_slave_root, LV_OPA_0, 0);
@@ -477,17 +441,14 @@ void timer_setting_handler(lv_timer_t* timer_setting1){
             lv_obj_set_style_border_opa(cur_btn, LV_OPA_0, 0);
         }
     }
-
 }
 
 static void time_cb(lv_timer_t* timer_setting1){
     turn_to_setup_root();
 }
 
-
 static void event_handler(lv_event_t* e){
     #ifdef BLUETOOTH_SUPPORT
-extern void bt_screen_event_handle(lv_event_t *e);
     bt_screen_event_handle(e);
     #endif
     lv_event_code_t code = lv_event_get_code(e);
@@ -512,7 +473,6 @@ extern void bt_screen_event_handle(lv_event_t *e);
             lv_obj_clear_state(cur_btn, LV_STATE_USER_1);
             lv_obj_set_style_bg_opa(cur_btn, LV_OPA_0, 0);
             lv_obj_set_style_border_opa(cur_btn, LV_OPA_0, 0);
-            //lv_obj_set_style_bg_color(cur_btn, lv_color_make(100,99,100), 0);
         }
         if(projector_get_some_sys_param(P_OSD_TIME) != OSD_TIME_OFF){
             timer_setting = lv_timer_create(timer_setting_handler, projector_get_some_sys_param(P_OSD_TIME)*5000, 0);
@@ -521,7 +481,7 @@ extern void bt_screen_event_handle(lv_event_t *e);
         }
     } else if(code == LV_EVENT_SCREEN_UNLOADED){
         if(timer_setting){
-            printf("DEL TIMER\n");
+            log(DEMO,DEBUG,"DEL TIMER\n");
             lv_timer_del(timer_setting);
             timer_setting = NULL;
         }
@@ -529,9 +489,7 @@ extern void bt_screen_event_handle(lv_event_t *e);
     }
 }
 
-
-
-lv_obj_t* create_picutre_page(lv_obj_t* parent){
+static lv_obj_t* create_picutre_page(lv_obj_t* parent){
     bool is_disable = projector_get_some_sys_param(P_PICTURE_MODE) ==  PICTURE_MODE_USER ? false : true;
     choose_item picture_items[] = {
             {.name=STR_PICTURE_MODE,.value.v1=picture_mode_vec[projector_get_some_sys_param(P_PICTURE_MODE)*2],.is_number = false,.is_disabled= false,.event_func=picture_mode_event},
@@ -544,8 +502,6 @@ lv_obj_t* create_picutre_page(lv_obj_t* parent){
 
             {.name=STR_SHARPNESS, .value.v2 = projector_get_some_sys_param(P_SHARPNESS),.is_number=true, .is_disabled=is_disable, .event_func=sharpness_event},
             
-            //{.name=STR_HUE, .value.v2=BLANK_SPACE_STR, .is_number=true, .is_disabled=true,.event_func=hue_event},
-
             {.name=STR_COLOR_TEMP, .value.v1=color_temp_vec[projector_get_some_sys_param(P_COLOR_TEMP)*2],.is_number=false,.is_disabled=false, .event_func=color_temperature_event},
     };
     set_enhance1(projector_get_some_sys_param(P_CONTRAST), P_CONTRAST);
@@ -561,7 +517,6 @@ lv_obj_t* create_picutre_page(lv_obj_t* parent){
         picture_mode_items[i].obj = lv_obj_get_child(obj, i+1);
         picture_mode_items[i].index = obj_indexs[i];
     }
-
     lv_obj_t *label = lv_obj_get_child(lv_obj_get_child(parent, 0), 0);
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
     set_label_text2(label, STR_PICTURE_MODE_TITLE, FONT_NORMAL);
@@ -571,13 +526,8 @@ lv_obj_t* create_picutre_page(lv_obj_t* parent){
     return obj;
 }
 
-
-
-
-lv_obj_t* create_sound_page(lv_obj_t* parent){
-    
+static lv_obj_t* create_sound_page(lv_obj_t* parent){  
     bool is_disable = projector_get_some_sys_param(P_SOUND_MODE) == SOUND_MODE_USER ? false : true;
-    
     if(projector_get_some_sys_param(P_BT_SETTING) == BLUETOOTH_ON){
         bt_v =  STR_ON;
     }
@@ -589,7 +539,6 @@ lv_obj_t* create_sound_page(lv_obj_t* parent){
     };
     set_twotone(SND_TWOTONE_MODE_USER, projector_get_some_sys_param(P_TREBLE), projector_get_some_sys_param(P_BASS));
     set_balance(projector_get_some_sys_param(P_BALANCE));
-   
     lv_obj_t *obj = create_page_(parent, music_items, 4);
     int obj_index[2] = {P_TREBLE, P_BASS};
     lv_obj_t* drop_down_obj;
@@ -597,18 +546,16 @@ lv_obj_t* create_sound_page(lv_obj_t* parent){
         sound_mode_items[i].obj = lv_obj_get_child(obj, i+1);
         sound_mode_items[i].index = obj_index[i];
     }
-
     lv_obj_t *label = lv_obj_get_child(lv_obj_get_child(parent, 0), 0);
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
     set_label_text2(label, STR_SOUND_MODE_TITLE, FONT_NORMAL);
     lv_obj_t *icon = lv_img_create(lv_obj_get_child(parent, 1));
     lv_img_set_src(icon, &MAINMENU_IMG_AUDIO);
-
     lv_obj_center(icon);
     return obj;
 }
 
-lv_obj_t* create_keystone_page(lv_obj_t* parent){
+static lv_obj_t* create_keystone_page(lv_obj_t* parent){
     lv_obj_t *obj = create_page_(parent, NULL, 0);
     lv_obj_set_flex_flow(obj, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(obj, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
@@ -618,11 +565,8 @@ lv_obj_t* create_keystone_page(lv_obj_t* parent){
     focus_list_init(obj);
     vMotor_init();
     #endif
-    
-    printf("keystone-dir: %d, keystone-step: %d", projector_get_some_sys_param(P_KEYSTONE_TOP), projector_get_some_sys_param(P_KEYSTOME_BOTTOM));
-    set_keystone(projector_get_some_sys_param(P_KEYSTONE_TOP), projector_get_some_sys_param(P_KEYSTOME_BOTTOM));
-   
-   
+    log(DEMO, INFO,"keystone-dir: %d, keystone-step: %d", projector_get_some_sys_param(P_KEYSTONE_TOP), projector_get_some_sys_param(P_KEYSTOME_BOTTOM));
+    set_keystone(projector_get_some_sys_param(P_KEYSTONE_TOP), projector_get_some_sys_param(P_KEYSTOME_BOTTOM)); 
     lv_obj_t *label = lv_obj_get_child(lv_obj_get_child(parent, 0), 0);
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
     #ifdef PROJECTOR_VMOTOR_SUPPORT
@@ -632,15 +576,12 @@ lv_obj_t* create_keystone_page(lv_obj_t* parent){
     #endif
     set_label_text2(label, i, FONT_NORMAL);
     return obj;
-
-
 }
 
-lv_obj_t* create_setting_page(lv_obj_t* parent){
+static lv_obj_t* create_setting_page(lv_obj_t* parent){
     choose_item setting_items[] = {
             {STR_OSD_LANG, .value.v1=STR_LANG,false , false, osd_language_event},
             {STR_FLIP, .value.v1=flip_vec[projector_get_some_sys_param(P_FLIP_MODE)],false, false, flip_event},
-            //{STR_ASPECT_RATIO , .value.v1=aspect_vec[projector_get_some_sys_param(P_ASPECT_RATIO)*2],false, ASPECT_RATIO_DISABLE, aspect_radio_event},
             {STR_RESTORE_FACTORY_DEFAULT, .value.v1=BLANK_SPACE_STR ,false,false, restore_factory_default_event},
             {STR_UPGRADE, .value.v1=BLANK_SPACE_STR,false, false, software_update_event},
             {STR_AUTO_SLEEP, .value.v1=auto_sleep_vec[projector_get_some_sys_param(P_AUTOSLEEP)*2], false, false, auto_sleep_event},
@@ -648,19 +589,14 @@ lv_obj_t* create_setting_page(lv_obj_t* parent){
             #ifdef SYS_ZOOM_SUPPORT
             {STR_WINDOW_SCALE,.value.v1=BLANK_SPACE_STR,false, false, window_scale_event},
             #endif
+            {STR_VIDEO_DELAY, .value.v2 = projector_get_some_sys_param(P_VIDEO_DELAY), true, false, video_delay_event},
             {STR_VERSION_INFO, .value.v1=BLANK_SPACE_STR, false, false, version_info_event}
     };
-    //set_aspect_ratio(projector_get_some_sys_param(P_ASPECT_RATIO));
-   //aspect_ratio_btnmatrix_event_(projector_get_some_sys_param(P_ASPECT_RATIO));
     lv_obj_t *obj = create_page_(parent, setting_items, sizeof(setting_items)/sizeof(choose_item));
-
     lv_label_set_text(lv_obj_get_child(lv_obj_get_child(obj,sizeof(setting_items)/sizeof(choose_item)-1), 1), projector_get_version_info());
     lv_obj_set_style_text_font(lv_obj_get_child(lv_obj_get_child(obj, sizeof(setting_items)/sizeof(choose_item)-1), 1), VERSION_INFO_FONT,0);
-
     lv_obj_t *label = lv_obj_get_child(lv_obj_get_child(parent, 0), 0);
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
-    //language_choose_add_label(label, option_mode, 0);
-    //language_choose_add_label1(label, );
     set_label_text2(label, STR_OPTION_MODE_TITLE, FONT_NORMAL);
     lv_obj_t *icon = lv_img_create(lv_obj_get_child(parent, 1));
     lv_img_set_src(icon, &MAINMENU_IMG_OPTIONS);
@@ -688,7 +624,6 @@ lv_obj_t* create_page_(lv_obj_t* parent, choose_item * message, int len){
     lv_obj_t *label = lv_label_create(obj1);
     lv_label_set_recolor(label, true);
     lv_obj_center(label);
-
 
     obj1 = lv_obj_create(parent);
     lv_obj_set_size(obj1,LV_PCT(24),LV_PCT(100));
@@ -725,15 +660,8 @@ void label_set_text_color(lv_obj_t* label,const char* text, char* color){
         strncpy(temp+8, text, strlen(text));
     }
     strcat(temp, "#");
-
     lv_label_set_text(label, temp);
-
-   
 }
-
-
-
-
 
 static lv_timer_t *left_symbol_timer = NULL, *right_symbol_timer = NULL;
 
@@ -749,11 +677,8 @@ static void timer_cb2(lv_timer_t *timer){
     right_symbol_timer = NULL;
 }
 
-
-
-lv_obj_t* create_item(lv_obj_t* page, choose_item * chooseItem){
+static lv_obj_t* create_item(lv_obj_t* page, choose_item * chooseItem){
     lv_obj_t* cont = lv_btn_create(page);
-    
     lv_obj_set_size(cont,LV_PCT(BTN_WIDTH_PCT),LV_PCT(11));
     lv_obj_set_style_pad_hor(cont, 3, 0);
     lv_obj_set_style_border_side(cont, LV_BORDER_SIDE_FULL, 0);
@@ -771,8 +696,6 @@ lv_obj_t* create_item(lv_obj_t* page, choose_item * chooseItem){
     //language_choose_add_label1(label, );
     lv_label_set_recolor(label, true);
     lv_obj_align(label, LV_ALIGN_LEFT_MID, 0, 0);
-
- 
     if (!chooseItem->is_disabled){
         lv_obj_set_style_text_color(cont, lv_color_white(), 0);
         set_label_text2(label, chooseItem->name,  FONT_NORMAL);
@@ -781,11 +704,13 @@ lv_obj_t* create_item(lv_obj_t* page, choose_item * chooseItem){
         set_label_text2(label, chooseItem->name, FONT_NORMAL);
         lv_obj_add_state(cont, LV_STATE_DISABLED);
     }
-
-
+    if (STR_FLIP == chooseItem->name){
+        m_flip_mode = cont;
+    }
 
     label = lv_label_create(cont);
     lv_obj_align(label, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_label_set_recolor(label, true);
     
     if(SETUP_ITEM_VALUE_W_PCT < 0){
 
@@ -807,7 +732,6 @@ lv_obj_t* create_item(lv_obj_t* page, choose_item * chooseItem){
     }else{
         lv_label_set_text(label, " ");
     }
-
     return cont;
 }
 
@@ -823,7 +747,6 @@ lv_obj_t* create_widget_head(lv_obj_t* parent,int title, int h){
 
     lv_label_set_recolor(label, true);
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
-    //language_choose_add_label1(label, );
     set_label_text2(label, title, FONT_NORMAL);
     lv_obj_set_style_radius(head, 0, 0);
     lv_obj_center(label);
@@ -838,9 +761,7 @@ void create_widget_foot(lv_obj_t* parent, int h, void* user_data){
     lv_obj_set_style_pad_gap(foot1, 0, 0);
     set_pad_and_border_and_outline(foot1);
     lv_obj_set_style_bg_color(foot1, lv_color_make(32,32,64), 0);
-    lv_obj_set_style_radius(foot1, 0, 0);
-
-    
+    lv_obj_set_style_radius(foot1, 0, 0); 
     lv_obj_t *btn1,*btn2,*img, *label;
     for(int i=0; i<2; i++){
         btn1 = lv_obj_create(foot1);
@@ -858,17 +779,15 @@ void create_widget_foot(lv_obj_t* parent, int h, void* user_data){
         set_pad_and_border_and_outline(btn2);
         lv_obj_set_style_pad_ver(btn2, 0, 0);
         lv_obj_set_size(btn2, LV_PCT(75), LV_PCT(100));
-        //lv_obj_set_flex_flow(btn2, LV_FLEX_FLOW_ROW);
+
         img = lv_img_create(btn2);
         lv_obj_align(img, LV_ALIGN_LEFT_MID, 0, 0);
         lv_img_set_src(img, i == 0 ? &MENU_IMG_LIST_OK : &MENU_IMG_LIST_MENU);
-        label = lv_label_create(btn2);
-        // lv_obj_center(label);
-        lv_obj_set_size(label, LV_SIZE_CONTENT,LV_SIZE_CONTENT);
-        lv_point_t size;
 
-        
-         int label_id = 0;
+        label = lv_label_create(btn2);
+        lv_obj_set_size(label, LV_SIZE_CONTENT,LV_SIZE_CONTENT);
+        lv_point_t size;      
+        int label_id = 0;
         if(i==0){
             label_id = STR_FOOT_SURE;
         }else{
@@ -876,10 +795,7 @@ void create_widget_foot(lv_obj_t* parent, int h, void* user_data){
         }  
         set_label_text2(label, label_id, FONT_NORMAL);
         lv_obj_set_style_text_color(label, lv_color_white(), 0);
-        
         lv_obj_align_to(label, img, LV_ALIGN_OUT_RIGHT_MID, WIDGET_STR_FOOT_OFFSET_X, WIDGET_STR_FOOT_OFFSET_Y);
-       //lv_obj_add_event_cb(label, foot_label_event_handle, LV_EVENT_DRAW_PART_BEGIN, 0);
-
     }
 }
 
@@ -906,42 +822,30 @@ lv_obj_t *create_widget_btnmatrix(lv_obj_t *parent,int w, int h,const int* btn_m
     lv_obj_t* matrix_btn = lv_btnmatrix_create(parent);
     lv_group_focus_obj(matrix_btn);    
     lv_obj_set_size(matrix_btn,LV_PCT(w),LV_PCT(h));
-    //language_choose_add_btns(matrix_btn, , len);
     set_btns_lang2(matrix_btn, len, FONT_NORMAL, btn_map);
-    //set_btnmatrix_language(matrix_btn, projector_get_some_sys_param(P_OSD_LANGUAGE));
     lv_btnmatrix_set_btn_ctrl_all(matrix_btn,  LV_BTNMATRIX_CTRL_CHECKABLE);
     lv_btnmatrix_set_one_checked(matrix_btn, true);
     INIT_STYLE_BG(&style_bg);
     lv_obj_add_style(matrix_btn, &style_bg, LV_PART_MAIN);
-    //lv_obj_set_style_text_color(matrix_btn, lv_color_white(), LV_PART_ITEMS);
     INIT_STYLE_ITEM(&style_item);
     lv_obj_add_style(matrix_btn, &style_item, LV_PART_ITEMS);
 
     return matrix_btn;
 }
-
 
 lv_obj_t *create_widget_btnmatrix1(lv_obj_t *parent,int w, int h,const char** btn_map){
     lv_obj_t* matrix_btn = lv_btnmatrix_create(parent);
     lv_group_focus_obj(matrix_btn);
-    lv_obj_set_size(matrix_btn,LV_PCT(w),LV_PCT(h));
-    //language_choose_add_btns(matrix_btn, , len);
-   
+    lv_obj_set_size(matrix_btn,LV_PCT(w),LV_PCT(h)); 
     lv_btnmatrix_set_map(matrix_btn, btn_map);
-    
-    
-    //set_btnmatrix_language(matrix_btn, projector_get_some_sys_param(P_OSD_LANGUAGE));
     lv_btnmatrix_set_btn_ctrl_all(matrix_btn,  LV_BTNMATRIX_CTRL_CHECKABLE);
     lv_btnmatrix_set_one_checked(matrix_btn, true);
     INIT_STYLE_BG(&style_bg);
     lv_obj_add_style(matrix_btn, &style_bg, LV_PART_MAIN);
-    //lv_obj_set_style_text_color(matrix_btn, lv_color_white(), LV_PART_ITEMS);
     INIT_STYLE_ITEM(&style_item);
     lv_obj_add_style(matrix_btn, &style_item, LV_PART_ITEMS);
     return matrix_btn;
 }
-
-
 
 lv_obj_t *new_widget_(lv_obj_t* btn,  int title, const int* btn_map,uint32_t index, int len, int w, int h){
     lv_obj_t* image_mode = create_new_widget(w<=0 ?SETUP_WIDGET_DEFAULT_W :w, h<=0 ?SETUP_WIDGET_DEFAULT_H :h);
@@ -950,9 +854,6 @@ lv_obj_t *new_widget_(lv_obj_t* btn,  int title, const int* btn_map,uint32_t ind
 
     lv_obj_t *matrix_btn = create_widget_btnmatrix(image_mode, 100, 72, btn_map, len);
     char* text = lv_label_get_text(lv_obj_get_child(btn, 1));
-    // char chs[10];
-    // memset(chs, 0, 10);
-    // strncpy(chs, text+8, strlen(text)-9);
     const char * map;
     for(int i=0; i<len; i++){
         if(btn_map[i] == BLANK_SPACE_STR || btn_map[i] == LINE_BREAK_STR || btn_map[i] == BTNS_VEC_END){
@@ -965,27 +866,19 @@ lv_obj_t *new_widget_(lv_obj_t* btn,  int title, const int* btn_map,uint32_t ind
             btnmatrix_choose_id = i/2;
         }
     }
-    // btnmatrix_choose_id = index;
-    // lv_btnmatrix_set_selected_btn(matrix_btn, index);
-    // lv_btnmatrix_set_btn_ctrl(matrix_btn, index, LV_BTNMATRIX_CTRL_CHECKED);
     btn->user_data = (void*)index;
-    //
-
     create_widget_foot(image_mode, 14, btn);
     return image_mode;
 }
 
-
-void color_temp_widget(lv_obj_t* btn){
+static void color_temp_widget(lv_obj_t* btn){
     lv_obj_t *obj = new_widget_(btn, STR_COLOR_TEMP, color_temp_vec,projector_get_some_sys_param(P_COLOR_TEMP), 12,0,0);
-    
     lv_obj_add_event_cb(lv_obj_get_child(obj, 1), color_temp_btnmatrix_event, LV_EVENT_ALL, btn);
 }
 
-void color_temp_btnmatrix_event(lv_event_t* e){
+static void color_temp_btnmatrix_event(lv_event_t* e){
     btnmatrix_event(e, set_color_temperature);
 }
-
 
 static uint8_t get_next_flip_mode_i(){
     for(int i=0; i<FLIP_MODE_LEN; i++){
@@ -995,21 +888,20 @@ static uint8_t get_next_flip_mode_i(){
     }
     return 0;
 }
+
 uint8_t set_next_flip_mode(){
     uint8_t i = get_next_flip_mode_i();
     projector_set_some_sys_param(P_FLIP_MODE, flip_mode_vec[i]);
     set_flip_mode(flip_mode_vec[i]);
     return i;
 }
-void flip_widget(lv_obj_t* btn){
+
+static void flip_widget(lv_obj_t* btn){
     uint8_t i = set_next_flip_mode();
-    //language_choose_add_label1(lv_obj_get_child(btn, 1), );
-    //int id = projector_get_some_sys_param(P_OSD_LANGUAGE);
     set_label_text2(lv_obj_get_child(btn, 1), flip_vec[i], FONT_NORMAL);
 }
 
-
-void restory_factory_default_event_cb(lv_event_t *e){
+static void restory_factory_default_event_cb(lv_event_t *e){
     lv_obj_t * obj = lv_event_get_current_target(e);
     lv_event_code_t code = lv_event_get_code(e);
     lv_obj_t *target = lv_event_get_target(e);
@@ -1022,33 +914,27 @@ void restory_factory_default_event_cb(lv_event_t *e){
                 bluetooth_poweroff();
 #endif
                 projector_factory_reset();
-        #ifdef __HCRTOS__
-                reset();
-        #else
                 api_system_reboot();
-	#endif		
             } else{
                 lv_obj_del(target->parent);
                 turn_to_setup_root();
             }
         }
     }
-    
 }
 
-void restore_factory_default_widget(lv_obj_t* btn){
+static void restore_factory_default_widget(lv_obj_t* btn){
     int id = projector_get_some_sys_param(P_OSD_LANGUAGE);
     static const char * btns[3];
     btns[0] = api_rsc_string_get(STR_RESTORE_OK_1);
     btns[1] = api_rsc_string_get(STR_RESTORE_CLOSE);
     btns[2] = "";
-
-    
     lv_obj_t * mbox1 = lv_msgbox_create(setup_slave_root, "", api_rsc_string_get(STR_RESTORE_OK_2), btns, false);
     slave_scr_obj = mbox1;
    
     lv_obj_t *label = lv_msgbox_get_content(mbox1);
     lv_obj_set_style_text_font(label, osd_font_get(FONT_MID), 0);
+    lv_obj_set_style_text_color(label, lv_color_white(), 0);
 
     lv_obj_t *btns_obj = lv_msgbox_get_btns(mbox1);
      lv_obj_set_style_text_font(btns_obj, osd_font_get(FONT_MID), 0);
@@ -1061,35 +947,29 @@ void restore_factory_default_widget(lv_obj_t* btn){
     lv_group_focus_obj(lv_msgbox_get_btns(mbox1));
 }
 
-
-void setup_item_event_(lv_event_t* e, widget widget1, int item){
+static void setup_item_event_(lv_event_t* e, widget widget1, int item){
     lv_event_code_t code = lv_event_get_code(e);
     lv_obj_t * target = lv_event_get_target(e);
     lv_obj_t * label = lv_obj_get_child(target, 0);
     lv_obj_t * label1 = lv_obj_get_child(target, 1);
     
-    if (code == LV_EVENT_CLICKED) {
-
-     } else if(code == LV_EVENT_PRESSED){
+    if(code == LV_EVENT_PRESSED){
         lv_obj_clear_state(target, LV_STATE_PRESSED);
     }else if(code == LV_EVENT_DEFOCUSED){
         lv_obj_set_style_bg_opa(target, LV_OPA_0, 0);
         lv_obj_set_style_border_opa(target, LV_OPA_0, 0);
         lv_obj_set_style_text_color(target, !lv_obj_has_state(target, LV_STATE_DISABLED) ?lv_color_white(): lv_color_make(125,125,125), 0);
-        
     }
     else if (code == LV_EVENT_FOCUSED) {
         lv_obj_set_style_bg_opa(target, LV_OPA_100, 0);
         lv_obj_set_style_border_opa(target, LV_OPA_100, 0);
         lv_obj_add_state(target, LV_STATE_USER_1);
         lv_obj_set_style_text_color(target, lv_color_black(), 0);
-
     }else if (code == LV_EVENT_KEY) {
         if(timer_setting)
             lv_timer_pause(timer_setting);
         uint32_t key = lv_indev_get_key(lv_indev_get_act());
-        if (key == LV_KEY_DOWN || key == LV_KEY_UP || key == LV_KEY_LEFT || key == LV_KEY_RIGHT) {
-            
+        if (key == LV_KEY_DOWN || key == LV_KEY_UP || key == LV_KEY_LEFT || key == LV_KEY_RIGHT) {  
             lv_group_t* lvGroup = lv_group_get_default();
             lv_obj_clear_state(target,LV_STATE_USER_1);
             focus_next_or_pre focusNextOrPre;
@@ -1116,25 +996,18 @@ void setup_item_event_(lv_event_t* e, widget widget1, int item){
                 focused = lv_group_get_focused(lvGroup);
             }
             cur_btn = focused;
-            lv_tabview_set_act(tabv, pg_id, LV_ANIM_OFF);
-           
+            lv_tabview_set_act(tabv, pg_id, LV_ANIM_OFF);  
         }else if (key == LV_KEY_ENTER){
             if(item == P_BASS || item == P_TREBLE || item == P_CONTRAST || item == P_COLOR ||
-              item == P_BRIGHTNESS || item == P_HUE || item == P_SHARPNESS || item == P_BALANCE){
-                // lv_group_focus_obj(lv_obj_get_child(target, 1));
+              item == P_BRIGHTNESS || item == P_HUE || item == P_SHARPNESS || item == P_BALANCE || item == P_SYS_ZOOM_OUT_COUNT
+              || item == P_VIDEO_DELAY){
                 set_adjustable_value(item);
-                // if(key == LV_KEY_RIGHT){
-                //     lv_dropdown_open(lv_obj_get_child(lv_obj_get_child(target, 1), 0));
-                // }
             }else if(widget1){
                 if(item != P_FLIP_MODE){
                     lv_obj_add_flag(setup_root, LV_OBJ_FLAG_HIDDEN);
-                    //lv_obj_set_style_bg_opa()
                 }
                 widget1(target);
            }
-
-
         }
         else if (key == LV_KEY_ESC || key == LV_KEY_HOME){
             lv_obj_clear_state(target, LV_STATE_USER_1);
@@ -1151,95 +1024,86 @@ void setup_item_event_(lv_event_t* e, widget widget1, int item){
         dsc->rect_dsc->outline_width=0;
         dsc->rect_dsc->shadow_width=0;
     }
-    
 }
 
-void picture_mode_event(lv_event_t* e) {
+static void picture_mode_event(lv_event_t* e) {
     setup_item_event_(e, picture_mode_widget, P_PICTURE_MODE);
 }
-void contrast_event(lv_event_t* e){
+
+static void contrast_event(lv_event_t* e){
     setup_item_event_(e,  NULL, P_CONTRAST);
 }
-void brightness_event(lv_event_t* e){
+
+static void brightness_event(lv_event_t* e){
     setup_item_event_(e,  NULL, P_BRIGHTNESS);
 }
-void color_event(lv_event_t* e){
-    setup_item_event_(e,NULL, P_COLOR);
 
+static void color_event(lv_event_t* e){
+    setup_item_event_(e,NULL, P_COLOR);
 }
 
-void hue_event(lv_event_t* e){
+static void hue_event(lv_event_t* e){
     setup_item_event_(e, NULL, P_HUE);
 }
-void sharpness_event(lv_event_t* e){
+
+static void sharpness_event(lv_event_t* e){
     setup_item_event_(e, NULL, P_SHARPNESS);
-
 }
-void color_temperature_event(lv_event_t* e){
+
+static void color_temperature_event(lv_event_t* e){
     setup_item_event_(e, color_temp_widget, P_COLOR_TEMP);
-
 }
 
-void sound_mode_event(lv_event_t* e){
+static void sound_mode_event(lv_event_t* e){
     setup_item_event_(e, sound_mode_widget, P_SOUND_MODE);
-
 }
-void treble_event(lv_event_t* e){
+
+static void treble_event(lv_event_t* e){
     setup_item_event_(e, NULL, P_TREBLE);
-
 }
-void version_info_event(lv_event_t *e){
+
+static void version_info_event(lv_event_t *e){
     setup_item_event_(e, NULL, P_VERSION_INFO);
 }
-void bass_event(lv_event_t* e){
+
+static void bass_event(lv_event_t* e){
     setup_item_event_(e, NULL, P_BASS);
-
 }
-void balance_event(lv_event_t* e){
+
+static void balance_event(lv_event_t* e){
     setup_item_event_(e, NULL, P_BALANCE);
-
 }
 
-
-void osd_language_event(lv_event_t* e){
+static void osd_language_event(lv_event_t* e){
     setup_item_event_(e, osd_language_widget, P_OSD_LANGUAGE);
-
 }
-void flip_event(lv_event_t* e){
+
+static void flip_event(lv_event_t* e){
     setup_item_event_(e, flip_widget, P_FLIP_MODE);
-
 }
-// void aspect_radio_event(lv_event_t* e){
-//     setup_item_event_(e, aspect_ratio_widget, P_ASPECT_RATIO);
 
-
-// }
-void restore_factory_default_event(lv_event_t* e){
+static void restore_factory_default_event(lv_event_t* e){
     setup_item_event_(e, restore_factory_default_widget, P_RESTORE);
-
 }
-void software_update_event(lv_event_t* e){
+
+static void software_update_event(lv_event_t* e){
     setup_item_event_(e, software_update_widget, P_UPDATE);
-
 }
 
-void keystone_event(lv_event_t *e){
-    setup_item_event_(e, keystone_screen_init, P_KEYSTONE);
-}
-
-void auto_sleep_event(lv_event_t *e){
+static void auto_sleep_event(lv_event_t *e){
     setup_item_event_(e, auto_sleep_widget, P_AUTOSLEEP);
 }
 
-extern void osd_time_widget(lv_obj_t* btn);
+static void video_delay_event(lv_event_t *e){
+    setup_item_event_(e, NULL, P_VIDEO_DELAY);
+}
 
-void osd_time_event(lv_event_t *e){
+static void osd_time_event(lv_event_t *e){
     setup_item_event_(e, osd_time_widget, P_OSD_TIME);
 }
 
-void window_scale_event(lv_event_t *e){
+static void window_scale_event(lv_event_t *e){
     #ifdef SYS_ZOOM_SUPPORT
-    extern void create_scale_widget(lv_obj_t* btn);
     setup_item_event_(e, create_scale_widget, P_WINDOW_SCALE);
     #endif
 }
@@ -1267,6 +1131,10 @@ void btnmatrix_event(lv_event_t* e, btn_matrix_func func){
             }
             lv_obj_del(target->parent);
            turn_to_setup_root();
+            if(timer_setting){
+                lv_timer_reset(timer_setting);
+                lv_timer_resume(timer_setting);
+            }
            return; 
         }
         if (key == LV_KEY_DOWN || key == LV_KEY_UP){
@@ -1314,21 +1182,9 @@ void btnmatrix_event(lv_event_t* e, btn_matrix_func func){
     }
     if(code == LV_EVENT_DRAW_PART_BEGIN) {
         lv_obj_draw_part_dsc_t *dsc = lv_event_get_param(e);
-
         dsc->rect_dsc->outline_width=0;
     }
 }
-
-
-
-void return_event(lv_event_t* e){
-    lv_event_code_t code = lv_event_get_code(e);
-    if (code == LV_EVENT_CLICKED){
-        turn_to_setup_root();
-    }
-}
-
-
 
 static void set_picture(const void *scr, lv_obj_draw_part_dsc_t *dsc){
     lv_img_header_t header;
@@ -1344,25 +1200,20 @@ static void set_picture(const void *scr, lv_obj_draw_part_dsc_t *dsc){
     lv_draw_img_dsc_t img_draw_dsc;
     lv_draw_img_dsc_init(&img_draw_dsc);
     img_draw_dsc.recolor = lv_color_black();
-
     lv_draw_img(dsc->draw_ctx, &img_draw_dsc, &a, scr);
 }
 
 static bool obj_has_ancestor(lv_obj_t *self, lv_obj_t *ancestor){
-    while (self->parent)
-    {
+    while (self->parent){
         if(self->parent == ancestor){
             return true;
         }
         self = self->parent;
     }
-    return false;
-    
+    return false; 
 }
 
-
-void tabv_btns_event(lv_event_t* e){
-
+static void tabv_btns_event(lv_event_t* e){
     lv_event_code_t code = lv_event_get_code(e);
     lv_obj_t* target = lv_event_get_target(e);
     lv_group_t* lvGroup = lv_group_get_default();
@@ -1386,6 +1237,7 @@ void tabv_btns_event(lv_event_t* e){
             }
         }else if(dsc->id == TAB_SETTING){
             if (dsc->id == lv_tabview_get_tab_act(target->parent)){
+                setup_settings_update();
                 set_picture(&MAINMENU_IMG_OPTION_FOCUS, dsc);
             }else{
                 set_picture(&MAINMENU_IMG_OPTIONS_S_UNFOCUS, dsc);
@@ -1440,28 +1292,24 @@ void tabv_btns_event(lv_event_t* e){
             lv_obj_t *label;
             char* text;
             
-                while (pg==pgs[TAB_MAX-2] ? !obj_has_ancestor(target, pg) : target->parent->parent != pg){
+            while (pg==pgs[TAB_MAX-2] ? !obj_has_ancestor(target, pg) : target->parent->parent != pg){
                 #ifdef BLUETOOTH_SUPPORT
-                    if(target == bt_list_obj){
-                        focusNextOrPre(lvGroup);
-                        target = lv_group_get_focused(lvGroup);
-                        continue;
-                    }
-                #endif
-                    if(target == keystone_list){
-                        focusNextOrPre(lvGroup);
-                        target = lv_group_get_focused(lvGroup);
-                        continue;
-                    }
-                    lv_obj_clear_state(target, LV_STATE_USER_1);
-                    // lv_obj_set_style_text_color(target, lv_color_white(), 0);
-                    // lv_obj_set_style_bg_opa(target, LV_OPA_0, 0);
-                    // lv_obj_set_style_border_opa(target, LV_OPA_0, 0);
+                if(target == bt_list_obj){
                     focusNextOrPre(lvGroup);
                     target = lv_group_get_focused(lvGroup);
+                    continue;
                 }
-                cur_btn = target;           
-                printf("id: %d\n", id);     
+                #endif
+                if(target == keystone_list){
+                    focusNextOrPre(lvGroup);
+                    target = lv_group_get_focused(lvGroup);
+                    continue;
+                }
+                lv_obj_clear_state(target, LV_STATE_USER_1);
+                focusNextOrPre(lvGroup);
+                target = lv_group_get_focused(lvGroup);
+            }
+                cur_btn = target;               
             lv_tabview_set_act(tabv, id, LV_ANIM_OFF);           
 
         }
@@ -1470,58 +1318,34 @@ void tabv_btns_event(lv_event_t* e){
             lv_timer_reset(timer_setting);
             lv_timer_resume(timer_setting); 
         }
-
-    }
-
-}
-
-void btn_event(lv_event_t* e){
-    lv_event_code_t code = lv_event_get_code(e);
-    if (code == LV_EVENT_DRAW_PART_BEGIN){
-        lv_obj_draw_part_dsc_t *dsc = lv_event_get_param(e);
-        dsc->rect_dsc->outline_width=0;
-        dsc->rect_dsc->shadow_width=0;
     }
 }
-
-
-
 
 void turn_to_setup_root(){
     if (setup_scr){
-        //lv_scr_load(setup_scr);
         lv_group_focus_obj(cur_btn);
     }
-
     slave_scr_obj = NULL;
     lv_obj_clear_flag(setup_root, LV_OBJ_FLAG_HIDDEN);
     projector_sys_param_save();
-
 }
 
 void turn_to_main_scr(){
-    // if(timer_setting){
-    //     lv_timer_ready(timer_setting);
-    //     lv_timer_resume(timer_setting);
-    // }else{
-        change_screen(projector_get_some_sys_param(P_CUR_CHANNEL));
-    //}
-
+    change_screen(projector_get_some_sys_param(P_CUR_CHANNEL));
     projector_sys_param_save();
 }
 
 static void msg_timer_handle(lv_timer_t *timer_){
     lv_obj_t *obj = (lv_obj_t*)timer_->user_data;
-    printf("del msgbox\n");
+    log(DEMO, INFO,"del msgbox\n");
     lv_obj_del(obj);
 }
 
 lv_obj_t* create_message_box(char* str){
-    printf("msgbox\n");
-
+    log(DEMO, INFO,"msgbox\n");
     lv_obj_t *con = lv_obj_create(lv_layer_top());
     lv_obj_set_style_text_color(con, lv_color_white(), 0);
-    lv_obj_set_size(con, LV_SIZE_CONTENT, LV_PCT(10));
+    lv_obj_set_size(con, LV_PCT(25), LV_PCT(16));
     lv_obj_center(con);
     lv_obj_set_style_bg_color(con, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
     lv_obj_set_scrollbar_mode(con, LV_SCROLLBAR_MODE_OFF);
@@ -1536,7 +1360,7 @@ lv_obj_t* create_message_box(char* str){
     lv_label_set_text(label, str);
     lv_obj_set_style_text_font(label, osd_font_get(FONT_MID), 0);
 
-    lv_timer_t *timer = lv_timer_create(msg_timer_handle, 2000, con);
+    lv_timer_t *timer = lv_timer_create(msg_timer_handle, 3000, con);
     lv_timer_set_repeat_count(timer, 1);
     lv_timer_reset(timer);
     return con;
@@ -1550,10 +1374,7 @@ lv_obj_t* create_message_box1(int msg_id, int btn_id1, int btn_id2, lv_event_cb_
     api_rsc_string_get(msg_id), btns, false);
     lv_obj_set_flex_flow(mbox1, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(mbox1, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-   
-    
     lv_obj_set_style_bg_color(mbox1, lv_palette_darken(LV_PALETTE_GREY, 1), 0);
-    //lv_obj_set_style_bg_opa(mbox1, LV_OPA_70, 0);
     lv_obj_set_size(mbox1, lv_pct((w<=0 ? 25 : w)), lv_pct((h<=0 ?20 : h)));
      lv_obj_add_event_cb(mbox1, cb, LV_EVENT_ALL, NULL);
     lv_obj_t *obj1 = lv_msgbox_get_btns(mbox1);
@@ -1565,24 +1386,20 @@ lv_obj_t* create_message_box1(int msg_id, int btn_id1, int btn_id2, lv_event_cb_
     lv_obj_center(mbox1);
     lv_obj_set_style_text_font(mbox1, osd_font_get(FONT_MID), 0);
     lv_group_focus_obj(lv_msgbox_get_btns(mbox1));
-    
     return mbox1;
 }
 
-static void set_angle(void * obj, int32_t v)
-{
+static void set_angle(void * obj, int32_t v){
     lv_arc_set_value(obj, v);
 }
 
 static void loader_with_arc_event_handle(lv_event_t *e){
     lv_event_code_t code = lv_event_get_code(e);
-
     if(code == LV_EVENT_DRAW_PART_BEGIN){
         lv_obj_draw_part_dsc_t* dsc = lv_event_get_draw_part_dsc(e);
         if(dsc->type ==  LV_ARC_DRAW_PART_BACKGROUND  || dsc->type ==  LV_ARC_DRAW_PART_FOREGROUND){
             dsc->radius = 400;
         }
-        
     }
 }
 
@@ -1594,8 +1411,6 @@ lv_obj_t* loader_with_arc(char* str, lv_anim_exec_xcb_t exec_cb){
     lv_obj_clear_flag(arc, LV_OBJ_FLAG_CLICKABLE);  /*To not allow adjusting by click*/
     lv_obj_center(arc);
     lv_obj_set_size(arc, lv_pct(18), lv_pct(32));
-    //lv_obj_add_event_cb(arc, loader_with_arc_event_handle, LV_EVENT_ALL, 0);
-
     lv_anim_t a;
     lv_anim_init(&a);
     lv_anim_set_var(&a, arc);
@@ -1605,7 +1420,6 @@ lv_obj_t* loader_with_arc(char* str, lv_anim_exec_xcb_t exec_cb){
     lv_anim_set_repeat_delay(&a, 500);
     lv_anim_set_values(&a, 0, 100);
     lv_anim_start(&a);
-
     lv_obj_t *label = lv_label_create(arc);
     lv_obj_center(label);
     lv_obj_set_style_text_font(label, osd_font_get(FONT_MID), 0);
@@ -1616,16 +1430,10 @@ lv_obj_t* loader_with_arc(char* str, lv_anim_exec_xcb_t exec_cb){
 lv_obj_t* create_list_obj1(lv_obj_t *parent, int w, int h){
     lv_obj_t *obj = lv_list_create(parent);
     lv_obj_set_style_radius(obj, 0, 0);
-    
-    //set_pad_and_border_and_outline(obj);
-    //lv_obj_set_style_pad_ver(obj, 0, 0);
     lv_obj_set_style_border_width(obj, 0, 0);
     lv_obj_set_style_outline_width(obj, 0, 0);
-    //lv_obj_set_style_pad_hor(obj, 5, 0);
     lv_obj_set_scrollbar_mode(obj, LV_SCROLLBAR_MODE_OFF);
-    
-    // lv_obj_scroll_to_view(obj, LV_ANIM_OFF);
-   lv_obj_set_style_bg_opa(obj, LV_OPA_0, 0);
+    lv_obj_set_style_bg_opa(obj, LV_OPA_0, 0);
     lv_obj_set_size(obj, LV_PCT(w), LV_PCT(h));
     lv_obj_align(obj, LV_ALIGN_CENTER, 0, 0);
     lv_group_add_obj(lv_group_get_default(), obj);
@@ -1638,7 +1446,6 @@ lv_obj_t* create_list_sub_text_obj1(lv_obj_t *parent, int w, int h, int str1, in
     param.str_id = str1;
     lv_obj_t *list_label =  create_list_sub_text_obj(parent,w,h,param, LIST_PARAM_TYPE_INT,  font_id);
     lv_obj_set_style_text_align(list_label, LV_TEXT_ALIGN_CENTER,0);
-   
     return list_label;
 }
 
@@ -1651,21 +1458,15 @@ lv_obj_t* create_list_sub_text_obj4(lv_obj_t *parent, int w, int h, int str1){
 
     lv_obj_t *label = lv_label_create(list_label);
     lv_obj_center(label);
-    //language_choose_add_label1(label);
     set_label_text2(label ,str1, FONT_NORMAL);
     return list_label;
 }
-
-
-
 
 lv_obj_t* create_list_sub_text_obj3(lv_obj_t *parent,int w, int h, char* str1){
     list_sub_param param;
     param.str = str1;
     return create_list_sub_text_obj(parent,w,h,param, LIST_PARAM_TYPE_STR, -1);
 }
-
-
 
 static lv_obj_t* create_list_sub_text_obj(lv_obj_t *parent,int w, int h, list_sub_param param, int type, int font_id){
     lv_obj_t *list_label;
@@ -1694,24 +1495,26 @@ static lv_obj_t* create_list_sub_text_obj(lv_obj_t *parent,int w, int h, list_su
         lv_label_set_text(list_label, param.str);
         lv_obj_set_style_text_font(list_label, &lv_font_montserrat_26,0);
     }
-
    return list_label;
 }
 
 void adjust_bar_event_handle(lv_event_t *e){
     lv_event_code_t code = lv_event_get_code(e);
     lv_obj_t *obj = lv_event_get_target(e);
+    lv_obj_t *slider = lv_obj_get_child(obj, 0);
     lv_obj_t *show_value = lv_obj_get_child(obj, 0);
     uint32_t item = (uint32_t)lv_event_get_user_data(e);
     static int cur_v=0;
+    static int prev_v=0;
     if(code == LV_EVENT_KEY){
         if(timer_setting){
             lv_timer_pause(timer_setting);
         }
-        uint16_t key = lv_indev_get_key(lv_indev_get_act());
+        static char key = 0;
+        key = (char)lv_indev_get_key(lv_indev_get_act());
+        prev_v = cur_v;
         if(key == LV_KEY_UP || key == LV_KEY_RIGHT){
-               cur_v+=1;
-
+            cur_v+=1;
             if(item == P_BASS){
                 if(cur_v>10){
                     cur_v=10;
@@ -1743,9 +1546,17 @@ void adjust_bar_event_handle(lv_event_t *e){
                 }
                 set_enhance1(cur_v, item);
             }
-            lv_label_set_text_fmt(lv_obj_get_child(obj, 0), "%d", cur_v);
+            else if(item == P_VIDEO_DELAY){
+                video_delay_ms_turn_up();
+                cur_v = projector_get_some_sys_param(P_VIDEO_DELAY);
+            }
+            for(int i=0; i < cur_v-prev_v; i++){
+                lv_event_send(slider, LV_EVENT_KEY, &key);
+            }
+            lv_label_set_text_fmt(lv_obj_get_child(slider, 0), "%d", cur_v);
+            lv_label_set_text_fmt(lv_obj_get_child(cur_btn, 1), "%d", cur_v);
         }else if(key == LV_KEY_DOWN ||key == LV_KEY_LEFT){
-           
+            prev_v = cur_v;
             cur_v-=1;
             if(item == P_BASS){
                 if(cur_v<-10){
@@ -1778,12 +1589,19 @@ void adjust_bar_event_handle(lv_event_t *e){
                 }
                 set_enhance1(cur_v, item);
             }
-            lv_label_set_text_fmt(lv_obj_get_child(obj, 0), "%d", cur_v);
+            else if(item == P_VIDEO_DELAY){
+                video_delay_ms_turn_down();
+                cur_v = projector_get_some_sys_param(P_VIDEO_DELAY);
+            }
+            for(int i=0; i < prev_v-cur_v; i++){
+                lv_event_send(slider, LV_EVENT_KEY, &key);
+            }
+            lv_label_set_text_fmt(lv_obj_get_child(slider, 0), "%d", cur_v);
+            lv_label_set_text_fmt(lv_obj_get_child(cur_btn, 1), "%d", cur_v);
         }else if(key == LV_KEY_ESC || key==LV_KEY_ENTER ||  key == LV_KEY_HOME){
-            lv_obj_del(obj->parent);
+            lv_obj_del(obj);
             lv_label_set_text_fmt(lv_obj_get_child(cur_btn, 1), "%d", cur_v);
             turn_to_setup_root();
-
         }
         if(timer_setting){
             lv_timer_reset(timer_setting);
@@ -1796,11 +1614,10 @@ void adjust_bar_event_handle(lv_event_t *e){
         if(dsc && dsc->rect_dsc){
             dsc->rect_dsc->outline_width=0;           
         }
-
     }
 }
 
-lv_obj_t* create_adjust_bar(int name_id, int value, int min, int max){
+lv_obj_t* create_adjust_bar(int value, int min, int max){
     lv_obj_t *m_bar = lv_obj_create(setup_slave_root);
     slave_scr_obj = m_bar;
     lv_obj_align(m_bar, LV_ALIGN_TOP_MID, lv_pct(44), 20);
@@ -1811,27 +1628,13 @@ lv_obj_t* create_adjust_bar(int name_id, int value, int min, int max){
     lv_obj_set_style_border_width(m_bar, 0, 0);
     lv_obj_clear_flag(m_bar, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_pad_hor(m_bar, 0, 0);
-   
-    
-
-    // lv_obj_t *label_name = lv_label_create(m_bar);
-    // lv_obj_set_size(label_name, lv_pct(100), LV_SIZE_CONTENT);
-    // lv_label_set_text(label_name, api_rsc_string_get(name_id));
-    // lv_obj_set_style_text_font(label_name, osd_font_get(FONT_SMALL), 0);
-    // lv_obj_set_style_text_color(label_name, lv_color_hex(0x8a86b8), 0);
-    // lv_obj_set_style_text_align(label_name, LV_TEXT_ALIGN_CENTER, 0);
-    // lv_label_set_long_mode(label_name, LV_LABEL_LONG_SCROLL_CIRCULAR);
+    lv_group_add_obj(setup_g, m_bar);
 
     lv_obj_t *slider_obj = lv_slider_create(m_bar);
-    lv_obj_set_size(slider_obj, lv_pct(60), lv_pct(100));
-    //lv_obj_set_style_anim_time(slider_obj, 100, 0);
+    lv_obj_set_size(slider_obj, lv_pct(70), lv_pct(100));
     lv_slider_set_range(slider_obj, min, max);
     lv_slider_set_value(slider_obj, value, LV_ANIM_OFF);
     lv_obj_set_style_bg_opa(slider_obj, LV_OPA_0, LV_PART_KNOB);
-    // lv_obj_set_style_border_width(slider_obj, 0, 0);
-    // lv_obj_set_style_outline_width(slider_obj, 0, 0);
-    // lv_obj_set_style_shadow_width(slider_obj, 0, 0);
-    
 
     lv_obj_t*  label_name = lv_label_create(slider_obj);
     lv_label_set_text_fmt(label_name,"%d", value);
@@ -1839,48 +1642,58 @@ lv_obj_t* create_adjust_bar(int name_id, int value, int min, int max){
     lv_obj_set_style_text_font(label_name, osd_font_get(FONT_NORMAL), 0);
     lv_obj_center(label_name);
     
-    return slider_obj;
+    return m_bar;
 }
 
 void set_adjustable_value(uint32_t item){
     lv_obj_add_flag(setup_root, LV_OBJ_FLAG_HIDDEN);
     lv_obj_t *slider=NULL;
-    // if(timer_setting){
-    //     lv_timer_pause(timer_setting);            
-    // }
     int v = projector_get_some_sys_param(item);
     switch (item)
     {
     case P_BASS:
-        slider=create_adjust_bar(STR_BASS, v, -10, 10);
+        slider=create_adjust_bar(v, -10, 10);
         break;
     case P_TREBLE:
-        slider=create_adjust_bar(STR_TREBLE, v, -10, 10);
+        slider=create_adjust_bar(v, -10, 10);
         break;
     case P_CONTRAST:
-        slider=create_adjust_bar(STR_CONSTRAST, v, 0, 100);
+        slider=create_adjust_bar(v, 0, 100);
         break;
     case P_COLOR:
-        slider=create_adjust_bar(STR_COLOR, v, 0, 100);
+        slider=create_adjust_bar(v, 0, 100);
         break;
     case P_BRIGHTNESS:
-        slider=create_adjust_bar(STR_BRIGHTNESS, v, 0, 100);
+        slider=create_adjust_bar(v, 0, 100);
         break;
     case P_HUE:
-        slider=create_adjust_bar(STR_HUE, v, 0, 100);
+        slider=create_adjust_bar(v, 0, 100);
         break;
     case P_BALANCE:
-        slider=create_adjust_bar(STR_BALANCE, v, -24, 24);
+        slider=create_adjust_bar(v, -24, 24);
         break;
     case P_SHARPNESS:
-        slider=create_adjust_bar(STR_SHARPNESS, v, 0, 10);
+        slider=create_adjust_bar(v, 0, 10);
+        break;
+    case P_VIDEO_DELAY:
+        slider = create_adjust_bar(v, 0, VIDEO_DELAY_MAX_V);
         break;
     default:
         break;
     }
-
     if(slider){
         lv_obj_add_event_cb(slider, adjust_bar_event_handle, LV_EVENT_ALL, (void*)item);
         lv_group_focus_obj(slider);
     }
 }
+
+static void setup_settings_update(void)
+{
+    if (m_flip_mode)
+    {    
+        int i = projector_get_some_sys_param(P_FLIP_MODE);
+        lv_label_set_text(lv_obj_get_child(m_flip_mode, 1),(char *)api_rsc_string_get(flip_vec[i]));
+    }
+
+}
+

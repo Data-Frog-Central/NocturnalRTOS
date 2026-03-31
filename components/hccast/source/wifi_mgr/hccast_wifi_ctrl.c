@@ -23,14 +23,17 @@
 static pthread_mutex_t g_wifi_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t g_wifi_p2p_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t  g_wifi_p2p_cond;
+static int g_hostap_thread_ret = 0;
+static int g_sta_thread_ret = 0;
 
-static hccast_wifi_stat_e g_wifi_op_stat = HCCAST_WIFI_STAT_NONE;
+
+static hccast_wifi_stat_e g_wifi_op_stat = HCCAST_WIFI_STAT_IDLE;
 
 /* ***************************************** */
 
 int wifi_ctrl_msgCb_func(char *msg, size_t len)
 {
-    hccast_log(LL_INFO, "%s: len:%d, %s\n", __func__, len, msg);
+    hccast_log(LL_INFO, "%s: len:%ld, %s\n", __func__, len, msg);
     return 0;
 }
 
@@ -884,7 +887,7 @@ int wifi_ctrl_do_ap_connect(const hccast_wifi_ap_info_t *ap_info)
 
     // step 3a: WPA3
     if (strlen(ap_info->pwd) >= 8 \
-            && HCCAST_WIFI_ENCRYPT_MODE_WPA2PSK_SAE == ap_info->encryptMode)
+        && HCCAST_WIFI_ENCRYPT_MODE_WPA2PSK_SAE == ap_info->encryptMode)
     {
         memset(reply, 0, sizeof(reply));
         len = sizeof(reply) - 1;
@@ -1314,9 +1317,6 @@ int wifi_ctrl_do_scan()
     unsigned int len = sizeof(reply) - 1;
     char *cmd = "SCAN";
 
-    g_wifi_op_stat |= HCCAST_WIFI_STAT_SCANNING;
-    g_wifi_op_stat &= ~HCCAST_WIFI_STAT_IDLE;
-
 #ifdef HC_RTOS    // rtos exist wifi mode switch, dont use wifi_ctrl_run_cmd_keep
     ret = wifi_ctrl_run_cmd(P2P_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_STA, cmd, reply, &len);
 #else
@@ -1334,20 +1334,137 @@ int wifi_ctrl_do_scan()
 }
 
 /**
+ * Get the scan result of the AP list
+ *
+ * @param scan_res the pointer to the structure of the scan result
+ */
+int wifi_ctrl_get_aplist(hccast_wifi_scan_result_t *scan_res)
+{
+    int ret = HCCAST_WIFI_ERR_NO_ERROR;
+    //char val[512] = {0};
+    //char reply[4096] = {0};
+    char *reply = NULL;
+    unsigned int len = 4096 - 1;
+    char *cmd = "SCAN_RESULTS";
+
+    if (NULL == scan_res)
+    {
+        hccast_log(LL_ERROR, "param error!\n");
+        ret = HCCAST_WIFI_ERR_CMD_PARAMS_ERROR;
+        goto ERROR;
+    }
+
+    reply = (char *)calloc(4096, sizeof(char));
+    if (NULL == reply)
+    {
+        hccast_log(LL_ERROR, "[%s]: memory not enough.\n",  __FUNCTION__ );
+        ret = HCCAST_WIFI_ERR_MEM;
+        goto ERROR;
+    }
+
+#ifdef HC_RTOS    // rtos exist wifi mode switch, dont use wifi_ctrl_run_cmd_keep
+    ret = wifi_ctrl_run_cmd(P2P_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_STA, "SCAN_RESULTS", reply, &len);
+#else
+    ret = wifi_ctrl_run_cmd_keep(P2P_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_STA, "SCAN_RESULTS", reply, &len);
+#endif
+
+    if (ret < 0 || len == 0)
+    {
+        hccast_log(LL_ERROR, "%s run error!\n", cmd);
+        goto ERROR;
+    }
+
+    char line[1024] = {0};
+    char bssid[18]  = {0};
+    char freq[64]   = {0};
+    char signal[64] = {0};
+    char flags[256] = {0};
+    char ssid[256]  = {0};
+    int i = 0, j = 0;
+
+    for (i = 1; !get_line_from_buf(i, line, reply); i++, j++)
+    {
+        memset(ssid, 0, sizeof(ssid));
+
+        if (j > 63)
+        {
+            hccast_log(LL_WARNING, "ap list num over max, break return...\n");
+            break;
+        }
+
+        // bssid / frequency / signal level / flags / ssid
+        sscanf(line, "%s %s %s %s %[^'\n']", bssid, freq, signal, flags, ssid);
+        if (strlen(ssid) == 0)
+        {
+            --j;
+            continue;
+        }
+
+        wifi_ctrl_chinese_conversion(ssid);
+        memcpy(scan_res->apinfo[j].ssid, ssid, sizeof(scan_res->apinfo[j].ssid));
+
+        int sig = atoi(signal);
+#ifdef __linux__
+        // 2 * (dBm + 100)
+        scan_res->apinfo[j].quality = sig > -50 ? 100 : 2 * (sig + 100);
+#else
+        if (sig >= 0)
+        {
+            scan_res->apinfo[j].quality = sig > 50 ? 100 : 2 * sig;
+        }
+        else
+        {
+            scan_res->apinfo[j].quality = sig > -50 ? 100 : 2 * (sig + 100);
+        }
+#endif
+        scan_res->apinfo[j].freq = strtol(freq, NULL, 10);
+
+        if (strstr(flags, "WPA2-PSK") || strstr(flags, "WPA-PSK"))
+        {
+            scan_res->apinfo[j].encryptMode = HCCAST_WIFI_ENCRYPT_MODE_WPA2PSK_AES;
+        }
+        else if (strstr(flags, "WPA2-SAE") || strstr(flags, "+SAE") || strstr(flags, "WPA2--CCMP"))
+        {
+            scan_res->apinfo[j].encryptMode = HCCAST_WIFI_ENCRYPT_MODE_WPA2PSK_SAE;
+        }
+        else if (strstr(flags, "WEP"))
+        {
+            scan_res->apinfo[j].encryptMode = HCCAST_WIFI_ENCRYPT_MODE_OPEN_WEP;
+        }
+        else if (strstr(flags, "ESS"))
+        {
+            scan_res->apinfo[j].encryptMode = HCCAST_WIFI_ENCRYPT_MODE_NONE;
+        }
+
+        //printf("%02d %-32s %d\n", i, scan_res->apinfo[j].ssid, scan_res->apinfo[j].quality);
+    }
+
+    scan_res->ap_num = j;
+    hccast_log(LL_INFO, "scan ap_num = %d.\n", scan_res->ap_num);
+
+ERROR:
+    if (reply) free(reply);
+    return ret;
+}
+
+/**
  * Used to abort the current wifi block operation.
  */
 void wifi_ctrl_do_op_abort()
 {
-    if (HCCAST_WIFI_STAT_SCANNING == (g_wifi_op_stat & HCCAST_WIFI_STAT_SCANNING) \
-            || HCCAST_WIFI_STAT_CONNECTING == (g_wifi_op_stat & HCCAST_WIFI_STAT_CONNECTING))
+    while(wifi_ctrl_is_busy())
     {
         wifi_ctrl_p2p_lock();
         wifi_ctrl_signal();
         wifi_ctrl_p2p_unlock();
+
+        g_wifi_op_stat |= HCCAST_WIFI_STAT_IDLE;
+        g_wifi_op_stat &= ~(HCCAST_WIFI_STAT_SCANNING | HCCAST_WIFI_STAT_CONNECTING);
+
+        usleep(150 * 1000);
     }
 
     g_wifi_op_stat |= HCCAST_WIFI_STAT_IDLE;
-    g_wifi_op_stat &= ~(HCCAST_WIFI_STAT_SCANNING | HCCAST_WIFI_STAT_CONNECTING);
 }
 
 /**
@@ -1414,6 +1531,29 @@ int wifi_ctrl_set_connecting_by_user(bool flag)
 }
 
 /**
+ * Set the wifi op stat for scanning .
+ *
+ * @param flag true or false
+ *
+ * @return The value of scanning stat.
+ */
+int wifi_ctrl_set_scanning_by_user(bool flag)
+{
+    if (flag)
+    {
+        g_wifi_op_stat |= HCCAST_WIFI_STAT_SCANNING;
+        g_wifi_op_stat &= ~HCCAST_WIFI_STAT_IDLE;
+    }
+    else
+    {
+        g_wifi_op_stat |= HCCAST_WIFI_STAT_IDLE;
+        g_wifi_op_stat &= ~HCCAST_WIFI_STAT_SCANNING;
+    }
+
+    return g_wifi_op_stat & HCCAST_WIFI_STAT_SCANNING;
+}
+
+/**
  * Set the wifi op stat for disconnecting .
  *
  * @param flag true or false
@@ -1451,105 +1591,9 @@ int wifi_ctrl_is_scanning()
     return g_wifi_op_stat & HCCAST_WIFI_STAT_SCANNING;
 }
 
-/**
- * Get the scan result of the AP list
- *
- * @param scan_res the pointer to the structure of the scan result
- */
-int wifi_ctrl_get_aplist(hccast_wifi_scan_result_t *scan_res)
+int wifi_ctrl_is_busy()
 {
-    int ret = HCCAST_WIFI_ERR_NO_ERROR;
-    //char val[512] = {0};
-    char reply[4096] = {0};
-    unsigned int len = sizeof(reply) - 1;
-    char *cmd = "SCAN_RESULTS";
-
-    g_wifi_op_stat |= HCCAST_WIFI_STAT_IDLE;
-    g_wifi_op_stat &= ~HCCAST_WIFI_STAT_SCANNING;
-
-    if (NULL == scan_res)
-    {
-        hccast_log(LL_ERROR, "param error!\n");
-        ret = HCCAST_WIFI_ERR_CMD_PARAMS_ERROR;
-        goto ERROR;
-    }
-
-#ifdef HC_RTOS    // rtos exist wifi mode switch, dont use wifi_ctrl_run_cmd_keep
-    ret = wifi_ctrl_run_cmd(P2P_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_STA, "SCAN_RESULTS", reply, &len);
-#else
-    ret = wifi_ctrl_run_cmd_keep(P2P_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_STA, "SCAN_RESULTS", reply, &len);
-#endif
-
-    if (ret < 0 || len == 0)
-    {
-        hccast_log(LL_ERROR, "%s run error!\n", cmd);
-        goto ERROR;
-    }
-
-    char line[1024] = {0};
-    char bssid[18]  = {0};
-    char freq[64]   = {0};
-    char signal[64] = {0};
-    char flags[256] = {0};
-    char ssid[256]  = {0};
-    int i = 0, j = 0;
-
-    for (i = 1; !get_line_from_buf(i, line, reply); i++, j++)
-    {
-        memset(ssid, 0, sizeof(ssid));
-
-        // bssid / frequency / signal level / flags / ssid
-        sscanf(line, "%s %s %s %s %[^'\n']", bssid, freq, signal, flags, ssid);
-        if (strlen(ssid) == 0)
-        {
-            --j;
-            continue;
-        }
-
-        wifi_ctrl_chinese_conversion(ssid);
-        memcpy(scan_res->apinfo[j].ssid, ssid, sizeof(scan_res->apinfo[j].ssid));
-
-        int sig = atoi(signal);
-#ifdef __linux__
-        // 2 * (dBm + 100)
-        scan_res->apinfo[j].quality = sig > -50 ? 100 : 2 * (sig + 100);
-#else
-        if (sig >= 0)
-        {
-            scan_res->apinfo[j].quality = sig > 50 ? 100 : 2 * sig;
-        }
-        else
-        {
-            scan_res->apinfo[j].quality = sig > -50 ? 100 : 2 * (sig + 100);
-        }
-#endif
-        scan_res->apinfo[j].freq = strtol(freq, NULL, 10);
-
-        if (strstr(flags, "WPA2-PSK") || strstr(flags, "WPA-PSK"))
-        {
-            scan_res->apinfo[j].encryptMode = HCCAST_WIFI_ENCRYPT_MODE_WPA2PSK_AES;
-        }
-        else if (strstr(flags, "WPA2-SAE") || strstr(flags, "+SAE") || strstr(flags, "WPA2--CCMP"))
-        {
-            scan_res->apinfo[j].encryptMode = HCCAST_WIFI_ENCRYPT_MODE_WPA2PSK_SAE;
-        }
-        else if (strstr(flags, "WEP"))
-        {
-            scan_res->apinfo[j].encryptMode = HCCAST_WIFI_ENCRYPT_MODE_OPEN_WEP;
-        }
-        else if (strstr(flags, "ESS"))
-        {
-            scan_res->apinfo[j].encryptMode = HCCAST_WIFI_ENCRYPT_MODE_NONE;
-        }
-
-        //printf("%02d %-32s %d\n", i, scan_res->apinfo[j].ssid, scan_res->apinfo[j].quality);
-    }
-
-    scan_res->ap_num = j;
-    hccast_log(LL_INFO, "scan ap_num = %d.\n", scan_res->ap_num);
-
-ERROR:
-    return ret;
+    return !(g_wifi_op_stat & HCCAST_WIFI_STAT_IDLE) && (g_wifi_op_stat & (HCCAST_WIFI_STAT_SCANNING | HCCAST_WIFI_STAT_CONNECTING));
 }
 
 /**
@@ -1809,75 +1853,75 @@ int wifi_ctrl_hostap_set_conf(hccast_wifi_hostap_conf_t *conf)
 
     switch (conf->mode)
     {
-    case HCCAST_WIFI_FREQ_MODE_NONE:
-        break;
-    case HCCAST_WIFI_FREQ_MODE_5G:
-    {
-        mode_5G = 1;
-        snprintf(cmd, sizeof(cmd), "SET hw_mode a");
-        ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
-        if (ret < 0 || len == 0)
+        case HCCAST_WIFI_FREQ_MODE_NONE:
+            break;
+        case HCCAST_WIFI_FREQ_MODE_5G:
         {
-            hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
-            return ret;
-        }
+            mode_5G = 1;
+            snprintf(cmd, sizeof(cmd), "SET hw_mode a");
+            ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
+            if (ret < 0 || len == 0)
+            {
+                hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
+                return ret;
+            }
 
-        if (conf->channel == 165)
-        {
-            snprintf(cmd, sizeof(cmd), "SET ht_capab [SHORT-GI-20][HT20-ONLY]"); // [HT20-ONLY]: define custom field.
-        }
-        else
-        {
-            snprintf(cmd, sizeof(cmd), "SET ht_capab [SHORT-GI-20][SHORT-GI-40][HT40+]");
-        }
-        ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
-        if (ret < 0 || len == 0)
-        {
-            hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
-            return ret;
-        }
+            if (conf->channel == 165)
+            {
+                snprintf(cmd, sizeof(cmd), "SET ht_capab [SHORT-GI-20][HT20-ONLY]"); // [HT20-ONLY]: define custom field.
+            }
+            else
+            {
+                snprintf(cmd, sizeof(cmd), "SET ht_capab [SHORT-GI-20][SHORT-GI-40][HT40+]");
+            }
+            ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
+            if (ret < 0 || len == 0)
+            {
+                hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
+                return ret;
+            }
 
-        channel = 36;
-        break;
-    }
-    /*
-    case HCCAST_WIFI_FREQ_MODE_60G:
-    {
-        snprintf(cmd, sizeof(cmd), "SET hw_mode ad");
-        ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
-        if (ret < 0 || len == 0)
-        {
-            ret = -1;
-            hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
-            return ret
+            channel = 36;
+            break;
         }
-
-        channel = 3;
-        ht_capab = 1;
-        break;
-    }
-    */
-    case HCCAST_WIFI_FREQ_MODE_24G:
-    default:
-    {
-        snprintf(cmd, sizeof(cmd), "SET hw_mode g");
-        ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
-        if (ret < 0 || len == 0)
+        /*
+        case HCCAST_WIFI_FREQ_MODE_60G:
         {
-            hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
-            return ret;
-        }
+            snprintf(cmd, sizeof(cmd), "SET hw_mode ad");
+            ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
+            if (ret < 0 || len == 0)
+            {
+                ret = -1;
+                hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
+                return ret
+            }
 
-        snprintf(cmd, sizeof(cmd), "SET ht_capab [SHORT-GI-20]");
-        ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
-        if (ret < 0 || len == 0)
+            channel = 3;
+            ht_capab = 1;
+            break;
+        }
+        */
+        case HCCAST_WIFI_FREQ_MODE_24G:
+        default:
         {
-            hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
-            return ret;
-        }
+            snprintf(cmd, sizeof(cmd), "SET hw_mode g");
+            ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
+            if (ret < 0 || len == 0)
+            {
+                hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
+                return ret;
+            }
 
-        channel = 6;
-    }
+            snprintf(cmd, sizeof(cmd), "SET ht_capab [SHORT-GI-20]");
+            ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
+            if (ret < 0 || len == 0)
+            {
+                hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
+                return ret;
+            }
+
+            channel = 6;
+        }
     }
 
     if (strlen(conf->country_code) > 0)
@@ -1962,67 +2006,67 @@ int wifi_ctrl_hostap_switch_mode(hccast_wifi_freq_mode_e mode)
 
     switch (mode)
     {
-    case HCCAST_WIFI_FREQ_MODE_NONE:
-        break;
-    case HCCAST_WIFI_FREQ_MODE_5G:
-    {
-        snprintf(cmd, sizeof(cmd), "SET hw_mode a");
-        ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
-        if (ret < 0 || len == 0)
+        case HCCAST_WIFI_FREQ_MODE_NONE:
+            break;
+        case HCCAST_WIFI_FREQ_MODE_5G:
         {
-            hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
-            return ret;
-        }
+            snprintf(cmd, sizeof(cmd), "SET hw_mode a");
+            ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
+            if (ret < 0 || len == 0)
+            {
+                hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
+                return ret;
+            }
 
-        snprintf(cmd, sizeof(cmd), "SET ht_capab [SHORT-GI-20][SHORT-GI-40][HT40+]");
-        ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
-        if (ret < 0 || len == 0)
+            snprintf(cmd, sizeof(cmd), "SET ht_capab [SHORT-GI-20][SHORT-GI-40][HT40+]");
+            ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
+            if (ret < 0 || len == 0)
+            {
+                hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
+                return ret;
+            }
+
+            channel = 36;
+            break;
+        }
+        /*
+        case HCCAST_WIFI_FREQ_MODE_60G:
         {
-            hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
-            return ret;
-        }
+            snprintf(cmd, sizeof(cmd), "SET hw_mode ad");
+            ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
+            if (ret < 0 || len == 0)
+            {
+                ret = -1;
+                hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
+                return ret
+            }
 
-        channel = 36;
-        break;
-    }
-    /*
-    case HCCAST_WIFI_FREQ_MODE_60G:
-    {
-        snprintf(cmd, sizeof(cmd), "SET hw_mode ad");
-        ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
-        if (ret < 0 || len == 0)
+            channel = 3;
+            ht_capab = 1;
+            break;
+        }
+        */
+        case HCCAST_WIFI_FREQ_MODE_24G:
+        default:
         {
-            ret = -1;
-            hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
-            return ret
-        }
+            snprintf(cmd, sizeof(cmd), "SET hw_mode g");
+            ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
+            if (ret < 0 || len == 0)
+            {
+                hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
+                return ret;
+            }
 
-        channel = 3;
-        ht_capab = 1;
-        break;
-    }
-    */
-    case HCCAST_WIFI_FREQ_MODE_24G:
-    default:
-    {
-        snprintf(cmd, sizeof(cmd), "SET hw_mode g");
-        ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
-        if (ret < 0 || len == 0)
-        {
-            hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
-            return ret;
-        }
+            snprintf(cmd, sizeof(cmd), "SET ht_capab [SHORT-GI-20]");
+            ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
+            if (ret < 0 || len == 0)
+            {
+                hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
+                return ret;
+            }
 
-        snprintf(cmd, sizeof(cmd), "SET ht_capab [SHORT-GI-20]");
-        ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
-        if (ret < 0 || len == 0)
-        {
-            hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
-            return ret;
+            channel = 6;
         }
-
-        channel = 6;
-    }
     }
 
     snprintf(cmd, sizeof(cmd), "SET channel %d", channel);
@@ -2063,82 +2107,82 @@ int wifi_ctrl_hostap_switch_mode_ex(hccast_wifi_freq_mode_e mode, int channel, i
 
     switch (mode)
     {
-    case HCCAST_WIFI_FREQ_MODE_NONE:
-        break;
-    case HCCAST_WIFI_FREQ_MODE_5G:
-    {
-        if (channel < 34 || channel > 196)
+        case HCCAST_WIFI_FREQ_MODE_NONE:
+            break;
+        case HCCAST_WIFI_FREQ_MODE_5G:
         {
-            hccast_log(LL_ERROR, "%s: param error! mode: %d, channel:%d\n", __func__, mode, channel);
-        }
+            if (channel < 34 || channel > 196)
+            {
+                hccast_log(LL_ERROR, "%s: param error! mode: %d, channel:%d\n", __func__, mode, channel);
+            }
 
-        snprintf(cmd, sizeof(cmd), "SET hw_mode a");
-        ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
-        if (ret < 0 || len == 0)
-        {
-            hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
-            return ret;
-        }
+            snprintf(cmd, sizeof(cmd), "SET hw_mode a");
+            ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
+            if (ret < 0 || len == 0)
+            {
+                hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
+                return ret;
+            }
 
-        if (channel == 165)
-        {
-            snprintf(cmd, sizeof(cmd), "SET ht_capab [SHORT-GI-20][HT20-ONLY]"); // [HT20-ONLY]: define custom field.
-        }
-        else
-        {
-            snprintf(cmd, sizeof(cmd), "SET ht_capab [SHORT-GI-20][SHORT-GI-40][HT40+]");
-        }
-        //snprintf(cmd, sizeof(cmd), "SET ht_capab [SHORT-GI-20][SHORT-GI-40][HT40+]");
-        ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
-        if (ret < 0 || len == 0)
-        {
-            hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
-            return ret;
-        }
+            if (channel == 165)
+            {
+                snprintf(cmd, sizeof(cmd), "SET ht_capab [SHORT-GI-20][HT20-ONLY]"); // [HT20-ONLY]: define custom field.
+            }
+            else
+            {
+                snprintf(cmd, sizeof(cmd), "SET ht_capab [SHORT-GI-20][SHORT-GI-40][HT40+]");
+            }
+            //snprintf(cmd, sizeof(cmd), "SET ht_capab [SHORT-GI-20][SHORT-GI-40][HT40+]");
+            ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
+            if (ret < 0 || len == 0)
+            {
+                hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
+                return ret;
+            }
 
-        break;
-    }
-    /*
-    case HCCAST_WIFI_FREQ_MODE_60G:
-    {
-        snprintf(cmd, sizeof(cmd), "SET hw_mode ad");
-        ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
-        if (ret < 0 || len == 0)
-        {
-            ret = -1;
-            hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
-            return ret
+            break;
         }
+        /*
+        case HCCAST_WIFI_FREQ_MODE_60G:
+        {
+            snprintf(cmd, sizeof(cmd), "SET hw_mode ad");
+            ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
+            if (ret < 0 || len == 0)
+            {
+                ret = -1;
+                hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
+                return ret
+            }
 
-        channel = 3;
-        ht_capab = 1;
-        break;
-    }
-    */
-    case HCCAST_WIFI_FREQ_MODE_24G:
-    default:
-    {
-        if (channel < 0 || channel > 14)
-        {
-            hccast_log(LL_ERROR, "%s: param error! mode: %d, channel:%d\n", __func__, mode, channel);
+            channel = 3;
+            ht_capab = 1;
+            break;
         }
+        */
+        case HCCAST_WIFI_FREQ_MODE_24G:
+        default:
+        {
+            if (channel < 0 || channel > 14)
+            {
+                hccast_log(LL_ERROR, "%s: param error! mode: %d, channel:%d\n", __func__, mode, channel);
+            }
 
-        snprintf(cmd, sizeof(cmd), "SET hw_mode g");
-        ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
-        if (ret < 0 || len == 0)
-        {
-            hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
-            return ret;
-        }
+            snprintf(cmd, sizeof(cmd), "SET hw_mode g");
+            ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
+            if (ret < 0 || len == 0)
+            {
+                hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
+                return ret;
+            }
 
-        snprintf(cmd, sizeof(cmd), "SET ht_capab [SHORT-GI-20] [SHORT-GI-20]");
-        ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
-        if (ret < 0 || len == 0)
-        {
-            hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
-            return ret;
+            snprintf(cmd, sizeof(cmd), "SET ht_capab [SHORT-GI-20] [SHORT-GI-20]");
+            ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
+            if (ret < 0 || len == 0)
+            {
+                hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
+                return ret;
+            }
         }
-    }
     }
 
     snprintf(cmd, sizeof(cmd), "SET channel %d", channel);
@@ -2187,64 +2231,64 @@ int wifi_ctrl_hostap_switch_channel(int channel)
 
     switch (mode)
     {
-    case HCCAST_WIFI_FREQ_MODE_NONE:
-        break;
-    case HCCAST_WIFI_FREQ_MODE_5G:
-    {
-        snprintf(cmd, sizeof(cmd), "SET hw_mode a");
-        ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
-        if (ret < 0 || len == 0)
+        case HCCAST_WIFI_FREQ_MODE_NONE:
+            break;
+        case HCCAST_WIFI_FREQ_MODE_5G:
         {
-            hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
-            return ret;
-        }
+            snprintf(cmd, sizeof(cmd), "SET hw_mode a");
+            ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
+            if (ret < 0 || len == 0)
+            {
+                hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
+                return ret;
+            }
 
-        snprintf(cmd, sizeof(cmd), "SET ht_capab [SHORT-GI-20][SHORT-GI-40][HT40+]");
-        ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
-        if (ret < 0 || len == 0)
+            snprintf(cmd, sizeof(cmd), "SET ht_capab [SHORT-GI-20][SHORT-GI-40][HT40+]");
+            ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
+            if (ret < 0 || len == 0)
+            {
+                hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
+                return ret;
+            }
+            break;
+        }
+        /*
+        case HCCAST_WIFI_FREQ_MODE_60G:
         {
-            hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
-            return ret;
+            snprintf(cmd, sizeof(cmd), "SET hw_mode ad");
+            ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
+            if (ret < 0 || len == 0)
+            {
+                ret = -1;
+                hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
+                return ret
+            }
+
+            channel = 3;
+            ht_capab = 1;
+            break;
+        }
+        */
+        case HCCAST_WIFI_FREQ_MODE_24G:
+        default:
+        {
+            snprintf(cmd, sizeof(cmd), "SET hw_mode g");
+            ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
+            if (ret < 0 || len == 0)
+            {
+                hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
+                return ret;
+            }
+
+            snprintf(cmd, sizeof(cmd), "SET ht_capab [SHORT-GI-20]");
+            ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
+            if (ret < 0 || len == 0)
+            {
+                hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
+                return ret;
+            }
         }
         break;
-    }
-    /*
-    case HCCAST_WIFI_FREQ_MODE_60G:
-    {
-        snprintf(cmd, sizeof(cmd), "SET hw_mode ad");
-        ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
-        if (ret < 0 || len == 0)
-        {
-            ret = -1;
-            hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
-            return ret
-        }
-
-        channel = 3;
-        ht_capab = 1;
-        break;
-    }
-    */
-    case HCCAST_WIFI_FREQ_MODE_24G:
-    default:
-    {
-        snprintf(cmd, sizeof(cmd), "SET hw_mode g");
-        ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
-        if (ret < 0 || len == 0)
-        {
-            hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
-            return ret;
-        }
-
-        snprintf(cmd, sizeof(cmd), "SET ht_capab [SHORT-GI-20]");
-        ret = wifi_ctrl_run_cmd(HS_CTRL_IFACE_NAME, HCCAST_WIFI_MODE_HOSTAP, cmd, reply, &len);
-        if (ret < 0 || len == 0)
-        {
-            hccast_log(LL_ERROR, "ret = %d, reply: %s\n", ret, reply);
-            return ret;
-        }
-    }
-    break;
     }
 
     snprintf(cmd, sizeof(cmd), "SET channel %d", channel);
@@ -2366,14 +2410,14 @@ void *wifi_ctrl_thread(void *arg)
 
 #ifdef __linux__
     // wlan
-    snprintf(ctrl_iface, sizeof(ctrl_iface), WIFI_CTRL_PATH_STA"/%s", WIFI_CTRL_IFACE_NAME);
+    snprintf(ctrl_iface, sizeof(ctrl_iface), "%s/%s", WIFI_CTRL_PATH_STA, WIFI_CTRL_IFACE_NAME);
     if (access(ctrl_iface, F_OK)) // no exist
     {
         hccast_log(LL_ERROR, "ctrl_iface: %s non-existent!\n", ctrl_iface);
         goto EXIT;
     }
 #else
-    snprintf(ctrl_iface, sizeof(ctrl_iface), WIFI_CTRL_PATH_STA"/%s", WIFI_CTRL_IFACE_NAME);
+    snprintf(ctrl_iface, sizeof(ctrl_iface), "%s/%s", WIFI_CTRL_PATH_STA, WIFI_CTRL_IFACE_NAME);
 #endif
 
 #ifdef HC_RTOS
@@ -2429,31 +2473,45 @@ void *wifi_ctrl_thread(void *arg)
         {
             if (disconnected_flag)
             {
-                struct timespec now_tp = {0};
-                clock_gettime(CLOCK_MONOTONIC, &now_tp);
-
-                if (hccast_wifi_mgr_get_connect_status() == 1)
+                if (0/*!wifi_ctrl_is_connecting()*/)
                 {
-                    memset(&disconnected_tp, 0, sizeof(disconnected_tp));
                     disconnected_flag = false;
-                    hccast_log(LL_NOTICE, "EVENT: WLAN RECONNECTED OK\n");
                 }
-
-                if (disconnected_flag && llabs(disconnected_tp.tv_sec - now_tp.tv_sec) >= 60)
+                else
                 {
-                    hccast_log(LL_NOTICE, "EVENT: WLAN DISCONNECT\n");
-                    wifi_ctrl_do_ap_disconnect();
-                    disconnected_flag = false;
-#ifdef __linux__
-                    if (func)
+                    struct timespec now_tp = {0};
+                    clock_gettime(CLOCK_MONOTONIC, &now_tp);
+
+                    if (hccast_wifi_mgr_get_connect_status() == 1)
                     {
-                        func(HCCAST_WIFI_DISCONNECT, NULL, NULL);
+                        memset(&disconnected_tp, 0, sizeof(disconnected_tp));
+                        disconnected_flag = false;
+                        wifi_ctrl_set_connecting_by_user(false);
+                        if (func)
+                        {
+                            func(HCCAST_WIFI_RECONNECTED, NULL, NULL);
+                        }
+
+                        hccast_log(LL_NOTICE, "EVENT: WLAN RECONNECTED OK\n");
                     }
+
+                    if (disconnected_flag && llabs(disconnected_tp.tv_sec - now_tp.tv_sec) >= WIFI_RECONNECT_TIMEOUT)
+                    {
+                        hccast_log(LL_NOTICE, "EVENT: WLAN DISCONNECT\n");
+                        wifi_ctrl_do_ap_disconnect();
+                        disconnected_flag = false;
+                        wifi_ctrl_set_connecting_by_user(false);
+#ifdef __linux__
+                        if (func)
+                        {
+                            func(HCCAST_WIFI_DISCONNECT, NULL, NULL);
+                        }
 #else
-                    pthread_t tid;
-                    pthread_create(&tid, NULL, wifi_ctrl_disconnect_thread, func);
-                    pthread_detach(tid);
+                        pthread_t tid;
+                        pthread_create(&tid, NULL, wifi_ctrl_disconnect_thread, func);
+                        pthread_detach(tid);
 #endif
+                    }
                 }
             }
 
@@ -2488,6 +2546,11 @@ void *wifi_ctrl_thread(void *arg)
                     if (!disconnected_flag && !hccast_wifi_mgr_p2p_get_connect_stat() && !wifi_ctrl_is_connecting() && !wifi_ctrl_is_disconnecting())
                     {
                         disconnected_flag = true;
+                        if (func)
+                        {
+                            func(HCCAST_WIFI_RECONNECT, NULL, NULL);
+                        }
+                        wifi_ctrl_set_connecting_by_user(true);
                         clock_gettime(CLOCK_MONOTONIC, &disconnected_tp);
 
                         hccast_log(LL_NOTICE, "recv wifi disconnect, mira conn: %d, wifi conn: %d\n", hccast_wifi_mgr_p2p_get_connect_stat(), wifi_ctrl_is_connecting());
@@ -2574,7 +2637,7 @@ int wifi_ctrl_uninit()
         g_wifi_thread_running = false;
         pthread_cond_destroy(&g_wifi_p2p_cond);
         pthread_mutex_unlock(&g_wifi_mutex);
-        if (g_wifi_tid != (unsigned)-1)
+        if (g_wifi_tid != (unsigned) - 1)
         {
             pthread_join(g_wifi_tid, NULL);
             g_wifi_tid = -1;
@@ -2671,8 +2734,8 @@ int wifi_ctrl_hostap_thread_start(void)
         return ret;
     }
 
-    int thread_ret = 0;
-    ret = pthread_create(&g_hostap_tid, &attr, wifi_hostap_thread, &thread_ret);
+    g_hostap_thread_ret = 0;
+    ret = pthread_create(&g_hostap_tid, &attr, wifi_hostap_thread, &g_hostap_thread_ret);
     if (ret != 0)
     {
         hccast_log(LL_ERROR, "%s pthread_create error.\n", __func__);
@@ -2681,7 +2744,7 @@ int wifi_ctrl_hostap_thread_start(void)
 
     while (1)
     {
-        if (thread_ret != 0)
+        if (g_hostap_thread_ret != 0)
         {
             break;
         }
@@ -2731,6 +2794,7 @@ int wifi_ctrl_hostap_thread_stop()
         pthread_join(g_hostap_tid, NULL);
     }
     g_hostap_tid = 0;
+    g_hostap_thread_ret = 0;
 
     return HCCAST_WIFI_ERR_NO_ERROR;
 }
@@ -2838,8 +2902,8 @@ int wifi_ctrl_sta_thread_start()
         return ret;
     }
 
-    int thread_ret = 0;
-    ret = pthread_create(&g_sta_tid, &attr, wifi_sta_thread, &thread_ret);
+    g_sta_thread_ret = 0;
+    ret = pthread_create(&g_sta_tid, &attr, wifi_sta_thread, &g_sta_thread_ret);
     if (ret != 0)
     {
         hccast_log(LL_ERROR, "%s pthread_create error.\n", __func__);
@@ -2848,7 +2912,7 @@ int wifi_ctrl_sta_thread_start()
 
     while (1)
     {
-        if (thread_ret != 0)
+        if (g_sta_thread_ret != 0)
         {
             break;
         }
@@ -2895,6 +2959,7 @@ int wifi_ctrl_sta_thread_stop()
         pthread_join(g_sta_tid, NULL);
     }
     g_sta_tid = 0;
+    g_sta_thread_ret = 0;
 
     return HCCAST_WIFI_ERR_NO_ERROR;
 }

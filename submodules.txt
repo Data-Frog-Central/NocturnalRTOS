@@ -1,6 +1,14 @@
+./build/tools/
+./components/applications/apps-avp/source/
 ./components/applications/apps-b2bupdater/source/
+./components/applications/apps-bootloader/source/
+./components/applications/apps-hccast-samplecode/source/
+./components/applications/apps-hccast/source/
+./components/applications/apps-hcdemo/source/
+./components/applications/apps-hcscreen/source/
 ./components/applications/apps-hcusbcast/source/
 ./components/applications/apps-hdmiswitch/source/
+./components/applications/apps-miniboot/source/
 ./components/applications/apps-projector/source/
 ./components/applications/apps-spinandwr/source/
 ./components/bluetooth/ac6955f/source/
@@ -11,7 +19,6 @@
 ./components/hccast/source/
 ./components/hcfota/source/
 ./components/kernel/source/
-./components/kernel/source/include/uapi/hcuapi/
 ./components/liblvgl/source/
 ./components/liblzo/source/
 ./components/libusb/source/
@@ -20,8 +27,3 @@
 ./components/pthread/source/
 ./components/quicklz/source/
 ./components/unity/source/
-./components/applications/apps-bootloader/source/
-./components/applications/apps-hccast-samplecode/source/
-./components/applications/apps-hccast/source/
-./components/applications/apps-hcdemo/source/
-./components/applications/apps-hcscreen/source/

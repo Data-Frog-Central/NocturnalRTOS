@@ -370,7 +370,9 @@ void fbdev_init(void)
 		}
 		buf_count++;
 	}
-	fbdev_buffer_init((uint32_t)(fbp0 + screen_size * buf_count), finfo.smem_start + screen_size * buf_count, finfo.smem_len - screen_size * buf_count);
+	fbdev_buffer_init(((uint32_t)(fbp0 + screen_size * buf_count) + 0x1f)&(~0x1f),
+			((uint32_t)(finfo.smem_start + screen_size * buf_count) + 0x1f)&(~0x1f),
+			finfo.smem_len - screen_size * buf_count - 0x1f);
 }
 
 void fbdev_exit(void)
@@ -571,9 +573,9 @@ void fbdev_flush(lv_disp_drv_t * drv, const lv_area_t * area, lv_color_t * color
 	state->render_options = HCGE_DSRO_NONE;
 	state->drawingflags = HCGE_DSDRAW_NOFX;
 	state->blittingflags = HCGE_DSBLIT_NOFX;
-
 	state->src_blend = HCGE_DSBF_SRCALPHA;
 	state->dst_blend = HCGE_DSBF_ZERO;
+	state->blend_mode = HCGE_BLEND_DFB;
 
 	state->destination.config.size.w = vinfo.xres;
 	state->destination.config.size.h = vinfo.yres;
@@ -620,13 +622,13 @@ void fbdev_flush(lv_disp_drv_t * drv, const lv_area_t * area, lv_color_t * color
 	HCGERectangle srect;// = {0, 0, 1280, 720};
 	state->accel = HCGE_DFXL_BLIT;
 	if(disp_rotate == 270)
-		state->blittingflags = HCGE_DSBLIT_ROTATE270;
+		state->blittingflags |= HCGE_DSBLIT_ROTATE270;
 	else if(disp_rotate == 180)
-		state->blittingflags = HCGE_DSBLIT_ROTATE180;
+		state->blittingflags |= HCGE_DSBLIT_ROTATE180;
 	else if(disp_rotate == 90)
-		state->blittingflags = HCGE_DSBLIT_ROTATE90;
+		state->blittingflags |= HCGE_DSBLIT_ROTATE90;
 	else
-		state->blittingflags = 0;
+		state->blittingflags |= 0;
 
 	cacheflush(draw_fb, screen_size, DCACHE);
 	cacheflush(color_p, sw * bytes_per_pixel(LV_COLOR_DEPTH) * act_y2 + act_x2 * sizeof(lv_color_t), DCACHE);
@@ -655,11 +657,21 @@ void fbdev_flush(lv_disp_drv_t * drv, const lv_area_t * area, lv_color_t * color
 		int dx;
 		int dy;
 		if((disp_rotate == 270)){
-			dx = vinfo.xres - act_y1 - sh + ((sh % 2 == 1)?1:0);
+			if(vinfo.xres % 2 == 0)
+				dx = vinfo.xres - act_y1 - sh + ((sh % 2 == 1)?1:0);
+			else
+				dx = vinfo.xres - act_y1 - sh + ((sh % 2 == 1)?0:1);
+			if((dx + sh) > vinfo.xres)
+				sh = vinfo.xres - dx;
 			dy = act_x1;
 		}else if (disp_rotate == 90)  {
+			if(vinfo.yres % 2 == 0)
+				dy = vinfo.yres - act_x1 - sw + ((sw % 2 == 1)?1:0);
+			else
+				dy = vinfo.yres - act_x1 - sw + ((sw % 2 == 1)?0:1);
+			if((dy + sw) > vinfo.yres)
+				sw = vinfo.yres - dy;
 			dx = act_y1;
-			dy = vinfo.yres - act_x1 - sw + ((sw % 2 == 1)?1:0);
 		}else if(disp_rotate == 180){
 			dx = vinfo.xres - act_x1 - sw;
 			dy = vinfo.yres - act_y1 - sh;
@@ -770,6 +782,7 @@ void fbdev_flush(lv_disp_drv_t * drv, const lv_area_t * area, lv_color_t * color
 	if((vinfo.xres > vinfo.yres)&&(disp_rotate == 0 || disp_rotate==180)&& vinfo.bits_per_pixel==32){
 		//printf("L1\n");
 		keystone_aa_sw_fix(vinfo.xres,vinfo.yres,vinfo.xres,draw_fb);
+		cacheflush(draw_fb, screensize, DCACHE);
 	}
 #endif
 	lv_draw_hichip_unlock();
@@ -844,6 +857,7 @@ bool fbdev_buffer_addr_virt_check(uint32_t virt_addr, uint32_t size)
 void *fbdev_static_malloc_virt(int size)
 {
 	uint32_t addr;
+	size = (size + 0x1f)&(~0x1f);
 	if(size & 0x1F) {
 		perror("size is not align with 32bytes\n");
 		return NULL;

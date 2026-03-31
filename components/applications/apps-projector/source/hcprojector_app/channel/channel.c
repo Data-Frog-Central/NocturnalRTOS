@@ -154,6 +154,9 @@ static void event_handler(lv_event_t * e)
         dsc->rect_dsc->outline_width=0;
 
     }else if(code == LV_EVENT_KEY) {
+        if(!timer){
+            return;
+        }
         lv_timer_pause(timer);
         uint16_t key = lv_indev_get_key(lv_indev_get_act());
         uint8_t sel_id = lv_btnmatrix_get_selected_btn(target);
@@ -169,9 +172,7 @@ static void event_handler(lv_event_t * e)
             }else{
                 prev_id = sel_id;
             }
- 
-             lv_btnmatrix_set_btn_ctrl(target, sel_id, LV_BTNMATRIX_CTRL_CHECKED);
-
+            lv_btnmatrix_set_btn_ctrl(target, sel_id, LV_BTNMATRIX_CTRL_CHECKED);
         }else if (key == LV_KEY_ENTER){
             projector_set_some_sys_param(P_CUR_CHANNEL, channels[sel_id]);
 
@@ -201,20 +202,25 @@ static void event_handler(lv_event_t * e)
 }
 
 static void scr_event_handler(lv_event_t *e){
+    int btn_id = 0;
+
     lv_event_code_t code = lv_event_get_code(e);
     if(code == LV_EVENT_SCREEN_LOADED){
          key_set_group(channel_g);
         for(int i=0; i<CHANNEL_LEN;i++){
             if(channels[i] == projector_get_some_sys_param(P_CUR_CHANNEL)){
-                lv_btnmatrix_set_selected_btn(body_btnmatrix, i);
-                lv_btnmatrix_set_btn_ctrl(body_btnmatrix, i, LV_BTNMATRIX_CTRL_CHECKED);
-                printf("i: %d\n", i);
+                btn_id = i;
+                break;
             }
         }
+        lv_btnmatrix_set_selected_btn(body_btnmatrix, btn_id);
+        lv_btnmatrix_set_btn_ctrl(body_btnmatrix, btn_id, LV_BTNMATRIX_CTRL_CHECKED);
+        prev_id = btn_id;
         lv_obj_set_style_bg_opa(lv_layer_top(), LV_OPA_0, 0);
         timer = lv_timer_create(timer_handler, 15000, 0);
         lv_timer_set_repeat_count(timer, 1);
         lv_timer_reset(timer);
+
     }
     else if(code == LV_EVENT_SCREEN_UNLOADED){
         if(timer){
@@ -329,7 +335,7 @@ void channel_screen_init(void)
     lv_group_focus_obj(body_btnmatrix);
     lv_btnmatrix_set_btn_ctrl(body_btnmatrix, projector_get_some_sys_param(P_CUR_CHANNEL), LV_BTNMATRIX_CTRL_CHECKED);
     lv_btnmatrix_set_selected_btn(body_btnmatrix, projector_get_some_sys_param(P_CUR_CHANNEL));
-    prev_id = projector_get_some_sys_param(P_CUR_CHANNEL);
+    prev_id = -1;
     lv_obj_add_event_cb(body_btnmatrix, event_handler, LV_EVENT_ALL, timer);
 
     lv_obj_t *foot = lv_obj_create(input_sour);

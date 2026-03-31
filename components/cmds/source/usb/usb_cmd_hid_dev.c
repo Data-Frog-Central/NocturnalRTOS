@@ -155,8 +155,10 @@ static void hc_hid_workqueue(void *param)
         hcusb_set_mode(USB_PORT_0, MUSB_PERIPHERAL);
 
         /* 配置usb gadget HID mode */
-        ret = hcusb_gadget_hidg_mouse_kbd_init(
+        ret = hcusb_gadget_hidg_mouse_kbd_init2(
                 get_udc_name(USB_PORT_0),
+                g_hc_hid_demo.mouse_report,
+                g_hc_hid_demo.kbd_report,
                 g_hc_hid_demo.mouse_report,
                 g_hc_hid_demo.kbd_report);
         if(ret){
@@ -308,8 +310,10 @@ static void hid_dev_prepare(void)
         hcusb_set_mode(USB_PORT_0, MUSB_PERIPHERAL);
 
         /* 配置usb gadget HID mode */
-        ret = hcusb_gadget_hidg_mouse_kbd_init(
+        ret = hcusb_gadget_hidg_mouse_kbd_init2(
                 get_udc_name(USB_PORT_0),
+                g_hc_hid_demo.mouse_report,
+                g_hc_hid_demo.kbd_report,
                 g_hc_hid_demo.mouse_report,
                 g_hc_hid_demo.kbd_report);
         if(ret){
@@ -355,3 +359,219 @@ int hid_dev_demo_main(int argc, char **argv)
     sys_register_notify(&hc_hid_hotplug_nb);
     return 0;
 }
+
+
+
+
+
+
+
+/* ********************************************************************************* */
+
+int fd_hidg_mouse0 = -1; 
+int fd_hidg_mouse1 = -1; 
+int fd_hidg_kbd0 = -1; 
+int fd_hidg_kbd1 = -1; 
+
+static int usbmouse0_hook(char *data, int len)
+{
+    int ret = 0;
+    if(len){
+        int index;
+        char str[128] = {0};
+        char *pstr = &str[0];
+        pstr += sprintf(pstr, "mouse0 hook(len:%d): ", len);
+        for(index = 0; index < len; index++)
+            pstr += sprintf(pstr, " %2.2x", (unsigned char)data[index]);
+        pstr += sprintf(pstr, "\n");
+        log_i("%s", str);
+
+        if(fd_hidg_mouse0 < 0)
+            return 0;
+
+        ret = write(fd_hidg_mouse0, data, len);
+    }
+    return ret;
+}
+
+static int usbmouse1_hook(char *data, int len)
+{
+    int ret = 0;
+    if(len){
+        int index;
+        char str[128] = {0};
+        char *pstr = &str[0];
+        pstr += sprintf(pstr, "mouse1 hook(len:%d): ", len);
+        for(index = 0; index < len; index++)
+            pstr += sprintf(pstr, " %2.2x", (unsigned char)data[index]);
+        pstr += sprintf(pstr, "\n");
+        log_i("%s", str);
+
+        if(fd_hidg_mouse1 < 0)
+            return 0;
+
+        ret = write(fd_hidg_mouse1, data, len);
+    }
+    return ret;
+}
+
+static int usbkbd0_hook(char *data, int len)
+{
+    int ret = 0;
+    if(len){
+        int index;
+        char str[128] = {0};
+        char *pstr = &str[0];
+        pstr += sprintf(pstr, "keyboard0 hook(len:%d): ", len);
+        for(index = 0; index < len; index++)
+            pstr += sprintf(pstr, " %2.2x", (unsigned char)data[index]);
+        pstr += sprintf(pstr, "\n");
+        log_i("%s", str);
+
+        if(fd_hidg_kbd0 < 0)
+            return 0;
+
+        ret = write(fd_hidg_kbd0, data, len);
+    }
+    return ret;
+}
+
+
+static int usbkbd1_hook(char *data, int len)
+{
+    int ret = 0;
+    if(len){
+        int index;
+        char str[128] = {0};
+        char *pstr = &str[0];
+        pstr += sprintf(pstr, "keyboard1 hook(len:%d): ", len);
+        for(index = 0; index < len; index++)
+            pstr += sprintf(pstr, " %2.2x", (unsigned char)data[index]);
+        pstr += sprintf(pstr, "\n");
+        log_i("%s", str);
+
+        if(fd_hidg_kbd1 < 0)
+            return 0;
+
+        ret = write(fd_hidg_kbd1, data, len);
+    }
+    return ret;
+}
+
+
+
+int hid_dev_demo2_main(int argc, char **argv)
+{
+    int fd;
+    struct hidg_func_descriptor *mouse0_report;
+    struct hidg_func_descriptor *mouse1_report;
+    struct hidg_func_descriptor *kbd0_report;
+    struct hidg_func_descriptor *kbd1_report;
+    int index;
+    bool is_mouse0 = false;
+    bool is_mouse1 = false;
+    bool is_kbd0 = false;
+    bool is_kbd1 = false;
+
+    if(argc != 5){
+        printf("Error cmd format\n");
+        printf("example: \n");
+        printf("hid_dev_demo2 /dev/usbmouse0-v1C4Fp0034 /dev/usbkbd0-v1C4Fp0015 /dev/usbmouse1-v0000p3825 /dev/usbkbd1-v1C4Fp0015 \n");
+        return -1;
+    }
+
+    // elog_set_filter_tag_lvl("hid_dev", ELOG_LVL_INFO);
+    // elog_set_filter_tag_lvl("f_hidg", ELOG_LVL_DEBUG);
+    // elog_set_filter_tag_lvl("hidg", ELOG_LVL_DEBUG);
+ 
+
+    if(strstr(argv[1], "usbmouse")){
+        fd = open(argv[1], O_RDWR);
+        if(fd > 0){
+            ioctl(fd, USBHID_SET_HOOK, usbmouse0_hook);
+            ioctl(fd, USBHID_GET_REPORT_DESC, &mouse0_report);
+            close(fd);
+            printf("\n\t mouse 0 report: \n");
+            dump_report_desc(mouse0_report);
+            is_mouse0 = true;
+        }else
+            printf("Cannot open mouse(%s)\n", argv[1]);
+    }else
+        printf("usbmouse 0 is not exit...\n");
+
+    if(strstr(argv[3], "usbmouse")){
+        fd = open(argv[3], O_RDWR);
+        if(fd > 0){
+            ioctl(fd, USBHID_SET_HOOK, usbmouse1_hook);
+            ioctl(fd, USBHID_GET_REPORT_DESC, &mouse1_report);
+            close(fd);
+            printf("\n\t mouse 1 report: \n");
+            dump_report_desc(mouse1_report);
+            is_mouse1 = true;
+        }else
+            printf("Cannot open mouse(%s)\n", argv[3]);
+    }else
+        printf("usbmouse 1 is not exit...\n");
+
+    if(strstr(argv[2], "usbkbd")){
+        fd = open(argv[2], O_RDWR);
+        if(fd > 0){
+            ioctl(fd, USBHID_SET_HOOK, usbkbd0_hook);
+            ioctl(fd, USBHID_GET_REPORT_DESC, &kbd0_report);
+            close(fd);
+            printf("\n\t keyboard 0 report: \n");
+            dump_report_desc(kbd0_report);
+            is_kbd0 = true;       
+        }else
+            printf("Cannot open mouse(%s)\n", argv[2]);
+    }else
+        printf("usbkeyboard 0 is not exit...\n");
+
+    if(strstr(argv[4], "usbkbd")){
+        fd = open(argv[4], O_RDWR);
+        if(fd > 0){
+            ioctl(fd, USBHID_SET_HOOK, usbkbd1_hook);
+            ioctl(fd, USBHID_GET_REPORT_DESC, &kbd1_report);
+            close(fd);
+            printf("\n\t keyboard 1 report: \n");
+            dump_report_desc(kbd1_report);
+            is_kbd1 = true;             
+        }else
+            printf("Cannot open mouse(%s)\n", argv[4]);
+    }else
+        printf("usbkeyboard 2 is not exit...\n");
+
+
+    /* 配置连接PC的USB 口为 Gadget 模式 */
+    hcusb_set_mode(USB_PORT_0, MUSB_PERIPHERAL);
+
+    hcusb_gadget_hidg_mouse_kbd_init2(
+            get_udc_name(USB_PORT_0),
+            is_mouse0 ? (struct hidg_func_descriptor *)&mouse0_report[0] : NULL,
+            is_kbd0 ? (struct hidg_func_descriptor *)&kbd0_report[0] : NULL,
+            is_mouse1 ? (struct hidg_func_descriptor *)&mouse1_report[0] : NULL,
+            is_kbd1 ? (struct hidg_func_descriptor *)&kbd1_report[0] : NULL);
+    
+
+    fd_hidg_kbd0 = open("/dev/hidg0", O_RDWR);
+    if(fd_hidg_kbd0 < 0)
+        printf("[Error] cannot open /dev/hidg0 (%d)\n", fd_hidg_kbd0);
+    
+    fd_hidg_kbd1 = open("/dev/hidg2", O_RDWR);
+    if(fd_hidg_kbd1 < 0)
+        printf("[Error] cannot open /dev/hidg2 (%d)\n", fd_hidg_kbd1);
+    
+    fd_hidg_mouse0 = open("/dev/hidg1", O_RDWR);
+    if(fd_hidg_mouse0 < 0)
+        printf("[Error] cannot open /dev/hidg1 (%d)\n", fd_hidg_mouse0);
+    
+    fd_hidg_mouse1 = open("/dev/hidg3", O_RDWR);
+    if(fd_hidg_mouse1 < 0)
+        printf("[Error] cannot open /dev/hidg3 (%d)\n", fd_hidg_mouse1);
+
+    printf("===> hid_dev_demo2 finish\n");
+    return 0;
+}
+
+
+

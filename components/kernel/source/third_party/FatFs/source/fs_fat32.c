@@ -19,6 +19,8 @@
 #include <kernel/elog.h>
 #include <kernel/list.h>
 
+#include <nuttx/semaphore.h>
+
 #include "ff.h"
 #include "diskio.h"
 
@@ -31,6 +33,7 @@ struct fat_mountpt_s {
 	struct fat_blkdrv blkdrv;
 	struct list_head __files;        /* list head to all files opened on this mountpoint */
 	bool fs_mounted;                 /* true: The file system is ready */
+	sem_t mutex;
 	FATFS fatfs;
 };
 
@@ -271,13 +274,16 @@ static int fat_open(FAR struct file *filep, FAR const char *relpath,
 
 	DEBUGASSERT(fs != NULL);
 
+	nxsem_wait(&fs->mutex);
 	ret = fat_checkmount(fs);
 	if (ret != OK) {
+		nxsem_post(&fs->mutex);
 		return ret;
 	}
 
 	ff = (FAR struct fat_file_s *)kmm_zalloc(sizeof(struct fat_file_s));
 	if (!ff) {
+		nxsem_post(&fs->mutex);
 		return -ENOMEM;
 	}
 
@@ -286,6 +292,7 @@ static int fat_open(FAR struct file *filep, FAR const char *relpath,
 	res = f_open(&fs->fatfs, &ff->fil, relpath, fmode);
 	if (res != FR_OK) {
 		kmm_free(ff);
+		nxsem_post(&fs->mutex);
 		return fatfs_errno(res);
 	}
 
@@ -295,6 +302,7 @@ static int fat_open(FAR struct file *filep, FAR const char *relpath,
 	list_add_tail(&ff->list, &fs->__files);
 	taskEXIT_CRITICAL();
 
+	nxsem_post(&fs->mutex);
 	return OK;
 }
 
@@ -313,6 +321,7 @@ static int fat_close(FAR struct file *filep)
 
 	ff = filep->f_priv;
 
+	nxsem_wait(&fs->mutex);
 	ret = fat_checkmount(fs);
 	if (ret == OK) {
 		res = f_close(&ff->fil);
@@ -327,6 +336,8 @@ static int fat_close(FAR struct file *filep)
 
 	kmm_free(ff);
 	filep->f_priv = NULL;
+
+	nxsem_post(&fs->mutex);
 	return ret;
 }
 
@@ -344,8 +355,10 @@ static ssize_t fat_read(FAR struct file *filep, FAR char *buffer,
 	inode = filep->f_inode;
 	fs = inode->i_private;
 
+	nxsem_wait(&fs->mutex);
 	ret = fat_checkmount(fs);
 	if (ret != OK) {
+		nxsem_post(&fs->mutex);
 		return ret;
 	}
 
@@ -353,14 +366,17 @@ static ssize_t fat_read(FAR struct file *filep, FAR char *buffer,
 
 	/* Check for the forced mount condition */
 	if ((ff->ff_bflags & UMOUNT_FORCED) != 0) {
+		nxsem_post(&fs->mutex);
 		return -EPIPE;
 	}
 
 	res = f_read(&ff->fil, (void *)buffer, (UINT)buflen, (UINT *)&nbytes);
 	if (res != FR_OK) {
+		nxsem_post(&fs->mutex);
 		return fatfs_errno(res);
 	}
 
+	nxsem_post(&fs->mutex);
 	return nbytes;
 }
 
@@ -384,16 +400,21 @@ static ssize_t fat_write(FAR struct file *filep, FAR const char *buffer,
 
 	inode = filep->f_inode;
 	fs = inode->i_private;
+
+	nxsem_wait(&fs->mutex);
 	ret = fat_checkmount(fs);
 	if (ret != OK) {
+		nxsem_post(&fs->mutex);
 		return ret;
 	}
 
 	res = f_write(&ff->fil, (void *)buffer, (UINT)buflen, (UINT *)&nbytes);
 	if (res != FR_OK) {
+		nxsem_post(&fs->mutex);
 		return fatfs_errno(res);
 	}
 
+	nxsem_post(&fs->mutex);
 	return nbytes;
 }
 
@@ -404,7 +425,7 @@ static off_t fat_seek(FAR struct file *filep, off_t offset, int whence)
 	FAR struct fat_file_s *ff;
 	off_t position;
 	FRESULT res;
-	int ret;
+	off_t ret;
 
 	DEBUGASSERT(filep->f_priv != NULL && filep->f_inode != NULL);
 	ff = filep->f_priv;
@@ -437,19 +458,24 @@ static off_t fat_seek(FAR struct file *filep, off_t offset, int whence)
 
 	inode = filep->f_inode;
 	fs = inode->i_private;
+
+	nxsem_wait(&fs->mutex);
 	ret = fat_checkmount(fs);
-	if (ret != OK) {
-		return ret;
-	}
+	if (ret != OK) 
+		goto exit;
 
 	res = f_lseek(&ff->fil, position);
 	if (res != FR_OK) {
-		return fatfs_errno(res);
+		ret = fatfs_errno(res);
+		goto exit;
 	}
 
 	filep->f_pos = position;
+	ret = position;
 
-	return position;
+exit:
+	nxsem_post(&fs->mutex);
+	return ret;
 }
 
 static int fat_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
@@ -475,13 +501,18 @@ static int fat_sync(FAR struct file *filep)
 
 	inode = filep->f_inode;
 	fs = inode->i_private;
+
+	nxsem_wait(&fs->mutex);
 	ret = fat_checkmount(fs);
-	if (ret != OK) {
-		return ret;
-	}
+	if (ret != OK) 
+		goto exit;
 
 	res = f_sync(&ff->fil);
-	return fatfs_errno(res);
+	ret = fatfs_errno(res);
+
+exit:
+	nxsem_post(&fs->mutex);
+	return ret;	
 }
 
 static int fat_dup(FAR const struct file *oldp, FAR struct file *newp)
@@ -503,10 +534,10 @@ static int fat_dup(FAR const struct file *oldp, FAR struct file *newp)
 	fs = (struct fat_mountpt_s *)oldp->f_inode->i_private;
 	DEBUGASSERT(fs != NULL);
 
+	nxsem_wait(&fs->mutex);
 	ret = fat_checkmount(fs);
-	if (ret != OK) {
-		return ret;
-	}
+	if (ret != OK) 
+		goto exit;
 
 	/* Create a new instance of the file private date to describe the
 	 * dup'ed file.
@@ -514,7 +545,8 @@ static int fat_dup(FAR const struct file *oldp, FAR struct file *newp)
 
 	newff = (FAR struct fat_file_s *)kmm_malloc(sizeof(struct fat_file_s));
 	if (!newff) {
-		return -ENOMEM;
+		ret = -ENOMEM;
+		goto exit;
 	}
 
 	/* Create a file buffer to support partial sector accesses */
@@ -527,7 +559,9 @@ static int fat_dup(FAR const struct file *oldp, FAR struct file *newp)
 	list_add_tail(&newff->list, &fs->__files);
 	taskEXIT_CRITICAL();
 
-	return OK;
+exit:
+	nxsem_post(&fs->mutex);
+	return ret;
 }
 
 static int fat_opendir(FAR struct inode *mountpt, FAR const char *relpath,
@@ -541,23 +575,29 @@ static int fat_opendir(FAR struct inode *mountpt, FAR const char *relpath,
 	DEBUGASSERT(mountpt != NULL && mountpt->i_private != NULL);
 	fs = mountpt->i_private;
 
+	nxsem_wait(&fs->mutex);
 	ret = fat_checkmount(fs);
-	if (ret != OK) {
-		return ret;
-	}
+	if (ret != OK) 
+		goto exit;
 
 	fdir = (FDIR *)kmm_zalloc(sizeof(FDIR));
-	if (!fdir)
-		return -ENOMEM;
+	if (!fdir){
+		ret = -ENOMEM;
+		goto exit;
+	}
 
 	res = f_opendir(&fs->fatfs, fdir, relpath);
 	if (res != FR_OK) {
 		kmm_free(fdir);
-		return fatfs_errno(res);
+		ret = fatfs_errno(res);
+		goto exit;
 	}
 
 	dir->u.elmfat.fs_dir = fdir;
-	return OK;
+
+exit:	
+	nxsem_post(&fs->mutex);
+	return ret;
 }
 
 static int fat_closedir(FAR struct inode *mountpt, FAR struct fs_dirent_s *dir)
@@ -574,6 +614,7 @@ static int fat_closedir(FAR struct inode *mountpt, FAR struct fs_dirent_s *dir)
 	if (!fdir)
 		return -EBADF;
 
+	nxsem_wait(&fs->mutex);
 	ret = fat_checkmount(fs);
 	if (ret == OK) {
 		res = f_closedir(fdir);
@@ -582,7 +623,8 @@ static int fat_closedir(FAR struct inode *mountpt, FAR struct fs_dirent_s *dir)
 
 	dir->u.elmfat.fs_dir = NULL;
 	kmm_free(fdir);
-
+	
+	nxsem_post(&fs->mutex);
 	return ret;
 }
 
@@ -591,7 +633,7 @@ static int fat_fstat(FAR const struct file *filep, FAR struct stat *buf)
 	FAR struct inode *inode;
 	FAR struct fat_mountpt_s *fs;
 	FAR struct fat_file_s *ff;
-	int ret;
+	int ret = OK;
 
 	if (buf == NULL) {
 		return -EFAULT;
@@ -599,14 +641,15 @@ static int fat_fstat(FAR const struct file *filep, FAR struct stat *buf)
 
 	inode = filep->f_inode;
 	fs = inode->i_private;
+
 	ret = fat_checkmount(fs);
-	if (ret != OK) {
-		return ret;
-	}
+	if (ret != OK) 
+		goto exit;
 
 	DEBUGASSERT(filep->f_priv != NULL && filep->f_inode != NULL);
 	ff    = filep->f_priv;
 
+	buf->st_blksize = 120 * 1024;
 	buf->st_size = f_size(&ff->fil);
 	buf->st_mode = S_IFREG | S_IRUSR | S_IRGRP | S_IROTH | S_IWUSR |
 		       S_IWGRP | S_IWOTH | S_IXUSR | S_IXGRP | S_IXOTH;
@@ -614,7 +657,8 @@ static int fat_fstat(FAR const struct file *filep, FAR struct stat *buf)
 		buf->st_mode &= ~(S_IWUSR | S_IWGRP | S_IWOTH);
 	}
 
-	return OK;
+exit:
+	return ret;
 }
 
 static int fat_readdir(FAR struct inode *mountpt,
@@ -624,24 +668,27 @@ static int fat_readdir(FAR struct inode *mountpt,
 	FDIR *fdir;
 	FILINFO finfo = {0};
 	FRESULT res;
-	int ret;
+	int ret = OK;
 
 	DEBUGASSERT(mountpt != NULL && mountpt->i_private != NULL);
 	fs = mountpt->i_private;
+	nxsem_wait(&fs->mutex);
 
 	ret = fat_checkmount(fs);
-	if (ret != OK) {
-		return ret;
-	}
+	if (ret != OK) 
+		goto exit;
 
 	fdir = dir->u.elmfat.fs_dir;
-	if (!fdir)
-		return -EBADF;
+	if (!fdir){
+		ret = -EBADF;
+		goto exit;
+	}
 
 	dir->fd_dir.d_name[0] = '\0';
 	res = f_readdir(fdir, &finfo);
 	if ((res != FR_OK) || (finfo.fname[0] == 0x0)) {
-		return -ENOENT;
+		ret = -ENOENT;
+		goto exit;
 	}
 
 	if (finfo.fattrib & AM_DIR) {
@@ -653,8 +700,11 @@ static int fat_readdir(FAR struct inode *mountpt,
 	strncpy(dir->fd_dir.d_name, finfo.fname, CONFIG_NAME_MAX);
 	dir->fd_dir.d_name[CONFIG_NAME_MAX] = '\0';
 
-	return OK;
+exit:
+	nxsem_post(&fs->mutex);
+	return ret;
 }
+
 
 static int fat_rewinddir(FAR struct inode *mountpt,
                          FAR struct fs_dirent_s *dir)
@@ -664,20 +714,27 @@ static int fat_rewinddir(FAR struct inode *mountpt,
 	FRESULT res;
 	int ret;
 
+
 	DEBUGASSERT(mountpt != NULL && mountpt->i_private != NULL);
 	fs = mountpt->i_private;
+	nxsem_wait(&fs->mutex);
 
 	ret = fat_checkmount(fs);
-	if (ret != OK) {
-		return ret;
-	}
+	if (ret != OK) 
+		goto exit;
 
 	fdir = dir->u.elmfat.fs_dir;
-	if (!fdir)
-		return -EBADF;
-	
+	if (!fdir){
+		ret = -EBADF;
+		goto exit;
+	}
+
 	res = f_rewinddir(fdir);
-	return fatfs_errno(res);
+	ret = fatfs_errno(res);
+
+exit:
+	nxsem_post(&fs->mutex);
+	return ret;
 }
 
 static int fat_mount(struct fat_mountpt_s *fs, bool writeable)
@@ -688,7 +745,7 @@ static int fat_mount(struct fat_mountpt_s *fs, bool writeable)
 	FRESULT res;
 
 	/* Assume that the mount is successful */
-
+	nxsem_wait(&fs->mutex);
 	fs->fs_mounted = true;
 
 	/* Check if there is media available */
@@ -741,10 +798,11 @@ static int fat_mount(struct fat_mountpt_s *fs, bool writeable)
 		ret = fatfs_errno(res);
 		goto errout;
 	}
-
+	nxsem_post(&fs->mutex);
 	return OK;
 
 errout:
+	nxsem_post(&fs->mutex);
 	fs->fs_mounted = false;
 	return ret;
 }
@@ -779,6 +837,8 @@ static int fat_bind(FAR struct inode *blkdriver, FAR const void *data,
 
 	INIT_LIST_HEAD(&fs->__files);
 
+	nxsem_init(&fs->mutex, 0, 1);
+
 	/* Initialize the allocated mountpt state structure.  The filesystem is
 	 * responsible for one reference on the blkdriver inode and does not
 	 * have to addref() here (but does have to release in unbind().
@@ -807,6 +867,8 @@ static int fat_unbind(FAR void *handle, FAR struct inode **blkdriver,
 	if (!fs) {
 		return -EINVAL;
 	}
+
+	nxsem_wait(&fs->mutex);
 
 	if (fs->fs_mounted == true) {
 		f_unmount(&fs->fatfs, &fs->blkdrv, 0);
@@ -839,6 +901,7 @@ static int fat_unbind(FAR void *handle, FAR struct inode **blkdriver,
 			 * options.
 			 */
 			taskEXIT_CRITICAL();
+			nxsem_post(&fs->mutex);
 			return (flags != 0) ? -ENOSYS : -EBUSY;
 		}
 	}
@@ -867,6 +930,7 @@ static int fat_unbind(FAR void *handle, FAR struct inode **blkdriver,
 
 	/* Release the mountpoint private data */
 	kmm_free(fs);
+	nxsem_post(&fs->mutex);
 	return OK;
 }
 
@@ -1074,6 +1138,7 @@ int mkfatfs(const char *pathname, struct fat_format_s *fmt)
 	BYTE work[FF_MAX_SS]; /* Work area (larger is better for processing time) */
 	FRESULT res;
 	struct geometry geometry = { 0 };
+	MKFS_PARM setopt = {FM_ANY|FM_SFD, 0, 0, 0, 0};	/* Set parameter */
 	int ret;
 
 	if (!pathname) {
@@ -1120,7 +1185,7 @@ int mkfatfs(const char *pathname, struct fat_format_s *fmt)
 		goto errout_with_driver;
 	}
 
-	res = f_mkfs(&blkdrv, 0, work, sizeof work);
+	res = f_mkfs(&blkdrv, &setopt, work, sizeof work);
 	if (res != FR_OK) {
 		log_e("ERROR: Failed to open %s: %d\n", pathname, -res);
 		ret = fatfs_errno(res);

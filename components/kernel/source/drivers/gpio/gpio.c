@@ -4,11 +4,14 @@
 #include <hcuapi/gpio.h>
 #include "hc_gpio.h"
 
-static void * ctrlreg[4] = {
+static void * ctrlreg[5] = {
 	(void *)&GPIOLCTRL,
 	(void *)&GPIOBCTRL,
 	(void *)&GPIORCTRL,
 	(void *)&GPIOTCTRL,
+#ifdef CONFIG_SOC_HC16XX
+	(void *)&GPIOLVDSCTRL,
+#endif
 };
 
 
@@ -57,8 +60,13 @@ static void gpio_set_output_low(pinpad_e padctl)
  *****************************************************************************/
 void gpio_set_output(pinpad_e padctl, bool val)
 {
+#ifdef CONFIG_SOC_HC16XX
+	if (padctl >= PINPAD_LVDS_MAX)
+		return;
+#else
 	if (padctl >= PINPAD_MAX)
 		return;
+#endif
 
 	if (val)
 		gpio_set_output_high(padctl);

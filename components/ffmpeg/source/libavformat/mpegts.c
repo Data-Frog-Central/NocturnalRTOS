@@ -268,6 +268,7 @@ typedef struct PESContext {
     AVBufferRef *buffer;
     SLConfigDescr sl;
     int merged_st;
+	int max_buffer_size;
 } PESContext;
 
 extern AVInputFormat ff_mpegts_demuxer;
@@ -820,6 +821,7 @@ static const StreamType ISO_types[] = {
     { 0x42, AVMEDIA_TYPE_VIDEO, AV_CODEC_ID_CAVS       },
     { 0xd1, AVMEDIA_TYPE_VIDEO, AV_CODEC_ID_DIRAC      },
     { 0xd2, AVMEDIA_TYPE_VIDEO, AV_CODEC_ID_AVS2       },
+    { 0xd4, AVMEDIA_TYPE_VIDEO, AV_CODEC_ID_AVS3       },
     { 0xea, AVMEDIA_TYPE_VIDEO, AV_CODEC_ID_VC1        },
     { 0 },
 };
@@ -1199,8 +1201,15 @@ static int mpegts_push_data(MpegTSFilter *filter,
                     pes->total_size = AV_RB16(pes->header + 4);
                     /* NOTE: a zero total size means the PES size is
                      * unbounded */
-                    if (!pes->total_size)
-                        pes->total_size = MAX_PES_PAYLOAD;
+                    if (!pes->total_size) {
+                        if (pes->max_buffer_size == 0) {
+                            pes->max_buffer_size = MAX_PES_PAYLOAD / 4;
+                            pes->total_size = pes->max_buffer_size;
+                        } else {
+                            pes->total_size = pes->max_buffer_size;
+                        }
+                        //pes->total_size = MAX_PES_PAYLOAD;
+                    }
 
                     /* allocate pes buffer */
                     pes->buffer = buffer_pool_get(ts, pes->total_size);
@@ -1371,16 +1380,40 @@ skip:
             break;
         case MPEGTS_PAYLOAD:
             if (pes->buffer) {
+try_again:
                 if (pes->data_index > 0 &&
                     pes->data_index + buf_size > pes->total_size) {
-                    ret = new_pes_packet(pes, ts->pkt);
-                    if (ret < 0)
-                        return ret;
-                    pes->total_size = MAX_PES_PAYLOAD;
-                    pes->buffer = buffer_pool_get(ts, pes->total_size);
-                    if (!pes->buffer)
-                        return AVERROR(ENOMEM);
-                    ts->stop_parse = 1;
+                    if (pes->max_buffer_size >= MAX_PES_PAYLOAD) {
+                        ret = new_pes_packet(pes, ts->pkt);
+                        if (ret < 0)
+                            return ret;
+                        pes->total_size = pes->max_buffer_size;
+                        pes->buffer = buffer_pool_get(ts, pes->total_size);
+                        if (!pes->buffer)
+                            return AVERROR(ENOMEM);
+                        ts->stop_parse = 1;
+                    } else if (pes->max_buffer_size < MAX_PES_PAYLOAD) {
+						void *tmp_data;
+                        if (pes->max_buffer_size == 0) {
+                            pes->max_buffer_size = pes->data_index + buf_size;
+                        } else {
+                            pes->max_buffer_size *= 2;
+                        }
+                        tmp_data = av_malloc(pes->data_index);
+                        if (!tmp_data)
+                            return AVERROR(ENOMEM);
+                        memcpy(tmp_data, pes->buffer->data, pes->data_index);
+                        pes->total_size = pes->max_buffer_size;
+						av_buffer_unref(&pes->buffer);
+                        pes->buffer = buffer_pool_get(ts, pes->total_size);
+                        if (!pes->buffer){
+                            av_free(tmp_data);
+                            return AVERROR(ENOMEM);
+                        }
+                        memcpy(pes->buffer->data, tmp_data, pes->data_index);
+                        av_free(tmp_data);
+                        goto try_again;
+                    }
                 } else if (pes->data_index == 0 &&
                            buf_size > pes->total_size) {
                     // pes packet size is < ts size packet and pes data is padded with 0xff
@@ -3344,7 +3377,7 @@ static av_unused int64_t mpegts_get_pcr(AVFormatContext *s, int stream_index,
     return AV_NOPTS_VALUE;
 }
 
-static int64_t mpegts_get_dts(AVFormatContext *s, int stream_index,
+static int64_t mpegts_get_pts(AVFormatContext *s, int stream_index,
                               int64_t *ppos, int64_t pos_limit)
 {
     MpegTSContext *ts = s->priv_data;
@@ -3364,14 +3397,14 @@ static int64_t mpegts_get_dts(AVFormatContext *s, int stream_index,
             av_packet_free(&pkt);
             return AV_NOPTS_VALUE;
         }
-        if (pkt->dts != AV_NOPTS_VALUE && pkt->pos >= 0) {
+        if (pkt->pts != AV_NOPTS_VALUE && pkt->pos >= 0) {
             ff_reduce_index(s, pkt->stream_index);
-            av_add_index_entry(s->streams[pkt->stream_index], pkt->pos, pkt->dts, 0, 0, AVINDEX_KEYFRAME /* FIXME keyframe? */);
+            av_add_index_entry(s->streams[pkt->stream_index], pkt->pos, pkt->pts, 0, 0, AVINDEX_KEYFRAME /* FIXME keyframe? */);
             if (pkt->stream_index == stream_index && pkt->pos >= *ppos) {
-                int64_t dts = pkt->dts;
+                int64_t pts = pkt->pts;
                 *ppos = pkt->pos;
                 av_packet_free(&pkt);
-                return dts;
+                return pts;
             }
         }
         pos = pkt->pos;
@@ -3445,7 +3478,7 @@ AVInputFormat ff_mpegts_demuxer = {
     .read_header    = mpegts_read_header,
     .read_packet    = mpegts_read_packet,
     .read_close     = mpegts_read_close,
-    .read_timestamp = mpegts_get_dts,
+    .read_timestamp = mpegts_get_pts,
     .flags          = AVFMT_SHOW_IDS | AVFMT_TS_DISCONT,
     .priv_class     = &mpegts_class,
     .sync_check     = mpegts_sync_check,
@@ -3458,7 +3491,7 @@ AVInputFormat ff_mpegtsraw_demuxer = {
     .read_header    = mpegts_read_header,
     .read_packet    = mpegts_raw_read_packet,
     .read_close     = mpegts_read_close,
-    .read_timestamp = mpegts_get_dts,
+    .read_timestamp = mpegts_get_pts,
     .flags          = AVFMT_SHOW_IDS | AVFMT_TS_DISCONT,
     .priv_class     = &mpegtsraw_class,
 };

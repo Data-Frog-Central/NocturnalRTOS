@@ -67,6 +67,7 @@ enum node_status { NODE_OK, NODE_CORRUPTED, NODE_END };
 struct persistentmem_device {
 	size_t size;
 	const char *mtdname;
+	int valid;
 	struct mtd_dev_s *mtd;
 	size_t mtd_part_size;
 	size_t mtd_erasesize;
@@ -81,6 +82,16 @@ struct vnode {
 
 static struct persistentmem_device persistentmem_dev = { 0 };
 static struct persistentmem_device *gdev = &persistentmem_dev;
+
+static void persistentmem_lock(void)
+{
+	mutex_lock(&gdev->files_lock);
+}
+
+static void persistentmem_unlock(void)
+{
+	mutex_unlock(&gdev->files_lock);
+}
 
 static int flash_read_wrap(uint32_t start_addr, uint32_t read_size,
 			   uint32_t *actual_size, uint8_t *buf)
@@ -714,16 +725,12 @@ static bool __persistentmem_read(const uint32_t addr, uint8_t *const data,
 {
 	int len;
 
-	mutex_lock(&gdev->files_lock);
-
 	len = wear_level_memory_read(&gdev->blk, addr, data_len, data);
 
 	if (len != (int)data_len) {
-		mutex_unlock(&gdev->files_lock);
 		return false;
 	}
 
-	mutex_unlock(&gdev->files_lock);
 	return true;
 }
 
@@ -736,64 +743,89 @@ static bool __persistentmem_write(const uint32_t addr,
 	len = wear_level_memory_write(&gdev->blk, addr, data_len, (uint8_t *)data);
 
 	if (len != (int)data_len) {
-		mutex_unlock(&gdev->files_lock);
 		log_e("Write error, len:%d, data_len:%ld\n", len, data_len);
 		return false;
 	}
 
-	mutex_unlock(&gdev->files_lock);
 	return true;
 }
 
 static ssize_t persistentmem_read(struct file *file, char *buf, size_t nbytes)
 {
 	uint32_t addr = file->f_pos;
+	ssize_t rc = nbytes;
 
-	if (!__persistentmem_read(addr, buf, nbytes)) {
-		return -EFAULT;
+	persistentmem_lock();
+
+	if (gdev->valid) {
+		if (!__persistentmem_read(addr, buf, nbytes)) {
+			persistentmem_unlock();
+			return -EFAULT;
+		}
+
+		file->f_pos += nbytes;
+	} else {
+		rc = 0;
 	}
 
-	file->f_pos += nbytes;
-
-	return nbytes;
+	persistentmem_unlock();
+	return rc;
 }
 
 static ssize_t persistentmem_write(struct file *file, const char *buf,
 				   size_t nbytes)
 {
 	uint32_t addr = file->f_pos;
+	ssize_t rc = nbytes;
 
-	if (!__persistentmem_write(addr, buf, nbytes)) {
-		return -EFAULT;
+	persistentmem_lock();
+	if (gdev->valid) {
+		if (!__persistentmem_write(addr, buf, nbytes)) {
+			persistentmem_unlock();
+			return -EFAULT;
+		}
+
+		file->f_pos += nbytes;
+	} else {
+		rc = 0;
 	}
-
-	file->f_pos += nbytes;
-
-	return nbytes;
+	persistentmem_unlock();
+	return rc;
 }
 
 static off_t persistentmem_seek(struct file *file, off_t offset, int whence)
 {
 	off_t newpos;
 
-	switch(whence) {
-	case SEEK_SET:
-		newpos = offset;
-		break;
-	case SEEK_CUR:
-		newpos = file->f_pos + offset;
-		break;
-	case SEEK_END:
-		newpos = gdev->size + offset;
-		break;
-	default:
+	persistentmem_lock();
+
+	if (gdev->valid) {
+		switch(whence) {
+		case SEEK_SET:
+			newpos = offset;
+			break;
+		case SEEK_CUR:
+			newpos = file->f_pos + offset;
+			break;
+		case SEEK_END:
+			newpos = gdev->size + offset;
+			break;
+		default:
+			persistentmem_unlock();
+			return -EINVAL;
+		}
+
+		if (newpos < 0) {
+			persistentmem_unlock();
+			return -EINVAL;
+		}
+
+		file->f_pos = newpos;
+	} else {
+		persistentmem_unlock();
 		return -EINVAL;
 	}
-
-	if (newpos < 0)
-		return -EINVAL;
-
-	file->f_pos = newpos;
+	persistentmem_unlock();
 
 	return newpos;
 }
@@ -822,17 +854,13 @@ static int node_create(void *buffer, uint32_t size, struct persistentmem_node_cr
 	void *p = buffer;
 	int len;
 
-	mutex_lock(&gdev->files_lock);
-
 	/* check if id duplicate */
 	if (node_find(buffer, size, node->id)) {
-		mutex_unlock(&gdev->files_lock);
 		return PERSISTENTMEM_ERR_ID_DUPLICATED;
 	}
 
 	p = node_find(buffer, size, PERSISTENTMEM_NODE_ID_UNUSED);
 	if ((p + sizeof(struct vnode) + node->size) >= (buffer + size)) {
-		mutex_unlock(&gdev->files_lock);
 		return PERSISTENTMEM_ERR_NO_SPACE;
 	}
 
@@ -841,12 +869,9 @@ static int node_create(void *buffer, uint32_t size, struct persistentmem_node_cr
 	len = wear_level_memory_write(&gdev->blk, (int)(p - buffer),
 				      sizeof(struct vnode), (uint8_t *)&vnode);
 	if (len != sizeof(struct vnode)) {
-		mutex_unlock(&gdev->files_lock);
 		log_e("Write error, len:%d, data_len:%ld", len, sizeof(struct vnode));
 		return PERSISTENTMEM_ERR_FAULT;
 	}
-
-	mutex_unlock(&gdev->files_lock);
 
 	return 0;
 }
@@ -860,11 +885,8 @@ static int node_delete(void *buffer, uint32_t size, unsigned long id)
 	int len;
 	void *tmp;
 
-	mutex_lock(&gdev->files_lock);
-
 	pcur = node_find(buffer, size, id);
 	if (!pcur) {
-		mutex_unlock(&gdev->files_lock);
 		return PERSISTENTMEM_ERR_ID_NOTFOUND;
 	}
 
@@ -873,7 +895,6 @@ static int node_delete(void *buffer, uint32_t size, unsigned long id)
 	pnext = pcur + sizeof(struct vnode) + pvnode->size;
 	tmp = kmalloc(pend - pcur, GFP_KERNEL);
 	if (!tmp) {
-		mutex_unlock(&gdev->files_lock);
 		return -ENOMEM;
 	}
 
@@ -887,12 +908,9 @@ static int node_delete(void *buffer, uint32_t size, unsigned long id)
 	len = wear_level_memory_write(&gdev->blk, (int)(pcur - buffer),
 				      (int)(pend - pcur), (uint8_t *)tmp);
 	if (len != (pend - pcur)) {
-		mutex_unlock(&gdev->files_lock);
 		log_e("Write error, len:%d, data_len:%ld", len, pend - pcur);
 		return PERSISTENTMEM_ERR_FAULT;
 	}
-
-	mutex_unlock(&gdev->files_lock);
 
 	return 0;
 }
@@ -901,22 +919,16 @@ static int node_get(void *buffer, uint32_t size, struct persistentmem_node *node
 {
 	struct vnode *pvnode;
 
-	mutex_lock(&gdev->files_lock);
-
 	pvnode = node_find(buffer, size, node->id);
 	if (!pvnode) {
-		mutex_unlock(&gdev->files_lock);
 		return PERSISTENTMEM_ERR_ID_NOTFOUND;
 	}
 
 	if (node->offset + node->size > pvnode->size) {
-		mutex_unlock(&gdev->files_lock);
 		return PERSISTENTMEM_ERR_OVERFLOW;
 	}
 
 	memcpy(node->buf, (char *)pvnode + sizeof(struct vnode) + node->offset, node->size);
-
-	mutex_unlock(&gdev->files_lock);
 
 	return 0;
 }
@@ -927,28 +939,21 @@ static int node_put(void *buffer, uint32_t size, struct persistentmem_node *node
 	int start;
 	uint32_t len;
 
-	mutex_lock(&gdev->files_lock);
-
 	pvnode = node_find(buffer, size, node->id);
 	if (!pvnode) {
-		mutex_unlock(&gdev->files_lock);
 		return PERSISTENTMEM_ERR_ID_NOTFOUND;
 	}
 
 	if (node->offset + node->size > pvnode->size) {
-		mutex_unlock(&gdev->files_lock);
 		return PERSISTENTMEM_ERR_OVERFLOW;
 	}
 
 	start = (int)((void *)pvnode + sizeof(struct vnode) + node->offset - buffer);
 	len = wear_level_memory_write(&gdev->blk, start, node->size, (uint8_t *)node->buf);
 	if (len != node->size) {
-		mutex_unlock(&gdev->files_lock);
 		log_e("Write error, len:%ld, data_len:%d", len, node->size);
 		return PERSISTENTMEM_ERR_FAULT;
 	}
-
-	mutex_unlock(&gdev->files_lock);
 
 	return 0;
 }
@@ -959,22 +964,50 @@ static int persistentmem_ioctl(struct file *filep, int cmd, unsigned long arg)
 
 	switch (cmd) {
 	case PERSISTENTMEM_IOCTL_NODE_CREATE: {
-		struct persistentmem_node_create node;
-		memcpy((void *)&node, (void *)arg, sizeof(node));
-		node.size = ((node.size + 3) >> 2) << 2;
-		rc = node_create(gdev->blk.buffer, gdev->blk.buf_size, &node);
+		persistentmem_lock();
+		if (gdev->valid) {
+			struct persistentmem_node_create node;
+			memcpy((void *)&node, (void *)arg, sizeof(node));
+			node.size = ((node.size + 3) >> 2) << 2;
+			rc = node_create(gdev->blk.buffer, gdev->blk.buf_size, &node);
+		} else {
+			rc = -1;
+		}
+		persistentmem_unlock();
 		break;
 	}
 	case PERSISTENTMEM_IOCTL_NODE_DELETE: {
-		rc = node_delete(gdev->blk.buffer, gdev->blk.buf_size, arg);
+		persistentmem_lock();
+		if (gdev->valid) {
+			rc = node_delete(gdev->blk.buffer, gdev->blk.buf_size, arg);
+		} else {
+			rc = -1;
+		}
+		persistentmem_unlock();
 		break;
 	}
 	case PERSISTENTMEM_IOCTL_NODE_GET: {
-		rc = node_get(gdev->blk.buffer, gdev->blk.buf_size, (struct persistentmem_node *)arg);
+		persistentmem_lock();
+		if (gdev->valid)
+			rc = node_get(gdev->blk.buffer, gdev->blk.buf_size, (struct persistentmem_node *)arg);
+		else
+			rc = -1;
+		persistentmem_unlock();
 		break;
 	}
 	case PERSISTENTMEM_IOCTL_NODE_PUT: {
-		rc = node_put(gdev->blk.buffer, gdev->blk.buf_size, (struct persistentmem_node *)arg);
+		persistentmem_lock();
+		if (gdev->valid)
+			rc = node_put(gdev->blk.buffer, gdev->blk.buf_size, (struct persistentmem_node *)arg);
+		else
+			rc = -1;
+		persistentmem_unlock();
+		break;
+	}
+	case PERSISTENTMEM_IOCTL_MARK_INVALID: {
+		persistentmem_lock();
+		gdev->valid = 0;
+		persistentmem_unlock();
 		break;
 	}
 	default:
@@ -1026,6 +1059,7 @@ static int persistentmem_probe(const char *node)
 	gdev->size = size;
 	gdev->mtd_part_size = gdev->mtd->size;
 	gdev->mtd_erasesize = gdev->mtd->erasesize;
+	gdev->valid = 1;
 
 	ret = flash_wear_leveling_init();
 	if (ret)

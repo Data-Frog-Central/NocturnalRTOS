@@ -10,12 +10,27 @@
 #include <kernel/vfs.h>
 #include <kernel/module.h>
 #include <kernel/elog.h>
+#include <cpu_func.h>
+
+static void run_init(struct mod_init *p)
+{
+	int res;
+	log_d("module init %s\n", p->name);
+	res = p->init();
+	if (res) {
+		printf("    --> init %s failed.\n", p->name);
+	} else {
+		log_w("    --> init %s done\n", p->name);
+	}
+	p->initialized = true;
+}
 
 int module_init2(const char *name, int n_exclude, char *excludes[])
 {
 	struct mod_init *mod_start = (struct mod_init *)&_module_init_start;
 	struct mod_init *mod_end = (struct mod_init *)&_module_init_end;
 	struct mod_init *p;
+	struct mod_init *pwdt = NULL;
 	int i, res;
 	bool group_init = true;
 	bool skip;
@@ -65,15 +80,32 @@ int module_init2(const char *name, int n_exclude, char *excludes[])
 				continue;
 			}
 
-			if (p->init) {
-				log_d("module init %s\n", p->name);
-				res = p->init();
-				if (res) {
-					log_w("    --> init %s failed.\n", p->name);
-					return res;
-				}
+			if (!p->init) {
+				p->initialized = true;
+				continue;
 			}
-			p->initialized = true;
+
+			if (!strcmp(p->name, "usb_core"))
+				res = sys_hcprogrammer_check_timeout();
+			else
+				res = sys_hcprogrammer_check();
+
+			if (!res && !strcmp(p->name, "wdt")) {
+				/* init wdt later after sys_hcprogrammer_check() success */
+				pwdt = p;
+				continue;
+			} else {
+				if (res && pwdt) {
+					run_init(pwdt);
+					pwdt = NULL;
+				}
+				run_init(p);
+			}
+		}
+
+		if (pwdt) {
+			sys_hcprogrammer_check_timeout();
+			run_init(pwdt);
 		}
 
 		return 0;
@@ -84,17 +116,17 @@ int module_init2(const char *name, int n_exclude, char *excludes[])
 			if (p->initialized == true) {
 				return 0;
 			}
-			if (p->init) {
-				log_w("    --> init %s ...\n", p->name);
-				res = p->init();
-				if (res) {
-					log_e("    --> init %s failed.\n", p->name);
-					return res;
-				}
-				log_w("    --> init %s done\n", p->name);
+			if (!p->init) {
+				p->initialized = true;
+				continue;
 			}
-			p->initialized = true;
 
+			if (!strcmp(p->name, "usb_core") || !strcmp(p->name, "wdt"))
+				sys_hcprogrammer_check_timeout();
+			else
+				sys_hcprogrammer_check();
+
+			run_init(p);
 			return 0;
 		}
 	}

@@ -134,6 +134,7 @@ typedef enum
 	HCPLAYER_MSG_FIRST_VIDEO_FRAME_DECODED,
 	HCPLAYER_MSG_FIRST_VIDEO_FRAME_SHOWED,
 	HCPLAYER_MSG_FIRST_VIDEO_FRAME_TRANSCODED,
+	HCPLAYER_MSG_HTTP_FORBIDDEN,
 
 	HCPLAYER_MSG_UNDEFINED,
 } HCPlayerMsgType;
@@ -164,6 +165,15 @@ typedef enum HCAlphaBlendMode {
 	ALPHA_BLEND_CHECKERBOARD,
 	ALPHA_BLEND_NB,
 } HCAlphaBlendMode;
+
+struct video_transcode_config2 {
+	bool b_enable;
+	bool b_show;
+	bool b_scale;
+	bool b_capture_one;
+	int16_t dst_w;
+	int16_t dst_h;
+};
 
 typedef struct HCPlayerInitArgs
 {
@@ -196,6 +206,7 @@ typedef struct HCPlayerInitArgs
 	double start_time;
 
 	struct video_transcode_config transcode_config;
+	struct video_transcode_config2 transcode_config2;
 
 	/* enable both video rotate&mirror, it will alloc more memory during init. */
 	bool rotate_enable;
@@ -260,6 +271,13 @@ typedef struct HCPlayerInitArgs
 	bool abort_subtitle;
 
 	bool enable_audsink;
+	bool play_both;
+
+	bool enable_audio_thread;
+	int audio_thread_buffer_size;//default: 1 * 1024 * 1024
+	int dma_buffer_time;
+	int mix_priority;
+	bool mix_maximum_weight;
 }HCPlayerInitArgs;
 
 typedef struct HCPlayerAudioInfo
@@ -533,6 +551,7 @@ int hcplayer_change_rotate_type(void *player, rotate_type_e rotate_type);
 int hcplayer_change_mirror_type(void *player, mirror_type_e mirror_type);
 
 int hcplayer_read_transcoded_picture(void *player, void *buf, int len);
+int hcplayer_transcode_again(void *player);
 
 int hcplayer_get_buffering_percent(void *hdl);
 

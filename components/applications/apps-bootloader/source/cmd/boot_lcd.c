@@ -12,10 +12,19 @@ typedef enum LCD_CURRENT_INIT_STATUS
 	LCD_CURRENT_IS_INIT,
 }lcd_current_init_status_e;
 
-void open_boot_lcd_init(int argc, char *argv[])
+int open_boot_lcd_init(int argc, char *argv[])
 {
 	int fd;
 	int tmp = 0;
+
+#if 0
+	fd = open("/dev/lvds", O_RDWR);
+	if (fd) {
+		ioctl(fd, LVDS_SET_GPIO_POWER, 1); //open lvds power
+		close(fd);
+	}
+#endif
+
 	fd = open("/dev/lcddev",O_RDWR);
 	if(fd > 0)
 	{
@@ -31,6 +40,7 @@ void open_boot_lcd_init(int argc, char *argv[])
 			close(fd);
 		}
 	}
+	return 0;
 }
 
 CONSOLE_CMD(boot_lcd, NULL, open_boot_lcd_init, CONSOLE_CMD_MODE_SELF, "boot open lcd init")

@@ -61,7 +61,31 @@ typedef volatile struct adc_reg {
 	uint32_t reserved_64; /* REG_ADC_BASE + 0x64 */
 	uint32_t reserved_68; /* REG_ADC_BASE + 0x68 */
 	uint32_t reserved_6c; /* REG_ADC_BASE + 0x6c */
-	uint32_t old_read_ch; /* REG_ADC_BASE + 0x70 */
+//	uint32_t old_read_ch; /* REG_ADC_BASE + 0x70 */
+	union {
+
+		struct {
+			uint32_t part1:				3;
+			uint32_t reserved0:			1;
+			uint32_t part2:				3;
+			uint32_t reserved1:			1;
+			uint32_t part3:				3;
+			uint32_t reserved2:			1;
+			uint32_t part4:				3;
+			uint32_t reserved3:			1;
+			uint32_t part5:				3;
+			uint32_t reserved4:			1;
+			uint32_t part6:				3;
+			uint32_t reserved5:			1;
+			uint32_t Adc8b_source_sel:	 	3;
+			uint32_t reserved6:			1;
+			uint32_t Abc8b_sel_change_cond:		1;
+			uint32_t reserved7:			1;
+			uint32_t Average_sel:			1;
+			uint32_t Int_latch_val_reg:		1;
+		};
+		uint32_t val;
+	} old_read_ch; /* REG_ADC_BASE + 0x70 */
 //	uint32_t reserved_74; /* REG_ADC_BASE + 0x74 */
 	union {
 
@@ -549,6 +573,15 @@ typedef volatile struct adc_reg {
 		};
 		uint8_t val;
 	}read_data[8];		/* REG_ADC_BASE + 0xc0 */
+
+	uint32_t reserved_c8; /* REG_ADC_BASE + 0xc8 */
+	uint32_t reserved_cc; /* REG_ADC_BASE + 0xcc */
+	union {
+		struct {
+			uint8_t ch:				8;
+		};
+		uint8_t val;
+	}read_data_2[8];		/* REG_ADC_BASE + 0xd0 */
 } adc_reg_t;
 
 typedef volatile struct adc_wait_reg{
@@ -568,8 +601,8 @@ typedef volatile struct adc_wait_reg{
 	{
 		struct 
 		{
-			uint8_t wait_ch_counter_threshold: 	8;
-			uint8_t reserved_0: 	8;
+			uint16_t wait_ch_counter_threshold: 	10;
+			uint8_t reserved_0: 	6;
 		};
 		uint16_t val;
 	}new_saradc_wait_ch_counter_threshold[6];	/* 0x1880 _ 0x168 */

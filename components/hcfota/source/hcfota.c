@@ -172,6 +172,23 @@ static int hcfota_set_sysdata_version(uint32_t version)
 	return 0;
 }
 
+static int hcfota_persistentmem_mark_invalid(void)
+{
+	int fd;
+
+	fd = open("/dev/persistentmem", O_SYNC | O_RDWR);
+	if (fd < 0) {
+		printf("open /dev/persistentmem failed\n");
+		return -1;
+	}
+
+	ioctl(fd, PERSISTENTMEM_IOCTL_MARK_INVALID, 0);
+
+	close(fd);
+
+	return 0;
+}
+
 static void hcfota_set_crc(struct hcfota_header *header, uint32_t crc)
 {
 	header->crc = crc;
@@ -1117,6 +1134,9 @@ int hcfota_memory(const char *buf, unsigned long size, hcfota_report_t report_cb
 				   progress.usrdata);
 	}
 
+	if (header->ignore_version_update)
+		hcfota_persistentmem_mark_invalid();
+
 	/* Do backup first */
 	rc = 0;
 	for (i = 0; i < payload_header->entry_number; i++) {
@@ -1440,6 +1460,9 @@ int hcfota_memory_b2b(const char *buf, unsigned long size, hcfota_report_t repor
 				   progress.usrdata);
 	}
 
+	if (header->ignore_version_update)
+		hcfota_persistentmem_mark_invalid();
+
 	/* Do backup first */
 	rc = 0;
 	for (i = 0; i < payload_header->entry_number; i++) {
@@ -1751,6 +1774,8 @@ int hcfota_from_path(const char *path, hcfota_report_t report_cb, unsigned long 
 				   progress.usrdata);
 	}
 
+	if (header->ignore_version_update)
+		hcfota_persistentmem_mark_invalid();
 
 	rc = 0;
 	/* Do backup first */

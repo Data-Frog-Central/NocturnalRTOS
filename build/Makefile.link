@@ -66,19 +66,34 @@ wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_MPEG2DEC) += -lviddrv_mpeg2dec
 wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_RVDEC) += -lviddrv_rvdec
 wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_VC1DEC) += -lviddrv_vc1dec
 wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_VP8DEC) += -lviddrv_vp8dec
+
+ifeq ($(wildcard $(PREBUILT_DIR)/usr/lib/libviddrv_xddec.a), )
+else
+	wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_MPEG4DEC) += -lviddrv_xddec
+endif
+
 wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_MPEG4DEC) += -lviddrv_mpeg4dec
 wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_IMAGEDEC) += -lviddrv_imagedec
 else
 wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_MPEG2DEC) += -lviddrv_mpeg2dec
 wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_IMAGEDEC) += -lviddrv_imagedec
+wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_H264DEC) += -lviddrv_h264dec
 endif
+
 wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_USBDRIVER) += -lusbdrv
+## wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_USBDRIVER_MSC) += -lusbdrv_msc
 wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_USBDRIVER_HID) += -lusbdrv_hid
+wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_USBDRIVER_SERIAL) += -lusbdrv_serial
+wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_USBDRIVER_RNDIS) += -lusbdrv_rndis
 wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_USBGADGETDRIVER) += -lusbgadgetdrv
 wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_USBGADGETDRIVER_MSC) += -lusbgadgetdrv_msc
 wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_USBGADGETDRIVER_NCM) += -lusbgadgetdrv_ncm
 wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_USBGADGETDRIVER_SERIAL) += -lusbgadgetdrv_serial
 wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_USBGADGETDRIVER_HID) += -lusbgadgetdrv_hid
+wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_USBGADGETDRIVER_UAC1) += -lusbgadgetdrv_uac1
+wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_USBGADGETDRIVER_UVC) += -lusbgadgetdrv_uvc
+wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_USBGADGETDRIVER_IUM) += -lusbgadgetdrv_ium
+
 wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_NTFS) += -lntfs
 wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_TOE) += -ltoe
 wholearchivelibs-$(BR2_PACKAGE_PREBUILTS_TOE2) += -ltoe2_yt

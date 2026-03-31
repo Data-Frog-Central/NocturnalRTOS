@@ -3,7 +3,7 @@
 # libtoe
 #
 ################################################################################
-LIBTOE_VERSION = b98b0ee8888b8a7b93d92ba4fd0a740a80322f10
+LIBTOE_VERSION = f282ddfee59de335748f2ce1f5bddb3f633849f4
 LIBTOE_SITE_METHOD = git
 LIBTOE_SITE = ssh://git@hichiptech.gitlab.com:33888/hclib/libtoe.git
 LIBTOE_DEPENDENCIES = kernel

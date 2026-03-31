@@ -982,12 +982,19 @@ static int hcfb_ioctl(struct fb_info *info, u32 cmd, unsigned long arg)
 {
 	struct hcfb_device *fbdev = (struct hcfb_device *)info->par;
 	int rc = 0;
+	unsigned long on = 0;
 
 	switch (cmd) {
 	case HCFBIOSET_SCALE:
 		assert((void *)arg != NULL);
 		hcfb_set_scale(info, (hcfb_scale_t *)arg);
 		rc = 0;
+		break;
+
+	case HCFBIOGET_SCALE_ONOFF:
+		if(fbdev->scale_dir != SCALE_DIR_OFF)
+			on = 1;
+		*(unsigned long *)arg = on;
 		break;
 
 	case HCFBIOGET_ENHANCE:

@@ -226,11 +226,17 @@ static void wifi_show_event_handle(lv_event_t *e){
         if(!p){
             return;
         }
-		int quality = p->quality;
-		void *img = (quality<=100 && quality>=80) ? &wifi4 :
-					(quality<80 && quality>=60) ? &wifi3 :
-					(quality<60 && quality>=40) ? &wifi2 :
-					(quality<40 && quality>=20) ? &wifi1: &wifi0;
+		int quatity = p->quality;
+#if 0
+        void *img = (quatity<=100 && quatity>=75) ? &wifi4 :
+                    (quatity<75 && quatity>50) ? &wifi3 :
+                    (quatity<50 && quatity>25) ? &wifi2 : &wifi1;
+#else
+        void *img = (quatity>=68) ? &wifi4 :
+                    (quatity<68 && quatity>=46) ? &wifi3 :
+                    (quatity<46 && quatity>=24) ? &wifi2 :
+                    (quatity<24) ? &wifi1: &wifi1;
+#endif
 		lv_img_set_src(lv_obj_get_child(obj, 0), img);
     }
 }
@@ -322,7 +328,6 @@ static void scr_event_handle(lv_event_t* e){
 
 static lv_obj_t* main_page_prompt_create(lv_obj_t* parent,void* icon){
 	lv_obj_t* show = lv_obj_create(parent);
-    //
     lv_obj_set_size(show, LV_PCT(20),LV_PCT(100));
     lv_obj_set_style_border_width(show, 1, 0);
     lv_obj_set_style_pad_hor(show, 0, 0);
@@ -330,7 +335,6 @@ static lv_obj_t* main_page_prompt_create(lv_obj_t* parent,void* icon){
     lv_obj_set_scrollbar_mode(show, LV_SCROLLBAR_MODE_OFF);
     lv_obj_set_style_bg_opa(show, LV_OPA_0, 0);
     lv_obj_set_style_text_color(show, lv_color_white(), 0);
-    //lv_obj_align(show, LV_ALIGN_TOP_MID, lv_pct(38), 20);
     lv_obj_set_style_border_width(show, 0, 0);
     lv_obj_set_style_pad_all(show, 0, 0);
 
@@ -341,6 +345,7 @@ static lv_obj_t* main_page_prompt_create(lv_obj_t* parent,void* icon){
     #if WIFI_NAME_SHOW
         lv_obj_set_flex_grow(img, 2);
         lv_obj_t *label = lv_label_create(show);
+        lv_obj_set_height(label, lv_pct(100));
         lv_label_set_text(label, "");
         lv_obj_set_flex_grow(label, 17);
         lv_obj_set_style_text_font(label, &WIFI_SHOW_FONT, 0);
@@ -417,7 +422,7 @@ void main_page_init(){
         int r[] =  {133,91,81,60,50,255 ,0};
         int g[] = {105,75,125,113,139, 201 ,64};
         int b[] = {54,112,60,128,137,14,64};
-        int text_ids[] = {STR_INPUT_SOURCE,STR_WIRED_TITLE,STR_WIFI_TITLE,STR_WIRELESS_TITLE, STR_MEDIA_TITLE,STR_SETTING_TITLE,STR_HELP_TITLE};
+        int text_ids[] = {STR_INPUT_SOURCE,STR_WIRED_TITLE,STR_WIFI_TITLE,STR_WIRELESS_TITLE, STR_MEDIA_TITLE,STR_SETTING_TITLE,STR_IPTV_YTB};
         #else
         int r[] =  {133,91,81,60,50,255};
         int g[] = {105,75,125,113,139, 201};
@@ -429,7 +434,7 @@ void main_page_init(){
         int r[] =  {133,91,81,60,50};
         int g[] = {105,75,125,113,139};
         int b[] = {54,112,60,128,137};
-        int text_ids[] = {STR_HDMI_TITLE, STR_AV_TITLE, STR_MEDIA_TITLE, STR_SETTING_TITLE, STR_HELP_TITLE};
+        int text_ids[] = {STR_HDMI_TITLE, STR_AV_TITLE, STR_MEDIA_TITLE, STR_SETTING_TITLE, STR_IPTV_YTB};
         #else
         int r[] =  {133,91,81,60};
         int g[] = {105,75,125,113};

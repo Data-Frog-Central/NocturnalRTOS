@@ -956,6 +956,7 @@ void sendRequest(char *iSend)
     if (!wpa_ctrl)
     {
         hccast_log(LL_ERROR, "wpa_ctrl_open failed: %s!\n", strerror(errno));
+        pthread_mutex_unlock(&g_p2p_mutex);
         return;
     }
 
@@ -1908,6 +1909,12 @@ void p2p_ctrl_device_abort_scan(void)
     argv[argc++] = "scan_abort";
     iwpriv_cmd(argc, argv, NULL);
     usleep(1000);
+
+    argc = 1;
+    argv[argc++] = "wlan0";
+    argv[argc++] = "scan_abort";
+    iwpriv_cmd(argc, argv, NULL);
+    usleep(200 * 1000);
 }
 
 int p2p_ctrl_get_status()

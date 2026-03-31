@@ -108,6 +108,8 @@ extern unsigned long PWMCTRL;
 extern unsigned long ADCCTRL;
 extern unsigned long USB0;
 extern unsigned long USB1;
+extern unsigned long GPIOLVDSCTRL;
+extern unsigned long STRAP_PIN_CTRL;
 
 extern unsigned long GPIO_INTR;
 extern unsigned long H264_INTR;

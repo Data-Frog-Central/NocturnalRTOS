@@ -482,7 +482,7 @@ static void sci_16550uart_write_bytes(struct sci_device *dev,
 			add_cr = true;
 		} while (fifo < FIFO_MAX && sent < bytes);
 
-		if (wait_for_completion_timeout(&dev->completion,
+		if (1 || wait_for_completion_timeout(&dev->completion,
 						UART_TX_TMOUT) == 0) {
 			/* timeout, do polling wait */
 			while (!dev->reg->ulsr.thre)

@@ -64,6 +64,7 @@ struct hc_i2c_bitbang_dev_s {
 	pinpad_e sda_pin;
 	pinpad_e scl_pin;
 	uint32_t delay;
+	int	timeout;
 };
 
 /****************************************************************************

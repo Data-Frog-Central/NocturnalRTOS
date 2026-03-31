@@ -194,7 +194,6 @@ static int hdmirx_start(void)
         return -1;
     }
 
-err:
     g_switch_rx.in.enable = 1;
 
     return 0;
@@ -207,6 +206,9 @@ static int hdmirx_stop(void)
         ioctl(g_switch_rx.in.fd , HDMI_RX_STOP);
         close(g_switch_rx.in.fd);
         g_switch_rx.in.fd = -1;
+		g_switch_rx.in.enable = 0;
+		
+		g_switch_rx.in.status = HDMI_RX_STATUS_STOP;
     }
 
 #ifdef __linux__
@@ -232,8 +234,8 @@ static void notifier_hdmi_in_plugin(void *arg, unsigned long param)
 {
     printf("%s:%d: \n", __func__, __LINE__);
 
-    g_switch_rx.in.plug_status = HDMI_SWITCH_HDMI_STATUS_PLUGIN;
-
+    g_switch_rx.in.plug_status = HDMI_RX_STATUS_PLUGIN;
+    //g_switch_rx.in.status = HDMI_SWITCH_HDMI_STATUS_PLUGIN;
 #ifdef HDMI_SWITCH_BACK_BOOTLOGO
     onoff_show_bootlogo(0);
 #endif
@@ -249,9 +251,8 @@ static void notifier_hdmi_in_plugin(void *arg, unsigned long param)
 static void notifier_hdmi_in_plugout(void *arg, unsigned long param)
 {
     printf("%s:%d: \n", __func__, __LINE__);
-
-    g_switch_rx.in.plug_status = HDMI_SWITCH_HDMI_STATUS_PLUGOUT;
-
+    g_switch_rx.in.plug_status = HDMI_RX_STATUS_PLUGOUT;
+    //g_switch_rx.in.status = HDMI_SWITCH_HDMI_STATUS_PLUGOUT;
 #ifdef HDMI_SWITCH_BACK_BOOTLOGO
     onoff_show_bootlogo(1);
 #endif
@@ -261,8 +262,8 @@ static void notifier_hdmi_in_plugout(void *arg, unsigned long param)
 
 static void notifier_hdmi_in_err(void *arg, unsigned long param){
     printf("%s:%d: \n", __func__, __LINE__);
-    g_switch_rx.in.plug_status = HDMI_SWITCH_HDMI_STATUS_ERR_INPUT;
-
+    g_switch_rx.in.plug_status = HDMI_RX_STATUS_ERR_INPUT;
+    //g_switch_rx.in.status = HDMI_SWITCH_HDMI_STATUS_ERR_INPUT;
     #ifdef HDMI_SWITCH_BACK_BOOTLOGO
     onoff_show_bootlogo(1);
 #endif
@@ -463,15 +464,19 @@ int hdmirx_get_plug_status(void)
     return g_switch_rx.in.plug_status;
 }
 
+int hdmirx_get_status(){
+    return g_switch_rx.in.status;
+}
+
 int hdmirx_pause(void)
 {
     printf("%s:%d: \n", __func__, __LINE__);
-    if( g_switch_rx.in.fd > 0){
+    if( g_switch_rx.in.fd > 0&& (hdmirx_get_status() != HDMI_RX_STATUS_PAUSE)){
 		//hdmirx_audio_stop();
         ioctl(g_switch_rx.in.fd , HDMI_RX_PAUSE);
+        g_switch_rx.in.status = HDMI_RX_STATUS_PAUSE;
     }
 	else{
-		printf("hrx closed\n");
 		return -1;
 	}
     return 0;
@@ -479,9 +484,29 @@ int hdmirx_pause(void)
 int hdmirx_resume(void)
 {
     printf("%s:%d: \n", __func__, __LINE__);
+    api_set_display_aspect(DIS_TV_16_9, DIS_NORMAL_SCALE);
+    set_display_zoom_when_sys_scale();
+    /* reset the hdmi display flip mode when into hdmi twice*/ 
+    rotate_type_e rotate_type=ROTATE_TYPE_0;
+    mirror_type_e mirror_type=MIRROR_TYPE_NONE;
+    int rotate = 0 , h_flip = 0 , v_flip = 0;
+    api_get_flip_info(&rotate , &h_flip);
+    rotate_type = rotate;
+    mirror_type = h_flip;
+
     if( g_switch_rx.in.fd > 0){		
         ioctl(g_switch_rx.in.fd , HDMI_RX_RESUME);
 		//hdmirx_audio_start();
+        g_switch_rx.in.status = HDMI_RX_STATUS_PLAYING;
+
+        int ret = ioctl(g_switch_rx.in.fd , HDMI_RX_SET_VIDEO_DATA_PATH , HDMI_RX_VIDEO_TO_DE_ROTATE);
+        if(ret != 0){
+            printf("HDMI_RX_SET_VIDEO_STOP_MODE failed\n");
+            return -1;
+        }
+        ioctl(g_switch_rx.in.fd, HDMI_RX_SET_VIDEO_ROTATE_MODE , rotate_type);
+        ioctl(g_switch_rx.in.fd, HDMI_RX_SET_VIDEO_MIRROR_MODE , mirror_type);
+        
     }
 	else{
 		printf("hrx closed\n");
@@ -498,6 +523,7 @@ int hdmi_rx_leave(void)
         hdmi_hotplug_rx_disable();
         close( g_switch_rx.in.fd);
         g_switch_rx.in.fd = -1;
+	    g_switch_rx.in.status = HDMI_RX_STATUS_STOP;
     }
 
     return 0;
@@ -523,7 +549,7 @@ int hdmi_rx_enter(void)
         hdmirx_start();
         printf("%s:%d:  really\n", __func__, __LINE__);
     }
-	else //if(g_switch_rx.in.fd >0)
+	else if(hdmirx_get_status() == HDMI_RX_STATUS_PAUSE)
 		hdmirx_resume();
 
     if(projector_get_some_sys_param(P_CUR_CHANNEL) == SCREEN_CHANNEL_HDMI)

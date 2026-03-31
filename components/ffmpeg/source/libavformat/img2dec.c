@@ -400,6 +400,8 @@ int ff_img_read_header(AVFormatContext *s1)
         pix_fmt != AV_PIX_FMT_NONE)
         st->codecpar->format = pix_fmt;
 
+    if (AV_NOPTS_VALUE == s1->duration)
+        s1->duration = 40 * 1000;
     return 0;
 }
 
@@ -611,27 +613,30 @@ int ff_img_read_packet(AVFormatContext *s1, AVPacket *pkt)
     }
 
 #if ARCH_MIPS
-    if ((size[0] + size[1] + size[2]) > (4 * 1024 * 1024 - sizeof(AvPktHd))) {
+    if (1) {//((size[0] + size[1] + size[2]) > (4 * 1024 * 1024 - sizeof(AvPktHd))) {
         int total_size = size[0] + size[1] + size[2];
         void *user_addr;
         void *kernel_addr;
         ff_mmz *mmz = av_mallocz(sizeof(ff_mmz));
-        if (!mmz) {
-            goto fail;
-        }
+        if (!mmz)
+           goto fail;
         mmz->fd = ff_mmz_malloc(total_size, &user_addr, &kernel_addr);
-        if (mmz->fd < 0) {
+        if (mmz->fd >= 0) {
+            mmz->kernel_addr = (uint32_t)kernel_addr;
+            mmz->size = total_size;
+            res = av_packet_from_mmz_data(pkt, (uint8_t *)user_addr, (uint32_t)kernel_addr,
+            total_size, ff_mmz_free, (void *)mmz);
+            if (res < 0) {
+                ff_mmz_free(mmz, user_addr);
+                res = AVERROR_EOF;
+                goto fail;
+            }
+        } else {
             av_free(mmz);
-            goto fail;
-        }
-        mmz->kernel_addr = (uint32_t)kernel_addr;
-        mmz->size = total_size;
-        res = av_packet_from_mmz_data(pkt, (uint8_t *)user_addr, (uint32_t)kernel_addr,
-        total_size, ff_mmz_free, (void *)mmz);
-        if (res < 0) {
-            ff_mmz_free(mmz, user_addr);
-            res = AVERROR_EOF;
-            goto fail;
+            res = av_new_packet(pkt, size[0] + size[1] + size[2]);
+            if (res < 0) {
+                goto fail;
+            }
         }
     } else
 #endif
@@ -799,6 +804,7 @@ AVInputFormat ff_image2_demuxer = {
     .read_probe     = img_read_probe,
     .read_header    = ff_img_read_header,
     .read_packet    = ff_img_read_packet,
+    .read_seek      = img_read_seek,
     .read_close     = img_read_close,
     .read_seek      = img_read_seek,
     .flags          = AVFMT_NOFILE,
@@ -1290,6 +1296,7 @@ AVInputFormat ff_image_ ## imgname ## _pipe_demuxer = {\
     .read_probe     = imgname ## _probe,\
     .read_header    = ff_img_read_header,\
     .read_packet    = ff_img_read_packet,\
+    .read_seek      = img_read_seek,\
     .priv_class     = & imgname ## _class,\
     .flags          = AVFMT_GENERIC_INDEX, \
     .raw_codec_id   = codecid,\

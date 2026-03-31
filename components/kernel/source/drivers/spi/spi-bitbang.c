@@ -54,6 +54,30 @@ static unsigned bitbang_txrx_8(struct	spi_device *spi,
 	return t->len - count;
 }
 			     
+static unsigned bitbang_txrx_9(struct	spi_device *spi,
+			       u32	(*txrx_word)(struct spi_device *spi, unsigned nsecs, u32 word, u8 bits),
+			       unsigned	ns, struct spi_transfer *t) {
+	unsigned	bits	= t->bits_per_word;
+	unsigned	count	= t->len;
+	const u16	*tx	= t->tx_buf;
+	u16		*rx	= t->rx_buf;
+
+	while (likely(count > 0)) {
+		u16 word = 0;
+
+		if (tx)
+			word = *tx++;
+		word = txrx_word(spi, ns, word, bits);
+
+		if (rx)
+			*rx++ = word;
+
+		count -= 1;
+	}
+
+	return t->len - count;
+}
+
 static unsigned bitbang_txrx_16(struct	spi_device *spi,
 			       u32	(*txrx_word)(struct spi_device *spi, unsigned nsecs, u32 word, u8 bits),
 			       unsigned	ns, struct spi_transfer *t) {
@@ -122,6 +146,8 @@ int spi_bitbang_setup_transfer(struct spi_device *spi, struct spi_transfer *t)
 		bits_per_word = spi->bits_per_word;
 	if (bits_per_word <= 8)
 		cs->txrx_bufs = bitbang_txrx_8;
+	else if (bits_per_word <= 9)
+		cs->txrx_bufs = bitbang_txrx_9;
 	else if (bits_per_word <= 16)
 		cs->txrx_bufs = bitbang_txrx_16;
 	else if (bits_per_word <= 32)

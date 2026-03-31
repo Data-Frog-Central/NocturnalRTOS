@@ -31,7 +31,11 @@ static void skb_under_panic(struct sk_buff *skb, unsigned int sz, void *addr)
 void __kfree_skb(struct sk_buff *skb)
 {
 	if (skb) {
-		kfree(skb);
+		if (skb->flags & SKBUF_FLAG_IS_CUSTOM) {
+			skb->custom_free_function(skb);
+		} else {
+			kfree(skb);
+		}
 	}
 }
 
@@ -188,3 +192,19 @@ struct sk_buff *skb_realloc_headroom(struct sk_buff *skb, unsigned int headroom)
 	// return skb2;
 	return NULL;
 }
+
+/**
+ *	skb_trim - remove end from a buffer
+ *	@skb: buffer to alter
+ *	@len: new length
+ *
+ *	Cut the length of a buffer down by removing data from the tail. If
+ *	the buffer is already under the length specified it is not modified.
+ *	The skb must be linear.
+ */
+void skb_trim(struct sk_buff *skb, unsigned int len)
+{
+	if (skb->len > len)
+		__skb_trim(skb, len);
+}
+ 

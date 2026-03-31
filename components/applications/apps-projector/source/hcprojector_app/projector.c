@@ -33,7 +33,7 @@
 #ifdef CAST_SUPPORT
 #include <hccast/hccast_com.h>
 #endif
-#include <hcuapi/gpio.h>
+
 #include "com_api.h"
 #include <lvgl/hc_src/hc_lvgl_init.h>
 #include <hcuapi/sys-blocking-notify.h>
@@ -47,6 +47,9 @@
 #include "channel/local_mp/mp_ctrlbarpage.h"
 #include "channel/local_mp/local_mp_ui.h"
 #include "channel/local_mp/mp_bsplayer_list.h"
+#include "channel/local_mp/mp_ebook.h"
+#include "channel/local_mp/backstage_player.h"
+
 #include "vmotor.h"
 #include "tv_sys.h"
 #include "channel/cast/win_cast_root.h"
@@ -144,7 +147,16 @@ static lv_obj_t *m_last_scr = NULL;
 void _ui_screen_change(lv_obj_t * target,  int spd, int delay)
 {
     m_last_scr = lv_scr_act();
+
+#ifdef USB_MIRROR_FAST_SUPPORT
+    um_service_off_by_menu(target);
+#endif    
     lv_scr_load_anim(target, LV_SCR_LOAD_ANIM_MOVE_TOP, spd, delay, false);
+    
+#ifdef USB_MIRROR_FAST_SUPPORT
+    um_service_on_by_menu(target);
+#endif    
+
 }
 
 lv_obj_t *api_scr_go_back(void)
@@ -170,14 +182,17 @@ int get_adk_key(void)
     return fd_adc_key;
 }
 
-// int is_epg_code(){//当key code为epg时，返回code否则返回0
-//     if(act_key_code == KEY_EPG){
-//         act_key_code = -1;
-//         return KEY_EPG;
-//     }
-//     return 0;
-// }
+bool ui_mute_get(void)
+{
+    return is_mute;
+}
 
+void ui_mute_set(void)
+{
+    is_mute = !is_mute;
+    api_media_mute(is_mute);
+    create_mute_icon();
+}
 
 /* Description:
 *        hotkeys proc, such as POWER/MENU/SETUP keys etc.
@@ -192,42 +207,50 @@ static uint32_t key_preproc(uint32_t act_key)
         return act_key;
 
     if(act_key != 0)
-   {	
+    {    
+        autosleep_reset_timer();
         act_key_code = act_key;
         if(remote_control_disable){
-            
+            act_key = 0;
         }
-    	else if(KEY_POWER == act_key){
+        else if(KEY_POWER == act_key){
+        /*
         #ifdef LVGL_MBOX_STANDBY_SUPPORT
             win_open_lvmbox_standby();
             ret = V_KEY_POWER;
         #else
             enter_standby();
         #endif
+        */
         }
-    	else if(KEY_MENU/*KEY_CHANNEL*/ == act_key){
-    		printf(">>Channel key\n");
-    		change_screen(SCREEN_CHANNEL);
+        else if(KEY_MENU/*KEY_CHANNEL*/ == act_key){
+            printf(">>Channel key\n");
+            ctrlbar_reset_mpbacklight();
+            /*due to it will change screen and it will not into event_handler,
+            so reset backlight on when off */
+            change_screen(SCREEN_CHANNEL);
     	}
     	else if(KEY_EPG/*KEY_SETUP*/ == act_key){
-    		printf(">>Setup key\n");      	
-    		change_screen(SCREEN_SETUP);
-            
+            printf(">>Setup key\n");
+            ctrlbar_reset_mpbacklight();
+            change_screen(SCREEN_SETUP);
             if(lv_scr_act() == setup_scr){
                 ret = act_key;
             }
     	}
     	else if(KEY_VOLUMEUP == act_key|| KEY_VOLUMEDOWN == act_key){
     		printf(">>Volume key\n");
-            ctrlbar_reset_mpbacklight(); //key to reset backlight 
     		if(lv_scr_act() == channel_scr || lv_scr_act() == setup_scr){
                 ;
-            }else if(is_mute){
-                is_mute = !is_mute;
-                api_media_mute(is_mute);
-                projector_set_some_sys_param(P_VOLUME, vol_back);
-                create_mute_icon();
+            }else if(ui_mute_get()){
+                ui_mute_set();
                 create_volume();
+                
+
+                //do not change volume of persisten memory, for we
+                //do not need to save the mute vol of of persisten memory.
+                //projector_set_some_sys_param(P_VOLUME, vol_back);
+                
                 ret = act_key;
             }else if(volume_bar){
                 ret = act_key;
@@ -238,20 +261,7 @@ static uint32_t key_preproc(uint32_t act_key)
                 ret = act_key;
             }  
     	}else if(KEY_MUTE == act_key){
-            is_mute = !is_mute;
-            ctrlbar_reset_mpbacklight();
-            if(is_mute){
-                vol_back = projector_get_some_sys_param(P_VOLUME);
-            }
-            api_media_mute(is_mute);
-            if (is_mute){
-                projector_set_some_sys_param(P_VOLUME, 0);
-               
-            }else{
-                projector_set_some_sys_param(P_VOLUME, vol_back);
-            }
-            
-            create_mute_icon();
+            ui_mute_set();
             ret = act_key;
         }
         else if(KEY_ROTATE_DISPLAY  == act_key || act_key == KEY_FLIP){
@@ -262,8 +272,7 @@ static uint32_t key_preproc(uint32_t act_key)
         }else if(KEY_KEYSTONE == act_key && cur_scr != SCREEN_SETUP){
             change_keystone();
         }
-    #ifdef MIRROR_ES_DUMP_SUPPORT
-        //dump mirror ES data to U-disk
+        #ifdef MIRROR_ES_DUMP_SUPPORT
         else if(KEY_BLUE == act_key)
         {
             extern void api_mirror_dump_enable_set(bool enable);
@@ -283,9 +292,10 @@ static uint32_t key_preproc(uint32_t act_key)
             api_mirror_dump_enable_set(dump_enable);
             dump_enable = !dump_enable;
         }
-    #endif
+        #endif
         else if(act_key == KEY_HOME)
         {
+            ctrlbar_reset_mpbacklight(); //key to reset backlight 
             change_screen(SCREEN_CHANNEL_MAIN_PAGE);
 			ret = act_key;
         }
@@ -294,7 +304,8 @@ static uint32_t key_preproc(uint32_t act_key)
 			ret = act_key;
     	}	
     }
-
+    ret = act_key;  
+    /*return key val so that event_handler can get all key by lv_indev_get_key()*/
     return ret;
 }
 
@@ -344,13 +355,11 @@ static uint32_t keypad_key_map2_lvkey(uint32_t act_key)
         break;
     #ifdef PROJECTOR_VMOTOR_SUPPORT
     case KEY_CAMERA_FOCUS:
-        ctrlbar_reset_mpbacklight();    //reset backlight with key 
         vMotor_Roll_cocus();
         act_key = 0;
         break;
     case KEY_FORWARD:
     case KEY_BACK:
-        ctrlbar_reset_mpbacklight();    //reset backlight with key
         vMotor_set_step_count(192);
         if(act_key==KEY_FORWARD){
             vMotor_set_direction(BMOTOR_STEP_FORWARD);
@@ -390,9 +399,20 @@ static uint32_t keypad_read_key(lv_indev_data_t  *lv_key)
     }
     else if(t->value == 0)// released
     {
-            ret = t->code;
-            lv_key->state = LV_INDEV_STATE_REL;
+        ret = t->code;
+        lv_key->state = LV_INDEV_STATE_REL;
     }
+
+    //power key is valid while key release.    
+    if(t->code == KEY_POWER && t->value == 0 && !remote_control_disable){
+    #ifdef LVGL_MBOX_STANDBY_SUPPORT
+        win_open_lvmbox_standby();
+        lv_key->state = LV_INDEV_STATE_PR;
+        ret = KEY_POWER;
+    #else
+        enter_standby();
+    #endif
+    }    
 
     lv_key->key = keypad_key_map2_lvkey(ret);
     return ret;
@@ -421,6 +441,7 @@ static int key_init(void)
     return 0;
 }
 
+void stroage_hotplug_handle(int msg_type);
 static void com_message_process(control_msg_t *ctl_msg)
 {
     if (!ctl_msg)
@@ -464,62 +485,119 @@ static void com_message_process(control_msg_t *ctl_msg)
         break;
     }
 #endif
-
+    case MSG_TYPE_USB_MOUNT:
+    case MSG_TYPE_USB_UNMOUNT:
+    case MSG_TYPE_USB_UNMOUNT_FAIL:
+    case MSG_TYPE_SD_MOUNT:
+    case MSG_TYPE_SD_UNMOUNT:
+    case MSG_TYPE_SD_UNMOUNT_FAIL:
+    {
+        partition_info_update(ctl_msg->msg_type,(char*)ctl_msg->msg_code);
+        free((char*)ctl_msg->msg_code);
+        /*due to msg_code is malloc in wq pthread */ 
+        stroage_hotplug_handle(ctl_msg->msg_type);
+        break;
+    }
+    #ifdef BLUETOOTH_SUPPORT
+    case MSG_TYPE_BT_CONNECTED:
+        create_message_box(api_rsc_string_get(STR_BT_CONNECTED));
+        break;
+    case MSG_TYPE_BT_DISCONNECTED:
+        if(app_bt_is_scanning() || app_bt_is_connecting()){
+            break;
+        }
+        create_message_box(api_rsc_string_get(STR_BT_DISCONNECTED));
+        break;
+    #endif   
+    case MSG_TYPE_UPG_STATUS:
+        if(ctl_msg->msg_code >= UPG_STATUS_PRODUCT_ID_MISMATCH && ctl_msg->msg_code <= UPG_STATUS_BURN_FAIL){
+            int str_id = -1;
+            switch (ctl_msg->msg_code){
+                case UPG_STATUS_VERSION_IS_OLD:
+                    str_id = STR_UPGRADE_VERSION_ERR;
+                    break;
+                case UPG_STATUS_FILE_CRC_ERROR:
+                    str_id = STR_UPGRADE_CRC_ERR;
+                    break;
+                case UPG_STATUS_FILE_UNZIP_ERROR:
+                    str_id = STR_UPGRADE_DECO_ERR;
+                    break;
+                default:
+                    str_id = STR_UPGRADE_ERR;
+                    break;
+            }
+            create_message_box(api_rsc_string_get(str_id));
+            break;
+        } 
     default:
+    #ifdef USB_MIRROR_FAST_SUPPORT
+        ui_um_fast_proc(ctl_msg->msg_type);
+    #endif
         break;
     }
 
 }
+
+static void _media_play_exit()
+{
+    ctrlbarpage_close(true);
+    backstage_player_task_stop(0,NULL);
+    ebook_close(true);
+}
+
 /**
  * @description: Logic handle for removing and inserting storage devices 
  * @param :
  * @return {*}
  * @author: Yanisin
  */
-static void stroage_hotplug_handle() //do it in while(1)
+void stroage_hotplug_handle(int msg_type) 
 {
-    static int count = 0;
-    int usb_state=mmp_get_usb_stat();
     partition_info_t * cur_partition_info=mmp_get_partition_info();
     static int m_stroage_count = 0;
     if(cur_partition_info==NULL){
         return ;
     }
-    if(m_stroage_count!=cur_partition_info->count){
-        if(m_stroage_count<cur_partition_info->count){  //mean mount stroage dev 
-            if(cur_scr==SCREEN_CHANNEL_MP&&lv_scr_act()==ui_mainpage){
+    printf(">>!%s ,%d\n",__func__,__LINE__);
+    if(msg_type==MSG_TYPE_USB_MOUNT||msg_type==MSG_TYPE_SD_MOUNT){
+        if(cur_scr==SCREEN_CHANNEL_MP&&lv_scr_act()==ui_mainpage){
+            lv_event_send(mp_statebar,LV_EVENT_REFRESH,0);
+        }
+        #ifdef USB_AUTO_UPGRADE
+            sys_upg_usb_check_notify();
+        #endif
+    }else if(msg_type==MSG_TYPE_USB_UNMOUNT||msg_type==MSG_TYPE_SD_UNMOUNT||msg_type==MSG_TYPE_SD_UNMOUNT_FAIL||msg_type==MSG_TYPE_USB_UNMOUNT_FAIL){
+        if(cur_scr ==SCREEN_CHANNEL_MP){
+            if(lv_scr_act()==ui_mainpage){
                 lv_event_send(mp_statebar,LV_EVENT_REFRESH,0);
-            }
-            #ifdef USB_AUTO_UPGRADE
-            sys_upg_usb_check(1000);
-            #endif
-        }else if(m_stroage_count>cur_partition_info->count){    //mean umount stroage dev
-            if(cur_scr ==SCREEN_CHANNEL_MP){
-                if(lv_scr_act()==ui_mainpage){
-                    lv_event_send(mp_statebar,LV_EVENT_REFRESH,0);
-                }else if(lv_scr_act()==ui_subpage){
-                    _ui_screen_change(ui_mainpage,0, 0);
-                }else if(lv_scr_act()==ui_fspage||lv_scr_act()==ui_ctrl_bar||lv_scr_act()==ui_ebook_txt){
-                    if(api_check_partition_used_dev_ishotplug()){
-                        _ui_screen_change(ui_mainpage,0, 0);
-                        app_media_list_all_free();
-                        clear_all_bsplayer_mem();//for bs player music filelist 
-                    }
-                }
-            }else if(cur_scr ==  SCREEN_SETUP || cur_scr == SCREEN_CHANNEL){
+            }else if(lv_scr_act()==ui_subpage){
+                _ui_screen_change(ui_mainpage,0, 0);
+            }else if(lv_scr_act()==ui_fspage||lv_scr_act()==ui_ctrl_bar||lv_scr_act()==ui_ebook_txt){
                 if(api_check_partition_used_dev_ishotplug()){
-                    media_player_close();
-                    app_set_screen_submp(SCREEN_SUBMP0);
+                    _ui_screen_change(ui_mainpage,0, 0);
+                    app_media_list_all_free();
+                    clear_all_bsplayer_mem();//for bs player music filelist 
                 }
             }
-            // refresh the filelist_t in other scene
+        }else if(cur_scr ==  SCREEN_SETUP || cur_scr == SCREEN_CHANNEL){
             if(api_check_partition_used_dev_ishotplug()){
-                    app_media_list_all_free();
-                    clear_all_bsplayer_mem(); 
+                _media_play_exit();
+                app_set_screen_submp(SCREEN_SUBMP0);
             }
         }
-        m_stroage_count = cur_partition_info->count;
+        // refresh the filelist_t in other scene
+        if(api_check_partition_used_dev_ishotplug()){
+            app_media_list_all_free();
+            clear_all_bsplayer_mem(); 
+        }
+        bool is_devoinfo_state=api_storage_devinfo_state_get();
+        if(msg_type==MSG_TYPE_USB_UNMOUNT && is_devoinfo_state==false){
+            win_msgbox_msg_open_on_top(STR_USB_READ_ERROR, 3000, NULL, NULL);
+            win_msgbox_msg_set_pos(LV_ALIGN_CENTER,0,0);
+            api_storage_devinfo_state_set(true);
+        }
     }
+    m_stroage_count = cur_partition_info->count;
 }
 
 static void loop_watchdog_feed(void)
@@ -565,7 +643,7 @@ static void message_ctrl_process(void)
 
     com_message_process(&ctl_msg);
 
-    stroage_hotplug_handle();
+    // stroage_hotplug_handle();
 
     loop_watchdog_feed();
 }
@@ -582,6 +660,9 @@ int main(int argc, char *argv[])
    /* system param init*/
     projector_factory_init();
     projector_sys_param_load();
+#ifdef WIFI_SUPPORT
+    wifi_mutex_init();
+#endif
     api_system_init();
     app_ffplay_init();
 
@@ -589,8 +670,6 @@ int main(int argc, char *argv[])
     tv_sys_app_start_set(1);
 
     key_init();
-	gpio_configure(PINPAD_T13,GPIO_DIR_OUTPUT);
-	gpio_set_output(PINPAD_T13,1);
     #ifdef SYS_ZOOM_SUPPORT
     printf("sys zoom support\n");
     sys_scala_init();
@@ -649,6 +728,10 @@ int main(int argc, char *argv[])
     // lv_indev_set_group(indev_keypad, channel_g);
 #ifdef  USBMIRROR_SUPPORT
 	ui_um_play_init();
+  #ifdef USB_MIRROR_FAST_SUPPORT
+    ui_um_fast_init();
+  #endif
+
 #endif
    
     hdmi_screen_init();
@@ -677,9 +760,11 @@ int main(int argc, char *argv[])
    change_screen(projector_get_some_sys_param(P_CUR_CHANNEL));
    api_dis_show_onoff(0);
     /*Handle LitlevGL tasks (tickless mode)*/
-    
+    #ifdef USB_AUTO_UPGRADE
+        sys_upg_usb_check_init();
+    #endif
     api_key_get_init();
-    
+    set_auto_sleep(projector_get_some_sys_param(P_AUTOSLEEP));    
     while(1) 
     {
         if(cur_scr != last_scr)
@@ -719,7 +804,8 @@ int main(int argc, char *argv[])
             #endif   
 #ifdef HDMIIN_SUPPORT			
             case SCREEN_CHANNEL_HDMI:
-                media_player_close();
+                _media_play_exit();
+                cvbs_rx_stop();
                 _ui_screen_change(hdmi_scr, 0, 0);
                 break;
         #if PROJECTER_C2_VERSION
@@ -729,23 +815,24 @@ int main(int argc, char *argv[])
         #endif
 #endif		
             case SCREEN_CHANNEL_CVBS:
-                media_player_close();
+                _media_play_exit();
+                hdmirx_pause();
                 _ui_screen_change(cvbs_scr, 0, 0);
                 break;
             case SCREEN_CHANNEL_MAIN_PAGE:
                 _ui_screen_change(main_page_scr, 0, 0);
-                media_player_close();
+                _media_play_exit();
 
             #if defined(CAST_SUPPORT)&&defined(WIFI_SUPPORT)
 				cast_stop_service();
             #endif
 
-                //hdmi_rx_leave();
-                //cvbs_rx_stop();
+                hdmirx_pause();//hdmi_rx_leave();
+                cvbs_rx_stop();
                 break;
             case SCREEN_CHANNEL_MP : 
-                //hdmi_rx_leave();
-                //cvbs_rx_stop();
+                hdmirx_pause();//hdmi_rx_leave();
+                cvbs_rx_stop();
                 switch(get_screen_submp())
                 {
                 case SCREEN_SUBMP0 : 
@@ -760,10 +847,15 @@ int main(int argc, char *argv[])
                 case SCREEN_SUBMP3:
                     if(mp_get_cur_player_hdl()==NULL)     //from other page enter 
                     {
-                        _ui_screen_change(ui_mainpage, 0, 0);
-                        break;
+                        if (get_ebook_fp_state())
+                            _ui_screen_change(ui_ebook_txt, 0, 0);
+                        else
+                            _ui_screen_change(ui_mainpage, 0, 0);
                     }
-                    _ui_screen_change(ui_ctrl_bar, 0, 0);
+                    else
+                    {
+                        _ui_screen_change(ui_ctrl_bar, 0, 0);
+                    }    
                     break;                                                                                                      
                 }
                 break;
@@ -835,8 +927,6 @@ static int projector_start(int argc, char **argv)
 
 static int projector_auto_start(void)
 {
-    printf("\n******** Welcome to HC cast world! ********n\n");
-
 	projector_start(0, NULL);
 	return 0;
 }

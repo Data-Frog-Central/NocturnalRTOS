@@ -28,20 +28,21 @@ void lvds_lld_set_cfg(T_LVDS_CFG *lvds_cfg,uint8_t ch)
 	lvds_hal_set_vsync_polarity(lvds_cfg->vsync_polarity);
 	lvds_hal_set_even_odd_adjust_mode(lvds_cfg->even_odd_adjust_mode);
 	lvds_hal_set_even_odd_init_value(lvds_cfg->even_odd_init_value);
+	lvds_hal_set_chx_swap_ctrl(lvds_cfg->chx_swap_ctrl);
 }
 
 void lvds_lld_phy_mode_init(uint8_t ch,uint8_t mode)
 {
 	static char status_frist=1;
 	if(status_frist)
-	lvds_hal_power_on(0);
+		lvds_hal_power_on(0);
 	if(mode)
 	{
 		lvds_hal_phy_ch_enable(0, 0);
 		lvds_hal_phy_ch_enable(1, 0);
 		usleep(10000);
 		if(status_frist)
-		lvds_hal_power_on(1);
+			lvds_hal_power_on(1);
 		lvds_hal_phy_ch_enable(0, 1);
 		lvds_hal_phy_ch_enable(1, 1);
 		lvds_hal_set_phy_dig_en(0, 0);
@@ -60,14 +61,27 @@ void lvds_lld_phy_mode_init(uint8_t ch,uint8_t mode)
 		lvds_hal_phy_ch_enable(ch, 0);
 		usleep(10000);
 		if(status_frist)
-		lvds_hal_power_on(1);
+			lvds_hal_power_on(1);
 		lvds_hal_phy_ch_enable(ch, 1);
 		lvds_hal_set_phy_dig_en(ch, 0);
 		lvds_hal_set_pll_en_reserve_1(ch,1);
 		lvds_hal_set_pll_en(ch, 1);
+		if (status_frist && ch == 1)
+		{
+			lvds_hal_set_lvds_mode_en(0, 1);
+			lvds_hal_set_pll_en(0, 1);
+			lvds_hal_set_phy_dig_en(0, 1);
+		}
+
 		lvds_hal_wait_pll_lock();
 		lvds_hal_set_phy_dig_en(ch, 1);
 		lvds_hal_set_trigger_en();
+		if (status_frist && ch == 1)
+		{
+			lvds_hal_phy_ch_enable(ch, 0);
+			usleep(10000);
+			lvds_hal_phy_ch_enable(ch, 1);
+		}
 	}
 	status_frist=0;
 }

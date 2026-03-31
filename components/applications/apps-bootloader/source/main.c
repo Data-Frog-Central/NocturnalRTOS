@@ -23,6 +23,7 @@
 #include <upgrade.h>
 #include <cpu_func.h>
 #include <hcuapi/sysdata.h>
+#include <hcuapi/standby.h>
 #include <kernel/drivers/hc_clk_gate.h>
 #include <sys/ioctl.h>
 #include <standby.h>
@@ -41,6 +42,9 @@
 #include <kernel/notify.h>
 #include <hcuapi/sys-blocking-notify.h>
 #include <hcuapi/watchdog.h>
+#if defined(CONFIG_BOOT_AUTO_UPGRADE_SUPPORT_USBHOST)
+#include <hcfota.h>
+#endif
 
 const char *fdt_get_sysmem_path(void)
 {
@@ -225,6 +229,45 @@ static struct notifier_block mmc_connect = {
        .notifier_call = mmc_connect_notify,
 };
 #endif
+#if defined(CONFIG_BOOT_AUTO_UPGRADE_SUPPORT_USBHOST)
+static void boot_auto_usbhost_upgrade(void)
+{
+#if defined(CONFIG_BOOT_STANDBY)
+	int fd_standby;
+	standby_bootup_mode_e temp = 0;
+
+	fd_standby = open("/dev/standby", O_RDWR);
+	if (fd_standby < 0) {
+		printf("Open /dev/standby failed!\n");
+		return;
+	}
+
+	ioctl(fd_standby, STANDBY_GET_BOOTUP_MODE, &temp);
+	if (temp == STANDBY_BOOTUP_COLD_BOOT) {
+		do_hcfota_upgrade(hcfota_reboot_ota_detect_mode_priority(HCFOTA_REBOOT_OTA_DETECT_USB_HOST, 0));
+	}
+
+	close(fd_standby);
+#else
+	do_hcfota_upgrade(hcfota_reboot_ota_detect_mode_priority(HCFOTA_REBOOT_OTA_DETECT_USB_HOST, 0));
+#endif
+
+}
+#endif
+
+static void boot_mode_setup(void)
+{
+	/*
+	 * Using South Bridge Timer7 register to store the boot mode flag
+	 * The South Bridge Timer7 register will only be cleared by power-off
+	 */
+	unsigned char flag = REG8_READ(0xb8818a70);
+	if (flag != STANDBY_FLAG_COLD_BOOT && flag != STANDBY_FLAG_WARM_BOOT) {
+		REG8_WRITE(0xb8818a70, STANDBY_FLAG_COLD_BOOT);
+	} else {
+		REG8_WRITE(0xb8818a70, STANDBY_FLAG_WARM_BOOT);
+	}
+}
 
 static void app_main(void *pvParameters)
 {
@@ -245,6 +288,8 @@ static void app_main(void *pvParameters)
 		/* usb host support */
 		"usb_core",
 		};
+
+	boot_mode_setup();
 
 	hc_clk_disable_all();
 
@@ -307,7 +352,11 @@ static void app_main(void *pvParameters)
 	}
 #endif
 
+#if defined(CONFIG_BOOT_AUTO_UPGRADE_SUPPORT_USBHOST)
+	boot_auto_usbhost_upgrade();
+#else
 	upgrade_detect();
+#endif
 
 #if defined(CONFIG_BOOT_STANDBY)
 	boot_enter_standby(1, ((char *[]){ "standby" }));

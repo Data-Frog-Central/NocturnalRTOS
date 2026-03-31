@@ -25,6 +25,8 @@ static void i2c_bb_set_scl(FAR struct i2c_bitbang_lower_dev_s *lower, bool high)
 {
 	struct hc_i2c_bitbang_dev_s *dev = lower->priv;
 	
+	gpio_configure(dev->scl_pin, GPIO_DIR_OUTPUT);
+
 	return gpio_set_output(dev->scl_pin, high);
 }
 
@@ -32,6 +34,8 @@ static void i2c_bb_set_sda(FAR struct i2c_bitbang_lower_dev_s *lower, bool high)
 {
 	struct hc_i2c_bitbang_dev_s *dev = lower->priv;
 	
+	gpio_configure(dev->sda_pin, GPIO_DIR_OUTPUT);
+
 	return gpio_set_output(dev->sda_pin, high);
 }
 
@@ -40,14 +44,18 @@ static bool i2c_bb_get_scl(FAR struct i2c_bitbang_lower_dev_s *lower)
 {
 	struct hc_i2c_bitbang_dev_s *dev = lower->priv;
 
-	return gpio_get_input(dev->sda_pin);
+	gpio_configure(dev->scl_pin, GPIO_DIR_INPUT);
+
+	return gpio_get_input(dev->scl_pin);
 }
 
 static bool i2c_bb_get_sda(FAR struct i2c_bitbang_lower_dev_s *lower)
 {
 	struct hc_i2c_bitbang_dev_s *dev = lower->priv;
 
-	return gpio_get_input(dev->scl_pin);
+	gpio_configure(dev->sda_pin, GPIO_DIR_INPUT);
+
+	return gpio_get_input(dev->sda_pin);
 }
 
 static void i2c_bb_initialize(FAR struct i2c_bitbang_lower_dev_s *lower)
@@ -71,8 +79,8 @@ static struct i2c_master_s *hc_i2c_bitbang_initialize(pinpad_e sda_pin, pinpad_e
 	dev->lower.priv = dev;
 	dev->scl_pin = scl_pin;
 	dev->sda_pin = sda_pin;
-	dev->delay = 3;
-
+	dev->delay = 4;
+	dev->timeout = HZ / 10;
 
 	return i2c_bitbang_initialize(&dev->lower);
 }

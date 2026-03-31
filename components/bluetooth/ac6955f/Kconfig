@@ -2,3 +2,24 @@ config BR2_PACKAGE_AC6955F
 	bool "BT AC6955F"
 	help
 	  Bluetooth ac6955f module api
+
+if BR2_PACKAGE_AC6955F
+choice
+	prompt "AC6955F select"
+    default BR2_PACKAGE_AC6955F_RT
+	config BR2_PACKAGE_AC6955F_RT
+	bool "BT AC6955F RT"
+	help
+		Bluetooth ac6955f module api
+
+	config BR2_PACKAGE_AC6955F_GX
+	bool "BT AC6955F GX"
+	help
+		Bluetooth ac6955f gx module api
+
+	config BR2_PACKAGE_AC6956C_GX
+	bool "BT AC6956C GX"
+	help
+		Bluetooth AC6956C gx module api
+endchoice
+endif

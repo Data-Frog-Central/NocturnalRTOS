@@ -21,6 +21,7 @@
 #ifndef _LINUX_KTIME_H
 #define _LINUX_KTIME_H
 
+#include <linux/time.h>
 #include <linux/compiler.h>
 #include <linux/types.h>
 #include <linux/time64.h>

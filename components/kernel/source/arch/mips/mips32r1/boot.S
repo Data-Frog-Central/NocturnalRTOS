@@ -10,7 +10,6 @@
         .word   0x40000000 | (rt<<16) | (rd<<11)|sel
 
 	.extern xISRStackTop
-	.extern vTaskStartScheduler
 	.extern main
 
 	.global hardware_init_hook .text
