@@ -53,7 +53,7 @@ DTC_INSTALL_GOAL = install-lib
 endif # $(BR2_PACKAGE_DTC_PROGRAMS) != y
 
 define DTC_BUILD_CMDS
-	$(TARGET_CONFIGURE_OPTS) $(MAKE) EXTRA_CFLAGS="$(TARGET_CFLAGS) -fPIC" -C $(@D) $(DTC_MAKE_OPTS)
+	$(TARGET_CONFIGURE_OPTS) $(MAKE) EXTRA_CFLAGS="$(TARGET_CFLAGS) -fPIC -Wno-error=discarded-qualifiers" -C $(@D) $(DTC_MAKE_OPTS)
 endef
 
 # For staging, only the library is needed
@@ -68,7 +68,7 @@ endef
 
 # host build
 define HOST_DTC_BUILD_CMDS
-	$(HOST_CONFIGURE_OPTS) $(MAKE) EXTRA_CFLAGS="$(HOST_CFLAGS) -fPIC -Wno-array-bounds" -C $(@D) $(HOST_DTC_MAKE_OPTS)
+	$(HOST_CONFIGURE_OPTS) $(MAKE) EXTRA_CFLAGS="$(HOST_CFLAGS) -fPIC -Wno-array-bounds -Wno-error=discarded-qualifiers" -C $(@D) $(HOST_DTC_MAKE_OPTS)
 endef
 
 define HOST_DTC_INSTALL_CMDS
