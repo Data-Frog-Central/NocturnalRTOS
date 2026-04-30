@@ -206,6 +206,13 @@ hcrtos {
 		status = "okay";
 	};
 
+	pwm@2 {
+		pinmux-active = <PINPAD_R05 1>;
+		devpath = "/dev/pwm2";
+		polarity = <1>;
+		status = "okay";
+	};
+
 	rgb {
 		pinmux-active = <
 			// PINPAD_R08 PINMUX_R08_PRGB_R0

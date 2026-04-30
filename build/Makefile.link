@@ -4,7 +4,14 @@ LINKER_SCRIPTS += $(TOPDIR)/components/ld/hc15xx/peripherals.ld
 else ifeq ($(CONFIG_SOC_HC16XX),y)
 LINKER_SCRIPTS += $(TOPDIR)/components/ld/hc16xx/peripherals.ld
 endif
-LINKER_SCRIPTS += $(TOPDIR)/components/ld/ldscript.ld
+
+# Check if $(srctree)/ldscript.ld exists
+ifeq ($(wildcard $(srctree)/ldscript.ld),)
+    LINKER_SCRIPTS += $(TOPDIR)/components/ld/ldscript.ld
+else
+    LINKER_SCRIPTS += $(srctree)/ldscript.ld
+endif
+$(info LINKER_SCRIPTS = $(LINKER_SCRIPTS))
 
 ldflags-$(CONFIG_CPU_MIPS32R1) += -defsym __mips32r1__=1
 ldflags-$(CONFIG_CPU_MIPS74KEF) += -defsym __mips32r2__=1
