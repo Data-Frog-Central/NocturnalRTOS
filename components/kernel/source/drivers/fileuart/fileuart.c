@@ -24,6 +24,8 @@
 
 #define CONFIG_FILEUART_TX_BUF_SIZE 1024
 
+volatile int fileuart_ready;
+
 struct fileuart_dev
 {
 	int fd;
@@ -46,11 +48,14 @@ static int fileuart_fs_mount_notify(struct notifier_block *self, unsigned long a
 	case USB_MSC_NOTIFY_MOUNT: {
 		xSemaphoreTake(g_dev.sem, portMAX_DELAY);
 		if (g_dev.fd < 0) {
-			snprintf(log_file_path, sizeof(log_file_path), "/media/%s/log.txt", (char *)dev);
+			snprintf(log_file_path, sizeof(log_file_path), "/media/%s/HCRTOS/fileuart.log", (char *)dev);
 			g_dev.fd = open(log_file_path, O_CREAT | O_WRONLY);
 			if (g_dev.fd >= 0) {
+				lseek(g_dev.fd, 0, SEEK_END);
 				memcpy(g_dev.devname, dev, DISK_NAME_LEN);
 			}
+			wake_up(&g_dev.wait);
+			fileuart_ready = (g_dev.fd >= 0);
 		}
 		xSemaphoreGive(g_dev.sem);
 		break;
@@ -62,6 +67,8 @@ static int fileuart_fs_mount_notify(struct notifier_block *self, unsigned long a
 				close(g_dev.fd);
 				memset(g_dev.devname, 0, DISK_NAME_LEN);
 				g_dev.fd = -1;
+				wake_up(&g_dev.wait);
+				fileuart_ready = 0;
 			}
 		}
 		xSemaphoreGive(g_dev.sem);
@@ -70,11 +77,14 @@ static int fileuart_fs_mount_notify(struct notifier_block *self, unsigned long a
 	case SDMMC_NOTIFY_MOUNT: {
 		xSemaphoreTake(g_dev.sem, portMAX_DELAY);
 		if (g_dev.fd < 0) {
-			snprintf(log_file_path, sizeof(log_file_path), "/media/%s/log.txt", (char *)dev);
+			snprintf(log_file_path, sizeof(log_file_path), "/media/%s/HCRTOS/fileuart.log", (char *)dev);
 			g_dev.fd = open(log_file_path, O_CREAT | O_WRONLY);
 			if (g_dev.fd >= 0) {
+				lseek(g_dev.fd, 0, SEEK_END);
 				memcpy(g_dev.devname, dev, DISK_NAME_LEN);
 			}
+			wake_up(&g_dev.wait);
+			fileuart_ready = (g_dev.fd >= 0);
 		}
 		xSemaphoreGive(g_dev.sem);
 		break;
@@ -86,6 +96,8 @@ static int fileuart_fs_mount_notify(struct notifier_block *self, unsigned long a
 				close(g_dev.fd);
 				memset(g_dev.devname, 0, DISK_NAME_LEN);
 				g_dev.fd = -1;
+				wake_up(&g_dev.wait);
+				fileuart_ready = 0;
 			}
 		}
 		xSemaphoreGive(g_dev.sem);
@@ -153,13 +165,14 @@ static ssize_t fileuart_write(struct file *filep, const char *buf, size_t size)
 
 static int fileuart_poll(struct file *filep, poll_table *wait)
 {
-	int mask = 0;
+    int mask = 0;
 
-	poll_wait(filep, &g_dev.wait, wait);
+    poll_wait(filep, &g_dev.wait, wait);
 
-	mask |= POLLOUT | POLLWRNORM;
+    if (fileuart_ready)
+        mask |= POLLOUT | POLLWRNORM;
 
-	return mask;
+    return mask;
 }
 
 static const struct file_operations fileuart_fops = {
