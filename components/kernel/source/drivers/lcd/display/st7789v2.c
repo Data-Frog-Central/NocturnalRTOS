@@ -25,14 +25,11 @@
 #include <hcuapi/gpio.h>
 #include <kernel/ld.h>
 
-
 #define OUTPUT_VAL_REG                  0x10
 
 //#define GPIO_HARDCODED
 //#defien PINMUX_HARDCODED
 #define GPIO_FAST_WRITE
-#define INIT_SEQUENCE_INDEX INIT_SF2000 // TODO config file for a common binary
-
 #define SHOW_TESTIMAGE	2		// show test image at init for X seconds
 
 /*
@@ -225,6 +222,24 @@ static void lcd_configure_gpio_output(void) {
     gpio_configure(st7789v2dev.lcd_d14_num, GPIO_DIR_OUTPUT);
     gpio_configure(st7789v2dev.lcd_d15_num, GPIO_DIR_OUTPUT);
     gpio_configure(st7789v2dev.lcd_reset_num, GPIO_DIR_OUTPUT);
+}
+static void lcd_configure_gpio_input(void) {
+    gpio_configure(st7789v2dev.lcd_d0_num, GPIO_DIR_INPUT);
+    gpio_configure(st7789v2dev.lcd_d1_num, GPIO_DIR_INPUT);
+    gpio_configure(st7789v2dev.lcd_d2_num, GPIO_DIR_INPUT);
+    gpio_configure(st7789v2dev.lcd_d3_num, GPIO_DIR_INPUT);
+    gpio_configure(st7789v2dev.lcd_d4_num, GPIO_DIR_INPUT);
+    gpio_configure(st7789v2dev.lcd_d5_num, GPIO_DIR_INPUT);
+    gpio_configure(st7789v2dev.lcd_d6_num, GPIO_DIR_INPUT);
+    gpio_configure(st7789v2dev.lcd_d7_num, GPIO_DIR_INPUT);
+    gpio_configure(st7789v2dev.lcd_d8_num, GPIO_DIR_INPUT);
+    gpio_configure(st7789v2dev.lcd_d9_num, GPIO_DIR_INPUT);
+    gpio_configure(st7789v2dev.lcd_d10_num, GPIO_DIR_INPUT);
+    gpio_configure(st7789v2dev.lcd_d11_num, GPIO_DIR_INPUT);
+    gpio_configure(st7789v2dev.lcd_d12_num, GPIO_DIR_INPUT);
+    gpio_configure(st7789v2dev.lcd_d13_num, GPIO_DIR_INPUT);
+    gpio_configure(st7789v2dev.lcd_d14_num, GPIO_DIR_INPUT);
+    gpio_configure(st7789v2dev.lcd_d15_num, GPIO_DIR_INPUT);
 }
 #endif
 
@@ -449,12 +464,113 @@ enum st7789v2_init_index {
 	INIT_SF2000
 };
 
-static int st7789v2_display_init(void)
-{
-	const uint8_t *pinit = st7789v2_inits[INIT_SEQUENCE_INDEX].start,
-		* const pinit_end = st7789v2_inits[INIT_SEQUENCE_INDEX].end;
-	unsigned ms, count;
+static unsigned long st7789v2_pack_id(const unsigned short *id) {
+	return ((unsigned long)(id[1] & 0xff) << 16) |
+		((unsigned long)(id[2] & 0xff) << 8) |
+		(id[3] & 0xff);
+}
 
+static unsigned short st7789v2_read_data(void) {
+	unsigned short data = 0;
+
+	lcd_gpio_set_output(st7789v2dev.lcd_rs_num, 1);
+	lcd_gpio_set_output(st7789v2dev.lcd_cs_num, 0);
+	lcd_gpio_set_output(st7789v2dev.lcd_rd_num, 0);
+
+	data |= (gpio_get_input(st7789v2dev.lcd_d0_num) & 1) << 0;
+	data |= (gpio_get_input(st7789v2dev.lcd_d1_num) & 1) << 1;
+	data |= (gpio_get_input(st7789v2dev.lcd_d2_num) & 1) << 2;
+	data |= (gpio_get_input(st7789v2dev.lcd_d3_num) & 1) << 3;
+	data |= (gpio_get_input(st7789v2dev.lcd_d4_num) & 1) << 4;
+	data |= (gpio_get_input(st7789v2dev.lcd_d5_num) & 1) << 5;
+	data |= (gpio_get_input(st7789v2dev.lcd_d6_num) & 1) << 6;
+	data |= (gpio_get_input(st7789v2dev.lcd_d7_num) & 1) << 7;
+	data |= (gpio_get_input(st7789v2dev.lcd_d8_num) & 1) << 8;
+	data |= (gpio_get_input(st7789v2dev.lcd_d9_num) & 1) << 9;
+	data |= (gpio_get_input(st7789v2dev.lcd_d10_num) & 1) << 10;
+	data |= (gpio_get_input(st7789v2dev.lcd_d11_num) & 1) << 11;
+	data |= (gpio_get_input(st7789v2dev.lcd_d12_num) & 1) << 12;
+	data |= (gpio_get_input(st7789v2dev.lcd_d13_num) & 1) << 13;
+	data |= (gpio_get_input(st7789v2dev.lcd_d14_num) & 1) << 14;
+	data |= (gpio_get_input(st7789v2dev.lcd_d15_num) & 1) << 15;
+
+	lcd_gpio_set_output(st7789v2dev.lcd_rd_num, 1);
+	lcd_gpio_set_output(st7789v2dev.lcd_cs_num, 1);
+	return data;
+}
+
+static int st7789v2_read_register(unsigned short reg, unsigned short *data, unsigned count) {
+	unsigned i;
+
+	lcd_configure_gpio_output();
+	lcd_gpio_set_output(st7789v2dev.lcd_cs_num, 1);
+	lcd_gpio_set_output(st7789v2dev.lcd_rs_num, 1);
+	lcd_gpio_set_output(st7789v2dev.lcd_wr_num, 1);
+	lcd_gpio_set_output(st7789v2dev.lcd_rd_num, 1);
+
+	st7789v2_write_command(reg);
+	lcd_configure_gpio_input();
+	for (i = 0; i < count; i++)
+		data[i] = st7789v2_read_data() & 0xff;
+	lcd_configure_gpio_output();
+	return 0;
+}
+
+static int st7789v2_select_init_from_panel(void) {
+	unsigned short r04[4] = { 0 };
+	unsigned short r00[2] = { 0 };
+	unsigned short rb3[4] = { 0 };
+	unsigned short rf2[4] = { 0 };
+	unsigned long lcd_id;
+	int init_index = INIT_SF2000;
+
+	st7789v2_read_register(0x04, r04, 4);
+	lcd_id = st7789v2_pack_id(r04);
+
+	/*
+	 * Community panel dumps show several later boards sharing the 0x858552
+	 * ID. B3/F2 distinguish those variants; R00 catches the original DY12
+	 * controller, which does not report a normal RDDID value.
+	 */
+	if (lcd_id == 0x858552) {
+		st7789v2_read_register(0xb3, rb3, 4);
+		st7789v2_read_register(0xf2, rf2, 4);
+	} else st7789v2_read_register(0x00, r00, 2);
+
+	switch (lcd_id) {
+		case 0x009306:
+		case 0x009307:
+			init_index = INIT_GB300;
+			break;
+		case 0x61bc11:
+			init_index = INIT_Q19;
+			break;
+		case 0x3e81f5:
+			init_index = INIT_SF2000;
+			break;
+		case 0x858552:
+			/*
+		 	* DY12v2/E2/DY19v2/Q19v2 all use the same known init family.
+		 	* Original SF2000 28G105 also often reports this ID family but
+		 	* does not have the newer 00:0f B3 signature, so keep SF2000.
+		 	*/
+			if (rb3[1] == 0x00 && rb3[2] == 0x0f) init_index = INIT_X60_NEW;
+			else init_index = INIT_SF2000;
+			break;
+		case 0x009329:
+			init_index = INIT_X60_OLD;
+			break;
+		default:
+			if (r04[1] == 0xe3 || r04[0] == 0xe3)
+				init_index = INIT_X60_OLD;
+			else if (r00[0] == 0xa0 || r00[1] == 0xa0)
+				init_index = INIT_DY12;
+			break;
+	}
+	return init_index;
+}
+
+static int st7789v2_display_init(void) {
     lcd_pinmux_rgb(0);
     printf("%s %d\n", __FUNCTION__,__LINE__);
 
@@ -471,12 +587,16 @@ static int st7789v2_display_init(void)
 
 	printf("%s %d\n", __FUNCTION__,__LINE__);
 
-	//lcd_reset();
-    lcd_gpio_set_output(st7789v2dev.lcd_reset_num,1);
+	lcd_reset();
 
     printf("%s %d\n", __FUNCTION__,__LINE__);
 
 	msleep(120);
+
+	int init_index = st7789v2_select_init_from_panel();
+	const uint8_t *pinit = st7789v2_inits[init_index].start,
+		* const pinit_end = st7789v2_inits[init_index].end;
+	unsigned ms, count;
 
 	if (*pinit++ == RGB_CLK_SKEWED) {
 		*(volatile unsigned *)0xb8800078 |= 1 << 15; // SYS_CLK_CTR FIXME HAL
