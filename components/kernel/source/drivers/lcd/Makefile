@@ -1,4 +1,4 @@
-lcd_main-y := lcd_main.o
+lcd_main-y := lcd_main.o lcd_font.o lcd_printf.o
 lcd_main-$(CONFIG_DRV_LCD_DEV) += lcddev.o
 lcd_main-$(CONFIG_DRV_LCD_NT35510) += 	display/nt35510.o
 lcd_main-$(CONFIG_DRV_LCD_GC9505) += 	display/gc9505.o

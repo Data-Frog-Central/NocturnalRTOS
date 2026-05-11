@@ -3,6 +3,7 @@
 #include <string.h>
 #include <kernel/ld.h>
 #include <kernel/lib/console.h>
+#include <kernel/drivers/lcd_printf.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <mips/hal.h>
@@ -416,7 +417,7 @@ done:
 	}
 	index++;
 
-	(*printfn)("<0x%08x: +0x%x>\t(0x%08x, 0x%08x, 0x%08x, 0x%08x) ra 0x%08x sz %d\n",
+	(*printfn)("<%08x: +%04x> (%08x, %08x, %08x,\n                   %08x) ra %08x sz %d\n",
 		   sp, pc - subr, regs[_R_A0], regs[_R_A1], regs[_R_A2],
 		   regs[_R_A3], ra, stksize);
 
@@ -474,6 +475,9 @@ void show_stack(TaskHandle_t task)
 	mips_reg_t a0, a1, a2, a3;
 	vaddr_t pc, sp, fp, ra;
 
+	taskENTER_CRITICAL();
+	lcd_init();
+
 	/*
 	 * Remove any garbage that may be in regs (specially func
 	 * addresses) to avoid show_raw_backtrace() to report them
@@ -494,22 +498,28 @@ void show_stack(TaskHandle_t task)
 	} else {
 		prepare_frametrace(&regs);
 		if (__isinterrupt()) {
-			printf("\r\n======= Stack Dump (before entering Interrupt mode) ======\r\n");
+			lcd_printf("=== Stack Dump (before entering Interrupt mode) ===\n");
+			lcd_printf("\n");
 		} else {
-			printf("\r\n======= Stack Dump (before entering Exception mode) ======\r\n");
-			printf("Exception code = %lu\r\n", (mips32_getcr() & CR_XMASK) >> 2);
+			lcd_printf("=== Stack Dump (before entering Exception mode) ===\n");
+			lcd_printf("\n");
+			lcd_printf("Exception code = %lu\n", (mips32_getcr() & CR_XMASK) >> 2);
+			lcd_printf("\n");
 		}
 		for (int i = 0; i < 32; i++) {
-			printf("reg[%d]: 0x%x\n", i, (unsigned int)regs.regs[i]);
+			lcd_printf("r%02d %08x ", i, (unsigned int)regs.regs[i]);
+			if ((i & 3) == 3) lcd_printf("\n");
 		}
 
 		regs.regs[29] = (uint32_t)pSpException;
 		regs.regs[31] = (uint32_t)pRaException;
 
 		regs.cp0_epc = mips32_get_c0(C0_EPC);
-		printf("reg[29]: 0x%x\n", (unsigned int)regs.regs[29]);
-		printf("reg[31]: 0x%x\n", (unsigned int)regs.regs[31]);
-
+		lcd_printf("\n");
+		lcd_printf("r29 %08x ", (unsigned int)regs.regs[29]);
+		lcd_printf("r31 %08x ", (unsigned int)regs.regs[31]);
+		lcd_printf("EPC %08x\n", (unsigned int)regs.cp0_epc);
+		lcd_printf("\n");
 
 	}
 
@@ -522,7 +532,8 @@ void show_stack(TaskHandle_t task)
 	ra = regs.regs[31];
 	pc = regs.cp0_epc;
 
-	stacktrace_subr(a0, a1, a2, a3, pc, sp, fp, ra, NULL, 0, 0, printf);
+	stacktrace_subr(a0, a1, a2, a3, pc, sp, fp, ra, NULL, 0, 0, lcd_printf);
+	lcd_flush(BSOD_TXT, BSOD_BG);
 }
 
 static int dumpstack(int argc, char **argv)
