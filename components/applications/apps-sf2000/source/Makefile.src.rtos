@@ -1,12 +1,14 @@
 PROJECTOR_DIR ?= $(srctree)/src
 INC = -I$(STAGING_DIR)/usr/include/lvgl/ \
-      -I$(STAGING_DIR)/usr/include/lvgl/lvgl
+      -I$(STAGING_DIR)/usr/include/lvgl/lvgl \
+      -I$(PROJECTOR_DIR)/../libs/libretro-common/include 
 
 cflags-y += -Wno-strict-prototypes -Wno-sign-compare -Wno-discarded-qualifiers -Wno-error=format=
 cflags-y += $(INC)
 
-include $(PROJECTOR_DIR)/RetroArch/Makefile.sf2000
-include $(PROJECTOR_DIR)/cores/Makefile
+include $(PROJECTOR_DIR)/drivers/sf2000_drivers.rtos.mk
+include $(PROJECTOR_DIR)/menu/sf2000_menu.rtos.mk
+include $(PROJECTOR_DIR)/libs/libretro-common/Makefile.hcrtos
 
 COBJS := $(CSRCS:.c=.o)
 INC += $(INCLUDE)
