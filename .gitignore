@@ -7,6 +7,7 @@ include/generated
 cscope.*
 .cscope
 .vscode
+.repo
 dl
 .tmp
 .*.swp
@@ -20,6 +21,8 @@ local.mk
 *.code-workspace
 .stamp_*
 *.asd
+*.elf
+*.hcrtos
 crc
 
 output/
