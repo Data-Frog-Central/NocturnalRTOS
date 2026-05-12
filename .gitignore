@@ -6,7 +6,6 @@ include/config
 include/generated
 cscope.*
 .cscope
-.vscode
 .repo
 dl
 .tmp
