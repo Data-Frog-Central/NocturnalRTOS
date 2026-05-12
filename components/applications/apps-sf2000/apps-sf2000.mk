@@ -13,8 +13,10 @@ APPS_SF2000_BUILD_CMDS = rsync -au --chmod=u=rwX,go=rX  --exclude .svn --exclude
 		     cp $(@D)/main.rtos.c $(@D)/main.c;\
 			 mkdir -p $(@D)/src;\
 			 ln -sf $(@D)/Makefile.src.rtos $(@D)/src/Makefile;\
-			 ln -sf $(@D)/RetroArch $(@D)/src/;\
 			 ln -sf $(@D)/cores $(@D)/src/;\
+			 ln -sf $(@D)/drivers $(@D)/src/;\
+			 ln -sf $(@D)/libs $(@D)/src/;\
+			 ln -sf $(@D)/menu $(@D)/src/;\
 		     $(TARGET_MAKE_ENV) $(APPS_SF2000_MAKE_ENV) $(MAKE) $(APPS_SF2000_MAKE_FLAGS) -C $(@D) all
 
 APPS_SF2000_INSTALL_STAGING_CMDS = $(TARGET_MAKE_ENV) $(APPS_SF2000_MAKE_ENV) $(MAKE) $(APPS_SF2000_MAKE_FLAGS) -C $(@D) install

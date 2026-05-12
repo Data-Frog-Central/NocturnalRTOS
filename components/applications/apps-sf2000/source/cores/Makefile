@@ -1,10 +1,10 @@
 NPROC=$(shell nproc)
 SHELL:=/bin/bash
 
-CORE=snes9x2005
-CONSOLE=snes9x2005
-
 MIPS=/opt/mips32-mti-elf/2019.09-03-2/bin/mips-mti-elf-
+
+OUTPUT_DIR := output
+OUTPUT_FILE := $(OUTPUT_DIR)/$(CONSOLE).hcrtos
 
 CC = $(MIPS)gcc
 CXX = $(MIPS)g++
@@ -25,13 +25,9 @@ SF2000_CXX_LDFLAGS := -EL -march=mips32 -mtune=mips32 -msoft-float
 SF2000_CXX_LDFLAGS += -Wl,--gc-sections --static
 SF2000_CXX_LDFLAGS += -z max-page-size=32
 
-CORE_DIR := $(CORE)
-include $(shell pwd)/$(CORE)/Makefile.common
-CORE_OBJS := $(SOURCES_CXX:.cpp=.o)
-
 # Default target
 ifneq ($(CORE),)
-all: $(CONSOLE).hcrtos install
+all: core.hcrtos install
 else
 all: install
 endif
@@ -64,20 +60,22 @@ core.elf: libretro_core.a libretro-common.a core_api.o frontend_functions.o
 	$(CXX) -Wl,-Map=$@.map $(SF2000_CXX_LDFLAGS) -e __core_entry__ -Tcore.ld -o $@ \
 		-Wl,--start-group core_api.o frontend_functions.o libretro_core.a libretro-common.a -lc -Wl,--end-group
 
-$(CONSOLE).hcrtos: core.elf
-	$(OBJCOPY) -O binary -R .MIPS.abiflags -R .note.gnu.build-id -R ".rel*" core.elf $(CONSOLE).hcrtos
+core.hcrtos: core.elf
+	$(OBJCOPY) -O binary -R .MIPS.abiflags -R .note.gnu.build-id -R ".rel*" core.elf "$@"
 
 install:
-	@$(call echo_i,"install to sdcard")
+	-$(call copy_if_updated,"core.hcrtos","$(OUTPUT_FILE)")
 	@$(call echo_d,"$(CORE)")
 
 # Clean intermediate files and the final executable
 clean:
 	-rm -f core_api.o frontend_functions.o
-	-rm -f core.elf core.elf.map $(CONSOLE).hcrtos
+	-rm -f core.elf core.elf.map core.hcrtos
 	-rm -f libretro_core.a libretro-common.a
-	$(MAKE) -j$(NPROC) -C ../libs/libretro-common clean
-	$(MAKE) -j$(NPROC) -C $(CORE) $(MAKEFILE) clean platform=sf2000
+	@if [ -n "$(CORE)" ]; then \
+		$(MAKE) -j$(NPROC) -C ../libs/libretro-common clean; \
+		$(MAKE) -j$(NPROC) -C $(CORE) $(MAKEFILE) clean platform=sf2000; \
+	fi
 
 .PHONY: all clean
 
@@ -94,6 +92,6 @@ define echo_d
 endef
 
 define copy_if_updated
-	diff -q $(1) $(2) || (rm -rf $$(dirname $(2)) && mkdir -p $$(dirname $(2)) && cp $(1) $(2) && echo "$(1) updated")
+    diff -q $(1) $(2) || { rm -rf $(2) && mkdir -p "$(shell echo $(2) | sed 's:\([^/]*\)[/]*$$::')" && cp $(1) $(2) && echo "$(1) updated"; }
 endef
 

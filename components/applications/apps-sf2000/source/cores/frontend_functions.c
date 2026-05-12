@@ -40,6 +40,28 @@ bool create_ram_buffer(size_t buffer_size) {
     if (ram_buffer) return true;
 }
 
+void full_cache_flush() {
+	unsigned idx;
+
+	// Index_Writeback_Inv_D
+	for (idx = 0x80000000; idx <= 0x80004000; idx += 16) // all of D-cache
+		asm volatile("cache 1, 0(%0); cache 1, 0(%0)" : : "r"(idx));
+
+	asm volatile("sync 0; nop; nop");
+
+	// Index_Invalidate_I
+	for (idx = 0x80000000; idx <= 0x80004000; idx += 16) // all of I-cache
+		asm volatile("cache 0, 0(%0); cache 0, 0(%0)" : : "r"(idx));
+
+	asm volatile("nop; nop; nop; nop; nop"); // ehb may be nop on this core
+}
+
+void _flush_cache(void* start, void* end) {
+    // note: params are ignored and *all* the cache is cleared instead.
+	// this seems to produce the most stable behavior for running dynarec code.
+    full_cache_flush();
+}
+
 // Custom sbrk from multicore
 void *sbrk(ptrdiff_t incr) {
 	static void *s_heap_end;
