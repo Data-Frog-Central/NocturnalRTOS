@@ -604,10 +604,10 @@ hcrtos {
 				* VPO_RGB_CLOCK_54M = 13,//H1600
 				* VPO_RGB_CLOCK_132M = 14,//H1600
 				*/
-				output-clock = <8>;
+				output-clock = <9>; /* 9 MHz / 477 / 326 = 57.88 Hz */
 
-				h-total-len = <444>;
-				v-total-len = <304>;
+				h-total-len = <477>;
+				v-total-len = <326>;
 
 				h-active-len = <320>;
 				v-active-len = <240>;
