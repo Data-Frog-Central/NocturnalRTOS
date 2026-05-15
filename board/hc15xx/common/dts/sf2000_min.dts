@@ -112,7 +112,7 @@ hcrtos {
 		 * 7 : SCPU dig pll clk
 		 */
 		clock = <7>;
-		scpu-dig-pll-clk = <810>;
+		scpu-dig-pll-clk = <918>;
 	};
 
 	standby {
