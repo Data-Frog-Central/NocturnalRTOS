@@ -1,6 +1,12 @@
 #ifndef __CORE_API_H
 #define __CORE_API_H
 
+#include "../dirent.h"
+
+#if !defined(TickType_t)
+typedef uint32_t TickType_t;
+#endif
+
 struct retro_core_t {
    void (*retro_init)(void);
    void (*retro_deinit)(void);
@@ -32,27 +38,36 @@ struct retro_core_t {
 struct frontend_functions_t {
    int (*printf)(const char *__restrict, ...);
    void (*frontend_log_cb)(enum retro_log_level level, const char *tag, const char *fmt, ...);
+   void (*lcd_bsod)(const char *fmt, ...);
    void (*_exit)(int status);
    void (*abort)(void);
    void *(*malloc)(size_t __size);
    void *(*memset)(void *ptr, int value, size_t num);
+   void (*free)(void *ptr);
+   void *(*calloc)(size_t nmemb, size_t size);
+   void *(*realloc)(void *ptr, size_t size);
    int (*stat)(const char *path, struct stat *sbuf);
    int (*fstat)(int fd, struct stat *sbuf);
    int (*kill)(pid_t pid, int sig);
    pid_t (*getpid)(void);
    int (*gettimeofday)(struct timeval *tv, void *tz);
+   TickType_t (*xTaskGetTickCount)();
+   void (*close_emulator)(const char *path, int state);
    int (*open)(const char *pathname, int flags, ...);
    int (*close)(int fd);
    int (*write)(int fd, const void *buf, size_t count);
    int (*read)(int fd, void *buf, size_t count);
    int (*isatty)(int fd);
    off_t (*lseek)(int fd, off_t offset, int whence);
+   int (*unlink)(const char *__path);
+   DIR *(*opendir)(const char *path);
+   int (*closedir)(DIR *dir);
+   struct dirent *(*readdir)(DIR *dir);
+   char *temp_rom_path;
+   char *temp_core_path;
 };
 
 extern struct frontend_functions_t frontend_functions;
-bool create_ram_buffer(size_t buffer_size);
-extern int (*xlog)(const char *, ...);
-
 typedef struct retro_core_t *(*core_entry_t)(struct frontend_functions_t *frontend_funcs);
 
 #endif

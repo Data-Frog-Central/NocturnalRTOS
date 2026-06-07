@@ -6,7 +6,10 @@
 #include <libretro.h>
 #include "core_api.h"
 
+extern int (*xlog)(const char *, ...);
 extern void (*frontend_log_cb)(enum retro_log_level level, const char *tag, const char *fmt, ...);
+extern void (*lcd_bsod)(const char *fmt, ...);
+extern void full_cache_flush();
 
 struct retro_core_t core_exports = {
    .retro_init = retro_init,
@@ -83,9 +86,11 @@ struct retro_core_t *__core_entry__(struct frontend_functions_t *frontend_funcs)
 
 struct retro_core_t *__core_entry__(struct frontend_functions_t *frontend_funcs) {
 	clear_bss(frontend_funcs);
+	full_cache_flush();
 	frontend_functions = *frontend_funcs;
 	xlog = frontend_functions.printf;
 	frontend_log_cb = frontend_functions.frontend_log_cb;
+	lcd_bsod = frontend_functions.lcd_bsod;
 	frontend_log_cb(RETRO_LOG_INFO, "CORE_API" ,"Functions mapped\n");
 
 	extern void __libc_init_array (void);

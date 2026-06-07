@@ -10,7 +10,14 @@
 #include <sys/types.h>
 
 #include <libretro.h>
+#include "../dirent.h"
+#include "frontend_functions.h"
 #include "core_api.h"
+
+#undef _malloc_r
+#undef _free_r
+#undef _calloc_r
+#undef _realloc_r
 
 char* ram_buffer = NULL;
 size_t ram_buffer_size = 64 * 1024 * 1024;  // 64 MB
@@ -18,6 +25,7 @@ size_t ram_buffer_size = 64 * 1024 * 1024;  // 64 MB
 struct frontend_functions_t frontend_functions;
 
 int (*xlog)(const char *format, ...) = printf;
+void (*lcd_bsod)(const char *fmt, ...) = NULL;
 void (*frontend_log_cb)(enum retro_log_level level, const char *tag, const char *fmt, ...) = NULL;
 
 //      System Calls       //
@@ -31,13 +39,6 @@ __attribute__((noreturn))
 void abort(void) {
     frontend_functions.abort();
     while (1) {}  // Should never return
-}
-
-// Create ram buffer for custom sbrk
-bool create_ram_buffer(size_t buffer_size) {
-    if (ram_buffer_size != buffer_size) ram_buffer_size == buffer_size;
-    ram_buffer = (char*)frontend_functions.malloc(ram_buffer_size);
-    if (ram_buffer) return true;
 }
 
 void full_cache_flush() {
@@ -62,39 +63,20 @@ void _flush_cache(void* start, void* end) {
     full_cache_flush();
 }
 
-// Custom sbrk from multicore
-void *sbrk(ptrdiff_t incr) {
-	static void *s_heap_end;
-	static void *s_heap_ptr = NULL;
+void *_malloc_r(struct _reent *r, size_t size) {
+    return frontend_functions.malloc(size);
+}
 
-	if (!s_heap_ptr) {
-		// TODO: better managment?
-        if (!ram_buffer) {
-            if (!create_ram_buffer(ram_buffer_size)) {
-                // TODO: Add BSOD
-                frontend_log_cb(RETRO_LOG_ERROR, "CORE_API" ,"sbrk: can't create buffer!\n");
-		        //lcd_bsod("sbrk: can't create buffer!");
-		        abort();
-            }
-            frontend_log_cb(RETRO_LOG_INFO, "CORE_API" ,"sbrk: created %u bytes buffer\n", ram_buffer_size);
-        }
-		s_heap_ptr = ram_buffer;
-		s_heap_end = ram_buffer + ram_buffer_size;
-	}
+void _free_r(struct _reent *r, void *ptr) {
+    frontend_functions.free(ptr);
+}
 
-	void *curr_ptr = s_heap_ptr;
-	void *new_ptr = s_heap_ptr + incr;
+void *_calloc_r(struct _reent *r, size_t n, size_t size) {
+    return frontend_functions.calloc(n, size);
+}
 
-	if (new_ptr >= s_heap_end) {
-		// TODO: Add BSOD
-        frontend_log_cb(RETRO_LOG_ERROR, "CORE_API" ,"sbrk: out of memory!\n");
-		//lcd_bsod("sbrk: out of memory!");
-		abort();
-	}
-
-	s_heap_ptr = new_ptr;
-	
-	return curr_ptr;
+void *_realloc_r(struct _reent *r, void *ptr, size_t size) {
+    return frontend_functions.realloc(ptr, size);
 }
 
 int	stat(const char *path, struct stat *sbuf) {
@@ -118,7 +100,17 @@ int gettimeofday(struct timeval *tv, void *tz) {
     return frontend_functions.gettimeofday(tv, tz);
 }
 
-//      I/O Operations    //
+//      FreeRTOS Functions      //
+TickType_t xTaskGetTickCount(void) {
+    return frontend_functions.xTaskGetTickCount();
+}
+
+//      Custom Frontend Functions       //
+void close_emulator(const char *path, int state) {
+    frontend_functions.close_emulator(path, state);
+}
+
+//      I/O Operations      //
 int open(const char *pathname, int flags, ...) {
     mode_t mode = 0;
 
@@ -126,14 +118,10 @@ int open(const char *pathname, int flags, ...) {
     if (flags & O_CREAT) {
         va_list args;
         va_start(args, flags);
-        mode = va_arg(args, mode_t);  // Extract the mode argument
+        mode = va_arg(args, mode_t);
         va_end(args);
     }
 
-    // Log before opening (optional)
-    xlog("Opening file: %s with flags: %d and mode: %o\n", pathname, flags, mode);
-
-    // Call the system 'open' function with the pathname, flags, and mode
     return frontend_functions.open(pathname, flags, mode);
 }
 
@@ -155,4 +143,28 @@ int isatty(int fd) {
 
 off_t lseek(int fd, off_t offset, int whence) {
     return frontend_functions.lseek(fd, offset, whence);
+}
+
+int link(const char *__path1, const char *__path2) {
+    (void)__path1;
+    (void)__path2;
+
+    return -1;
+}
+
+int unlink(const char *__path) {
+    return frontend_functions.unlink(__path);
+}
+
+//      Dirent      //
+DIR *opendir(const char *path) {
+    return frontend_functions.opendir(path);
+}
+
+int closedir(DIR *dir) {
+    return frontend_functions.closedir(dir);
+}
+
+struct dirent *readdir(DIR *dir){
+    return frontend_functions.readdir(dir);
 }
