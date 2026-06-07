@@ -420,6 +420,38 @@ static const uint8_t st7789v2_init_gb300[] = {
 	0, 1, SLPOUT,
 	99, 1, DISPON,
 };
+static const uint8_t st7789v2_init_dy14x6[] = {
+	0, 1, 0xfe,
+	0, 1, 0xef,
+	0, 2, MADCTL, 0x28,
+	0, 2, COLMOD, 0x05,
+	0, 2, 0x86, 0x98,
+	0, 2, 0x88, 0x02,
+	0, 2, 0x89, 0x33,
+	0, 2, 0x8b, 0x80,
+	0, 2, 0x8d, 0x33,
+	0, 2, 0x8e, 0x0f,
+	0, 3, 0xe1, 0x01, 0x26,
+	0, 3, 0xe8, 0x13, 0x70,
+	0, 4, 0xec, 0x33, 0x02, 0x00,
+	0, 3, 0xed, 0x19, 0x09,
+	0, 2, 0xff, 0x62,
+	0, 2, 0x99, 0x3e,
+	0, 2, 0x9d, 0x4b,
+	0, 2, 0x98, 0x3e,
+	0, 2, 0x9c, 0x4b,
+	0, 2, 0xc3, 0x10,
+	0, 2, 0xc4, 0x12,
+	0, 2, 0xc9, 0x18,
+	0, 7, 0xf0, 0x0d, 0x0e, 0x07, 0x05, 0x05, 0x2f,
+	0, 7, 0xf1, 0x45, 0x6e, 0x93, 0x2f, 0x31, 0x6f,
+	0, 7, 0xf2, 0x0d, 0x0e, 0x07, 0x05, 0x05, 0x31,
+	0, 7, 0xf3, 0x47, 0x70, 0x95, 0x2d, 0x2f, 0x8f,
+	0, 2, TEON, 0x00,
+	0, 3, 0x44, 0x00, 0x0a,
+	0, 1, SLPOUT,
+	99, 1, DISPON,
+};
 static const uint8_t st7789v2_init_sf2000[] = { // WL-28G105-A1 IPS
 	RGB_CLK_NORMAL, 1, SLPOUT, // sleep out
 	99, 2, MADCTL, 0x60, // memory data access control (order setup)
@@ -453,6 +485,7 @@ static struct {
 	INIT_START_END(st7789v2_init_q19),
 	INIT_START_END(st7789v2_init_dy12),
 	INIT_START_END(st7789v2_init_gb300),
+	INIT_START_END(st7789v2_init_dy14x6),
 	INIT_START_END(st7789v2_init_sf2000)
 };
 enum st7789v2_init_index {
@@ -461,6 +494,7 @@ enum st7789v2_init_index {
 	INIT_Q19,
 	INIT_DY12,
 	INIT_GB300,
+	INIT_DY14X6,
 	INIT_SF2000
 };
 
@@ -539,8 +573,10 @@ static int st7789v2_select_init_from_panel(void) {
 
 	switch (lcd_id) {
 		case 0x009306:
-		case 0x009307:
 			init_index = INIT_GB300;
+			break;
+		case 0x009307:
+			init_index = INIT_DY14X6;
 			break;
 		case 0x61bc11:
 			init_index = INIT_Q19;
