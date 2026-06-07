@@ -22,6 +22,7 @@
 #include <libretro.h>
 #include <retro_miscellaneous.h>
 #include "sf2000_joypad.h"
+#include "../menu/menu.h"
 
 #undef ARRAY_SIZE
 
@@ -36,6 +37,7 @@ extern void frontend_log_cb(enum retro_log_level level, const char *tag, const c
 static pinpad_e key_shifter_clk_pin = PINPAD_L24;
 static pinpad_e key_shifter_pl1_pin = PINPAD_L23;
 static pinpad_e key_shifter_pl2_pin = PINPAD_L26;
+static pinpad_e key_shifter_pl3_pin = PINPAD_INVALID;
 
 static joypad_device_t current_device = DEVICE_SF2000;
 static const uint8_t *current_shift_map;
@@ -47,10 +49,11 @@ static void set_device_map(const uint8_t *map, int size) {
     current_shift_map_size = size;
 }
 
-static void set_key_shifter_pins(pinpad_e clk, pinpad_e p1, pinpad_e p2) {
+static void set_key_shifter_pins(pinpad_e clk, pinpad_e p1, pinpad_e p2, pinpad_e p3) {
     key_shifter_clk_pin = clk;
     key_shifter_pl1_pin  = p1;
     key_shifter_pl2_pin  = p2;
+	key_shifter_pl3_pin = p3;
 }
 
 // TODO: the X60 handheld have BTN_L and BTN_R swapped compared to SF2000
@@ -72,17 +75,27 @@ static uint8_t sf2000_joypad_map[] = {
 	RETRO_DEVICE_ID_JOYPAD_RIGHT
 };
 
+void hotkey_exit(void)    { safe_shutdown_flag = true; }
+
+static const hotkey_entry_t hotkeys[] = {
+    { HOTKEY_EXIT_MASK, hotkey_exit },
+};
+
 void joypad_init(const char *device_name) {
 	frontend_log_cb(RETRO_LOG_INFO, "JOYPAD_DRIVER" ,"Joypad Init\n");
 	btn_state = 0;
 
 	if (strcmp(device_name, "SF2000") == 0) {
 		current_device = DEVICE_SF2000;
-		set_key_shifter_pins(PINPAD_L24, PINPAD_L23, PINPAD_L26);
+		set_key_shifter_pins(PINPAD_L24, PINPAD_L23, PINPAD_L26, PINPAD_INVALID);
 		set_device_map(sf2000_joypad_map, 13);
 	} else if (strcmp(device_name, "GB300") == 0) {
 		current_device = DEVICE_GB300;
-		set_key_shifter_pins(PINPAD_L26, PINPAD_L27, PINPAD_L25);
+		set_key_shifter_pins(PINPAD_L26, PINPAD_L27, PINPAD_L25, PINPAD_INVALID);
+		set_device_map(sf2000_joypad_map, 13);
+	} else if (strcmp(device_name, "DY19") == 0) {
+		current_device = DEVICE_DY19;
+		set_key_shifter_pins(PINPAD_L24, PINPAD_L25, PINPAD_L26, PINPAD_L27);
 		set_device_map(sf2000_joypad_map, 13);
 	}
 }
@@ -116,19 +129,14 @@ void joypad_get_buttons(unsigned port, input_bits_t *state)
 	//frontend_log_cb(RETRO_LOG_DEBUG, "JOYPAD_DRIVER" ,"btn_state=%u port=%u state->data[0]=%lu\n", btn_state, port, state->data[0]);
 }
 
-// Returns true to exit, false to resume to loop
-bool frontend_check_hotkeys(void) {
+void frontend_check_hotkeys(void) {
     uint16_t state = btn_state;
 
-	if ((state & HOTKEY_EXIT_MASK) == HOTKEY_EXIT_MASK)
-    	return true;
-
-	/*if ((state & HOTKEY_MENU_MASK) == HOTKEY_MENU_MASK)
-    	open_menu();
-
-	if ((state & HOTKEY_RESET_MASK) == HOTKEY_RESET_MASK)
-    	reset_game();*/
-	return false;
+    for (size_t i = 0; i < sizeof(hotkeys)/sizeof(hotkeys[0]); ++i) {
+        if ((state & hotkeys[i].mask) == hotkeys[i].mask) {
+            hotkeys[i].action();
+        }
+    }
 }
 
 void frontend_input_poll_cb(void) {
@@ -140,6 +148,7 @@ void frontend_input_poll_cb(void) {
 
     gpio_configure(key_shifter_pl1_pin, GPIO_DIR_OUTPUT);
     gpio_configure(key_shifter_pl2_pin, GPIO_DIR_OUTPUT);
+	if (current_device == DEVICE_DY19) gpio_configure(key_shifter_pl3_pin, GPIO_DIR_OUTPUT);
 
     gpio_set_output(key_shifter_clk_pin, 0);
     usleep(4); // KEY_SHIFTER_LOAD_US
@@ -147,15 +156,19 @@ void frontend_input_poll_cb(void) {
     // Set D0/D1 as inputs for serial reading
     gpio_configure(key_shifter_pl1_pin, GPIO_DIR_INPUT);
     gpio_configure(key_shifter_pl2_pin, GPIO_DIR_INPUT);
+	if (current_device == DEVICE_DY19) gpio_configure(key_shifter_pl3_pin, GPIO_DIR_INPUT);
 
     // Read 16-bit shift register
     for (int i = 0; i < current_shift_map_size; i++) {
         int raw0 = 1 ^ gpio_get_input(key_shifter_pl1_pin); // 0=release, 1=press
         int raw1 = 1 ^ gpio_get_input(key_shifter_pl2_pin);
+		int raw2 = 0;
+		if (current_device == DEVICE_DY19) raw2 = 1 ^ gpio_get_input(key_shifter_pl3_pin);
 
         // Combine into mask if either P1 or P2 is active
         uint8_t button = current_shift_map[i];
-		new_state |= (raw0 || raw1) << button;
+		if (current_device == DEVICE_DY19) new_state |= (raw0 || raw1 || raw2) << button;
+		else new_state |= (raw0 || raw1) << button;
 
         // Pulse clock
         gpio_set_output(key_shifter_clk_pin, 0);
