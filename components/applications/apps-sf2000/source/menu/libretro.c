@@ -34,8 +34,13 @@ bool enable_xrgb8888_support = false;
 bool mono_audio_enabled = true;
 int brightness_percentage = 100;
 
+bool close_emulator_flag = false;
+bool safe_shutdown_flag = false;
+
 char rom_path[MAXPATH];
-char *dir, *rom_filename, *extension;
+char *dir = NULL;
+char *rom_filename = NULL;
+char *extension = NULL;
 void *rom_buffer = NULL;
 size_t rom_size;
 
@@ -227,15 +232,22 @@ bool frontend_environment_cb(unsigned cmd, void *data) {
     		if (buff_status_cb && buff_status_cb->callback) {
         		audio_buff_status_cb = buff_status_cb->callback;
         		core_frameskip = frameskip_cb;
-        		printf("support for auto frameskipping enabled\n");
+				frontend_log_cb(RETRO_LOG_INFO, "ENVIRON" ,"support for auto frameskipping enabled\n");
     		} else {
         		audio_buff_status_cb = NULL;
         		core_frameskip = NULL;
-        		printf("support for auto frameskipping disabled\n");
+				frontend_log_cb(RETRO_LOG_INFO, "ENVIRON" ,"support for auto frameskipping disabled\n");
     		}
 
     		return true;
 		}
+
+		case RETRO_ENVIRONMENT_SHUTDOWN:
+        {
+			frontend_log_cb(RETRO_LOG_INFO, "ENVIRON" ,"RETRO_ENVIRONMENT_SHUTDOWN\n");
+			close_emulator(NULL, 0);
+            return true;
+        }
 
         default:
             // Unknown/unsupported command
@@ -324,11 +336,33 @@ bool load_game(const char *file_path) {
 
 bool run_emulator(const char *game_path, const char *core_path, int load_state) {
 	extract_path_components(game_path, &dir, &rom_filename, &extension);
-	dbg_show_noblock(loading_txt_color, loading_bg_color," %s\n\n %s\n\n %s.%s\n\n State:%d\n\n", core_path, dir, rom_filename, extension, load_state);
+	
+	frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"%s, %s, %s%s%s, State:%d\n",
+    	core_path ? core_path : "(null)",
+    	dir ? dir : "(null)",
+    	rom_filename ? rom_filename : "(null)",
+		extension ? "." : "",
+    	extension ? extension : "",
+    	load_state);
+	
+	show_loading_screen(
+		false,
+		true,
+    	loading_txt_color,
+    	loading_bg_color,
+    	" %s\n\n %s\n\n %s%s%s\n\n State:%d\n\n",
+    	core_path ? core_path : "(null)",
+    	dir ? dir : "(null)",
+    	rom_filename ? rom_filename : "(null)",
+		extension ? "." : "",
+    	extension ? extension : "",
+    	load_state
+	);
+
 	audio_buff_status_cb = NULL;
 	core_frameskip = NULL;
 
-    frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"run_emulator(%d)\n", load_state);
+    frontend_log_cb(RETRO_LOG_DEBUG, "FRONTEND" ,"loading core\n", load_state);
 	load_core(core_path);
 
 	strncpy(rom_path, game_path, MAXPATH - 1);
@@ -356,7 +390,6 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
 	load_srm(0);
 
 	core_api.retro_get_system_av_info(&av_info);
-	init_fb();
     audio_init(temp_audio_device, av_info.timing.sample_rate);
 	joypad_init(temp_joypad_device);
 	
@@ -377,7 +410,11 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
 	// TODO: Pause menu and ability to exit
 	while (1) {
 		frontend_input_poll_cb();
-		if (frontend_check_hotkeys()) break;
+		frontend_check_hotkeys();
+		if (close_emulator_flag || safe_shutdown_flag) {
+			if (close_emulator_flag) close_emulator_flag = false;
+			break;
+		}
 		if (core_frameskip) {
     		TickType_t now = xTaskGetTickCount();
     		TickType_t lag = now - last_wake;
@@ -399,6 +436,15 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
 	frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"Retro Deinit\n");
 	// TODO: Proper deinit
 	save_srm(0);
+	core_api.retro_unload_game();
 	core_api.retro_deinit();
+	audio_deinit();
 	return true;
+}
+
+void close_emulator(const char *filename, int load_state) {
+	// Must match the format FrogUI uses for now
+	(void)filename;
+	(void)load_state;
+	close_emulator_flag = true;
 }

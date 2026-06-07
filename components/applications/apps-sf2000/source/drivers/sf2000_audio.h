@@ -3,6 +3,7 @@
 
 int get_audio_occupancy(void);
 void audio_init(const char *device_name, unsigned rate);
+void audio_deinit(void);
 size_t frontend_audio_batch_cb(const int16_t *data, size_t frames);
 size_t frontend_mono_audio_batch_cb(const int16_t *data, size_t frames);
 

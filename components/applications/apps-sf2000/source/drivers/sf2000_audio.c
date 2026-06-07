@@ -37,7 +37,7 @@
 
 extern void frontend_log_cb(enum retro_log_level level, const char *tag, const char *fmt, ...);
 
-static void *audio_ctx;
+static void *audio_ctx = NULL;
 
 #define DEFAULT_SND_DEV "/dev/sndC0i2so"
 
@@ -138,8 +138,7 @@ static ssize_t sf2000_audio_write(void *data, void *buf, size_t size) {
 	return size;
 }
 
-static bool sf2000_audio_stop(void *data)
-{
+static bool sf2000_audio_stop(void *data) {
 	sf2000_audio_t* ctx = (sf2000_audio_t*)data;
 	if (!ctx)
 		return false;
@@ -155,8 +154,7 @@ static bool sf2000_audio_stop(void *data)
 	return true;
 }
 
-static bool sf2000_audio_start(void *data, bool is_shutdown)
-{
+static bool sf2000_audio_start(void *data, bool is_shutdown) {
 	sf2000_audio_t* ctx = (sf2000_audio_t*)data;
 	if (!ctx)
 		return false;
@@ -220,7 +218,22 @@ int get_audio_occupancy(void) {
     return occupancy;
 }
 
+void audio_deinit(void) {
+	if (!audio_ctx) return;
+	sf2000_audio_t *ctx = (sf2000_audio_t*)audio_ctx;
+	sf2000_audio_stop(audio_ctx);
+	if (ctx->snd_fd > 0) {
+		ioctl(ctx->snd_fd, SND_IOCTL_HW_FREE, 0);
+    	close(ctx->snd_fd);
+    	ctx->snd_fd = -1;
+	}
+	free(audio_ctx);
+	audio_ctx = NULL;
+}
+
 void audio_init(const char *device_name, unsigned rate) {
+	if (audio_ctx != NULL) audio_deinit();
+
 	if (strcmp(device_name, "SF2000") == 0) {
 		speaker_av_pin = PINPAD_R07;
 	} else if (strcmp(device_name, "GB300") == 0) {

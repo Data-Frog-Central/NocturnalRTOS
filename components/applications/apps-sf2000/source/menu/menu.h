@@ -18,6 +18,9 @@ extern struct retro_game_info_ext game_info_ext;
 extern bool mono_audio_enabled;
 extern int brightness_percentage;
 
+extern bool close_emulator_flag;
+extern bool safe_shutdown_flag;
+
 extern char rom_path[MAXPATH];
 extern char *dir, *rom_filename, *extension;
 extern char *temp_rom_path, *temp_core_path, *temp_audio_device, *temp_joypad_device;
@@ -27,6 +30,8 @@ extern unsigned short loading_bg_color;
 
 void frontend_log_cb(enum retro_log_level level, const char *tag, const char *fmt, ...);
 bool run_emulator(const char *game_path, const char *core_path, int load_state);
+void close_emulator(const char *path, int state);
 int apply_backlight_brightness(int pwm_level, int pwm_frequency, int polarity);
+void show_loading_screen(bool block_loading, bool loading_dots, unsigned short text_color, unsigned short background_color, const char *fmt, ...);
 
 #endif // MENU_H__

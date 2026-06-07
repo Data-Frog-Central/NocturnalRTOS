@@ -6,8 +6,7 @@
 #include <freertos/task.h>
 #include <kernel/ld.h>
 #include <kernel/drivers/lcd_printf.h>
-
-#include "lcd_font.h"
+#include <kernel/drivers/lcd_font.h>
 
 static char *lcd_buf = NULL;
 static unsigned lcd_y, lcd_x;

@@ -25,6 +25,7 @@
 #include <hcuapi/pinpad.h>
 
 #include "libs/libretro-common/include/libretro.h"
+#include "drivers/sf2000_gfx.h"
 #include "menu/file_functions.h"
 #include "menu/menu.h"
 
@@ -103,10 +104,21 @@ static void main_sf2000(void *pvParameters) {
 
 	frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"Init Frontend\n");
     frontend_config_load();
-	bool ret = run_emulator(temp_rom_path, temp_core_path, 0);
-    // TODO: When i implement a menu this should be a dbg_show_noblock not a bsod
-    if (!ret) lcd_bsod(" Loading ROM Failed\n\n Check logs for more info\n\n");
-    lcd_bsod(" Safe Shutdown\n\n Turn off the console now.\n\n");
+    init_fb();
+
+    while (1) {
+	    bool ret = run_emulator(temp_rom_path, temp_core_path, 0);
+        if (!ret) {
+            dbg_show_noblock(0xffff, 0x0000, " Loading ROM Failed\n\n Check logs for more info\n\n");
+            safe_shutdown_flag = true;
+        }
+        if (safe_shutdown_flag) {
+		    safe_shutdown_flag = false;
+			break;
+		}
+    }
+
+    show_loading_screen(true, false, loading_txt_color, loading_bg_color, " Safe Shutdown\n\n Turn off the console now.\n\n");
     vTaskDelete(NULL);
 }
 
