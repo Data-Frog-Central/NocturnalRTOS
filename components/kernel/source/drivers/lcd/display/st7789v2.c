@@ -21,6 +21,7 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include "../lcd_main.h"
+#include "boot_logo.h"
 #include <hcuapi/pinmux.h>
 #include <hcuapi/gpio.h>
 #include <kernel/ld.h>
@@ -30,7 +31,8 @@
 //#define GPIO_HARDCODED
 //#defien PINMUX_HARDCODED
 #define GPIO_FAST_WRITE
-#define SHOW_TESTIMAGE	2		// show test image at init for X seconds
+#define SHOW_TESTIMAGE	0		// show test image at init for X seconds
+#define SHOW_BOOTIMAGE	2
 
 /*
 *	TIME: 2023 04 23
@@ -664,6 +666,16 @@ static int st7789v2_display_init(void) {
     }
 
     usleep(SHOW_TESTIMAGE * 1000 * 1000);
+#endif
+
+#if SHOW_BOOTIMAGE
+    int total_pixels = BOOT_IMAGE_WIDTH * BOOT_IMAGE_HEIGHT;
+    for (int i = 0; i < total_pixels; i++) {
+        uint16_t pixel = boot_logo_data[i]; 
+        st7789v2_write_data(pixel); 
+    }
+
+    usleep(SHOW_BOOTIMAGE * 1000 * 1000);
 #endif
 
     printf("%s %d\n", __FUNCTION__,__LINE__);
