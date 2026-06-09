@@ -36,6 +36,9 @@
 
 #include <libretro.h>
 
+#include "sf2000_gfx.h"
+#include "../menu/menu.h"
+
 #define SCREEN_WIDTH  320
 #define SCREEN_HEIGHT 240
 
@@ -56,6 +59,10 @@ extern bool enable_xrgb8888_support;
 
 bool preserve_aspect_ratio = false;
 bool use_integer_scaling = false;
+bool gfx_custom_x_enabled = false;
+bool gfx_custom_y_enabled = false;
+int gfx_custom_x = 0;
+int gfx_custom_y = 0;
 
 typedef struct sf2000_gfx_data
 {
@@ -177,8 +184,10 @@ static void blit(const void *frame, unsigned width, unsigned height, unsigned pi
             // Center the image
             drect.w = dst_w;
             drect.h = dst_h;
-            drect.x = (screen_w - dst_w) / 2;
-            drect.y = (screen_h - dst_h) / 2;
+            if (!gfx_custom_x_enabled) drect.x = (screen_w - dst_w) / 2;
+            else drect.x = gfx_custom_x;
+            if (!gfx_custom_y_enabled) drect.y = (screen_h - dst_h) / 2;
+            else drect.y = gfx_custom_y;
         } else { // ---------- FLOAT SCALING ----------
             float src_w_f = (float)width;
             float src_h_f = (float)height;
@@ -200,8 +209,10 @@ static void blit(const void *frame, unsigned width, unsigned height, unsigned pi
             // Center the image
             drect.w = (int)(dst_w_f + 0.5f);
             drect.h = (int)(dst_h_f + 0.5f);
-            drect.x = (int)((screen_w_f - dst_w_f) / 2.0f + 0.5f);
-            drect.y = (int)((screen_h_f - dst_h_f) / 2.0f + 0.5f);
+            if (!gfx_custom_x_enabled) drect.x = (int)((screen_w_f - dst_w_f) / 2.0f + 0.5f);
+            else drect.x = gfx_custom_x;
+            if (!gfx_custom_y_enabled) drect.y = (int)((screen_h_f - dst_h_f) / 2.0f + 0.5f);
+            else drect.y = gfx_custom_y;
         }
     } else { // Fullscreen, ignore aspect ratio
         drect.x = 0;
@@ -261,6 +272,76 @@ static void sf2000_gfx_free(void *data)
 	deinit_fb_device();
 
 	free(ctx);
+}
+
+void draw_black_border(void) {
+    size_t pitch = SCREEN_WIDTH * sizeof(uint16_t); 
+    size_t buffer_size = SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(uint16_t);
+    uint16_t *black_buffer = (uint16_t *)calloc(1, buffer_size);
+    
+    if (black_buffer != NULL) {
+        blit(black_buffer, SCREEN_WIDTH, SCREEN_HEIGHT, pitch);
+        free(black_buffer);
+    }
+}
+
+void draw_border(const char *core_path) {
+    char file_path[MAXPATH];
+    snprintf(file_path, sizeof(file_path), "%s/HCRTOS/borders/%s/%s.bmp", SDCARD_DIRECTORY, core_path, core_path);
+    FILE *file = fopen(file_path, "rb");
+    if (!file) {
+        frontend_log_cb(RETRO_LOG_ERROR, "DISPLAY_DRIVER", "Failed to open BMP: %s\n", file_path);
+        draw_black_border();
+        return;
+    }
+
+    BMPFileHeader file_header;
+    BMPInfoHeader info_header;
+
+    fread(&file_header, sizeof(BMPFileHeader), 1, file);
+    fread(&info_header, sizeof(BMPInfoHeader), 1, file);
+
+    // Enforce uncompressed 24-bit format
+    if (file_header.type != 0x4D42 || info_header.bits_per_pixel != 24 || info_header.compression != 0) {
+        frontend_log_cb(RETRO_LOG_ERROR, "DISPLAY_DRIVER", "BMP must be uncompressed 24-bit BGR.\n");
+        fclose(file);
+        draw_black_border();
+        return;
+    }
+
+    int width = info_header.width;
+    int height = abs(info_header.height); 
+    bool flip_vertical = (info_header.height > 0); 
+
+    size_t pitch = width * sizeof(uint16_t);
+    uint16_t *rgb565_buffer = (uint16_t *)malloc(width * height * sizeof(uint16_t));
+    if (!rgb565_buffer) {
+        fclose(file);
+        return;
+    }
+
+    fseek(file, file_header.offset, SEEK_SET);
+    int row_padding = (4 - (width * 3) % 4) % 4;
+    uint8_t bgr_pixel[3];
+
+    for (int y = 0; y < height; y++) {
+        int target_y = flip_vertical ? (height - 1 - y) : y;
+        uint16_t *row_ptr = rgb565_buffer + (target_y * width);
+        for (int x = 0; x < width; x++) {
+            fread(bgr_pixel, 3, 1, file);
+
+            uint16_t r = (bgr_pixel[2] & 0xF8) << 8;
+            uint16_t g = (bgr_pixel[1] & 0xFC) << 3;
+            uint16_t b = (bgr_pixel[0] & 0xF8) >> 3;
+
+            row_ptr[x] = r | g | b;
+        }
+        fseek(file, row_padding, SEEK_CUR);
+    }
+
+    fclose(file);
+    blit(rgb565_buffer, width, height, pitch);
+    free(rgb565_buffer);
 }
 
 void frontend_video_cb(const void *data, unsigned width, unsigned height, size_t pitch) {

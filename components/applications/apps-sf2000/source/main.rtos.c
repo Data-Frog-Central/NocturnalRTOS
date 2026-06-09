@@ -26,10 +26,11 @@
 
 #include "libs/libretro-common/include/libretro.h"
 #include "drivers/sf2000_gfx.h"
-#include "menu/file_functions.h"
 #include "menu/menu.h"
 
 char *temp_rom_path, *temp_core_path, *temp_audio_device, *temp_joypad_device;
+
+extern void frontend_config_load(void);
 
 int apply_backlight_brightness(int pwm_level, int pwm_frequency, int polarity) {
     int fd;

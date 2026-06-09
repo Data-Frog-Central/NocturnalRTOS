@@ -1,9 +1,12 @@
 #ifndef FILE_FUNCTIONS__
 #define FILE_FUNCTIONS__
 
+#include <libretro.h>
+#include <file/config_file.h>
+
 #define MAX_CONTENT_INFO_OVERRIDES 3
 
-extern void frontend_load_settings(void);
+extern void frontend_load_settings(config_file_t *config_file);
 extern void frontend_config_load(void);
 extern void core_config_load(void);
 extern void rom_config_load(void);

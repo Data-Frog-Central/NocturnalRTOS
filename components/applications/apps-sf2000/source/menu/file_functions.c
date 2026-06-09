@@ -222,29 +222,33 @@ bool config_get_var(struct retro_variable *var) {
 	return ret;
 }
 
-void frontend_load_settings(void) {
-    if (frontend_config) {
-	    config_get_bool(frontend_config, "hcrtos_preserve_aspect_ratio", &preserve_aspect_ratio);
-	    config_get_bool(frontend_config, "hcrtos_use_integer_scaling", &use_integer_scaling);
-	    config_get_bool(frontend_config, "hcrtos_mono_audio_enabled", &mono_audio_enabled);
-        config_get_uint(frontend_config, "hcrtos_brightness_percentage", &brightness_percentage);
-        config_get_string(frontend_config, "hcrtos_rom_path", &temp_rom_path);
-        config_get_string(frontend_config, "hcrtos_core_path", &temp_core_path);
-        config_get_string(frontend_config, "hcrtos_audio_device", &temp_audio_device);
-        config_get_string(frontend_config, "hcrtos_joypad_device", &temp_joypad_device);
+void frontend_load_settings(config_file_t *config_file) {
+    if (config_file != NULL) {
+	    config_get_bool(config_file, "hcrtos_preserve_aspect_ratio", &preserve_aspect_ratio);
+	    config_get_bool(config_file, "hcrtos_use_integer_scaling", &use_integer_scaling);
+	    config_get_bool(config_file, "hcrtos_mono_audio_enabled", &mono_audio_enabled);
+        config_get_uint(config_file, "hcrtos_brightness_percentage", &brightness_percentage);
+        config_get_string(config_file, "hcrtos_rom_path", &temp_rom_path);
+        config_get_string(config_file, "hcrtos_core_path", &temp_core_path);
+        config_get_string(config_file, "hcrtos_audio_device", &temp_audio_device);
+        config_get_string(config_file, "hcrtos_joypad_device", &temp_joypad_device);
+        config_get_bool(config_file, "hcrtos_gfx_custom_x_enabled", &gfx_custom_x_enabled);
+        config_get_bool(config_file, "hcrtos_gfx_custom_y_enabled", &gfx_custom_y_enabled);
+        config_get_int(config_file, "hcrtos_gfx_custom_x", &gfx_custom_x);
+        config_get_int(config_file, "hcrtos_gfx_custom_y", &gfx_custom_y);
     }
 }
 
 void frontend_config_load(void) {
     bool ret = false;
     char config_frontend_filepath[MAXPATH];
-	snprintf(config_frontend_filepath, sizeof(config_frontend_filepath), "%s/%s.opt", CONFIG_DIRECTORY, "hcrtos");
+	snprintf(config_frontend_filepath, sizeof(config_frontend_filepath), "%s/%s.opt", CONFIG_DIRECTORY, "dartos");
 
     // load global hcrtos options
     if (access(config_frontend_filepath, F_OK) == 0) {
         frontend_config = config_file_new_alloc();
         ret = config_append_file(frontend_config, config_frontend_filepath);
-        frontend_load_settings();
+        frontend_load_settings(frontend_config);
     }
     frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"config_load: %s %s\n", config_frontend_filepath, ret ? "loaded" : "not found");
 }
@@ -258,6 +262,7 @@ void core_config_load(void) {
     if (access(config_core_filepath, F_OK) == 0) {
         core_config = config_file_new_alloc();
         ret = config_append_file(core_config, config_core_filepath);
+        frontend_load_settings(core_config);
     }
     frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"config_load: %s %s\n", config_core_filepath, ret ? "loaded" : "not found");
 }
@@ -271,6 +276,7 @@ void rom_config_load(void) {
     if (access(config_game_filepath, F_OK) == 0) {
         rom_config = config_file_new_alloc();
         ret = config_append_file(rom_config, config_game_filepath);
+        frontend_load_settings(rom_config);
     }
     frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"config_load: %s %s\n", config_game_filepath, ret ? "loaded" : "not found");
 }

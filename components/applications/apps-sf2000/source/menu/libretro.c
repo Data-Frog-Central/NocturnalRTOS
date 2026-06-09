@@ -409,6 +409,7 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
 
 	// TODO: Cache controller input and check for hotkeys
 	// TODO: Pause menu and ability to exit
+	draw_border(core_path); // Draw the border right before the main loop
 	while (1) {
 		frontend_input_poll_cb();
 		frontend_check_hotkeys();
