@@ -7,6 +7,12 @@
 typedef uint32_t TickType_t;
 #endif
 
+#define MAKE_MAGIC(a, b, c, d) ((uint32_t)(a) << 24 | (uint32_t)(b) << 16 | (uint32_t)(c) << 8 | (uint32_t)(d))
+#define CORE_API_MAGIC  MAKE_MAGIC('D', 'A', 'R', 'T')
+#define CORE_API_VERSION_MAJOR 1
+#define CORE_API_VERSION_MINOR 0
+#define CORE_API_VERSION       ((CORE_API_VERSION_MAJOR << 16) | CORE_API_VERSION_MINOR)
+
 struct retro_core_t {
    void (*retro_init)(void);
    void (*retro_deinit)(void);
@@ -33,6 +39,12 @@ struct retro_core_t {
    unsigned (*retro_get_region)(void);
    void *(*retro_get_memory_data)(unsigned);
    size_t (*retro_get_memory_size)(unsigned);
+};
+
+struct retro_header_t {
+   uint32_t magic;
+   uint32_t version;
+   struct retro_core_t core_exports;
 };
 
 struct frontend_functions_t {
@@ -68,6 +80,6 @@ struct frontend_functions_t {
 };
 
 extern struct frontend_functions_t frontend_functions;
-typedef struct retro_core_t *(*core_entry_t)(struct frontend_functions_t *frontend_funcs);
+typedef struct retro_header_t *(*core_entry_t)(struct frontend_functions_t *frontend_funcs);
 
 #endif

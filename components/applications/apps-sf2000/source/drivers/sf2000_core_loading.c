@@ -18,9 +18,10 @@
 #include "../cores/core_api.h"
 
 void *core_buffer = (void*)CORE_LOAD_ADDR;
+struct retro_header_t core_header;
 struct retro_core_t core_api;
 
-void load_core(const char *core) {
+bool load_core(const char *core) {
     memset(core_buffer, 0, CORE_LOAD_SIZE);  // Clear the 16 MB core section
 	char file_path[MAXPATH];
 	snprintf(file_path, sizeof(file_path), "%s/HCRTOS/cores/%s.hcrtos", SDCARD_DIRECTORY, core);
@@ -70,5 +71,13 @@ void load_core(const char *core) {
 	};
 
 	core_entry_t core_entry = core_buffer;
-	core_api = *core_entry(&frontend_funcs);
+	core_header = *core_entry(&frontend_funcs);
+
+	if ((core_header.magic == CORE_API_MAGIC) && (core_header.version == CORE_API_VERSION)) {
+		core_api = core_header.core_exports;
+		frontend_log_cb(RETRO_LOG_INFO, "CORE_LOADER" ,"Load success\n");
+		return true;
+	}
+	frontend_log_cb(RETRO_LOG_INFO, "CORE_LOADER" ,"Load failed: core is either too old or for another system\n");
+	return false;
 }

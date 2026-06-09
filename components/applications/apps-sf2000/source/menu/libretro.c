@@ -336,7 +336,8 @@ bool load_game(const char *file_path) {
 
 bool run_emulator(const char *game_path, const char *core_path, int load_state) {
 	extract_path_components(game_path, &dir, &rom_filename, &extension);
-	
+	bool ret = false;
+
 	frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"%s, %s, %s%s%s, State:%d\n",
     	core_path ? core_path : "(null)",
     	dir ? dir : "(null)",
@@ -363,7 +364,8 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
 	core_frameskip = NULL;
 
     frontend_log_cb(RETRO_LOG_DEBUG, "FRONTEND" ,"loading core\n", load_state);
-	load_core(core_path);
+	ret = load_core(core_path);
+	if (!ret) return false;
 
 	strncpy(rom_path, game_path, MAXPATH - 1);
 	rom_path[MAXPATH - 1] = '\0';
@@ -379,13 +381,12 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
 	// Begin retro init
 	frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"Retro Init\n");
 	core_api.retro_get_system_info(&sysinfo);
-	//frontend_config_load();
 	apply_backlight_brightness(brightness_percentage, 10000, 1);
 	core_config_load();
 	rom_config_load();
 	core_api.retro_init();
 
-	bool ret = load_game(game_path);
+	ret = load_game(game_path);
 	if (!ret) return false;
 	load_srm(0);
 
