@@ -14,9 +14,10 @@
 #include <file/file_path.h>
 #include <file/config_file.h>
 
+#include <core_api.h>
+
 #include "../drivers/sf2000_gfx.h"
 #include "../drivers/sf2000_core_loading.h"
-#include "../cores/core_api.h"
 #include "file_functions.h"
 #include "menu.h"
 
@@ -26,6 +27,8 @@ static config_file_t *rom_config = NULL;
 
 static const struct retro_system_content_info_override* content_info_overrides[MAX_CONTENT_INFO_OVERRIDES];
 static size_t content_info_override_count = 0;
+
+char *temp_rom_path, *temp_core_path, *temp_audio_device, *temp_joypad_device;
 
 void extract_extension(const char *filename, char **extension) {
     char *dot = strrchr(filename, '.');
@@ -224,8 +227,6 @@ bool config_get_var(struct retro_variable *var) {
 
 void frontend_load_settings(config_file_t *config_file) {
     if (config_file != NULL) {
-	    config_get_bool(config_file, "hcrtos_preserve_aspect_ratio", &preserve_aspect_ratio);
-	    config_get_bool(config_file, "hcrtos_use_integer_scaling", &use_integer_scaling);
 	    config_get_bool(config_file, "hcrtos_mono_audio_enabled", &mono_audio_enabled);
         config_get_uint(config_file, "hcrtos_brightness_percentage", &brightness_percentage);
         config_get_string(config_file, "hcrtos_rom_path", &temp_rom_path);
@@ -236,6 +237,31 @@ void frontend_load_settings(config_file_t *config_file) {
         config_get_bool(config_file, "hcrtos_gfx_custom_y_enabled", &gfx_custom_y_enabled);
         config_get_int(config_file, "hcrtos_gfx_custom_x", &gfx_custom_x);
         config_get_int(config_file, "hcrtos_gfx_custom_y", &gfx_custom_y);
+        config_get_bool(config_file, "hcrtos_show_fps_counter", &show_fps_counter);
+        
+        const struct config_entry_list *e;
+        e = config_get_entry(config_file, "hcrtos_scaling_mode");
+	    if (e) {
+		    if (strcasecmp(e->value, "stretch") == 0)
+			    global_scaling_mode = SCALE_STRETCH;
+		    else if (strcasecmp(e->value, "aspect float") == 0)
+			    global_scaling_mode = SCALE_ASPECT_FLOAT;
+		    else if (strcasecmp(e->value, "aspect int") == 0)
+			    global_scaling_mode = SCALE_ASPECT_INT;
+		    else if (strcasecmp(e->value, "core float") == 0)
+			    global_scaling_mode = CORE_PROVIDED_FLOAT;
+		    else if (strcasecmp(e->value, "core int") == 0)
+			    global_scaling_mode = CORE_PROVIDED_INT;
+            else if (strcasecmp(e->value, "custom") == 0)
+			    global_scaling_mode = CUSTOM;
+	    }
+
+        if (temp_rom_path) {
+            strncpy(rom_path, temp_rom_path, MAXPATH - 1);
+	        rom_path[MAXPATH - 1] = '\0';
+    	    strncpy(core_path, temp_core_path, MAXPATH - 1);
+	        core_path[MAXPATH - 1] = '\0';
+        }
     }
 }
 
@@ -283,15 +309,15 @@ void rom_config_load(void) {
 
 int create_dir(const char *path) {
     if (access(path, F_OK) != 0) {
-        printf("filepath: creating %s\n", path);
+        frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"filepath: creating %s\n", path);
         if (mkdir(path, 0755) != 0) {
-            printf("mkdir failed\n");
+            frontend_log_cb(RETRO_LOG_ERROR, "FRONTEND" ,"mkdir failed\n");
             return -1;
         }
         int fd = open(path, O_RDONLY);
         if (fd >= 0) {
             if (fsync(fd) != 0)
-                printf("fsync failed\n");
+                frontend_log_cb(RETRO_LOG_ERROR, "FRONTEND" ,"fsync failed\n");
             close(fd);
         }
     }
@@ -312,7 +338,7 @@ void build_srm_filepath(char *filepath, size_t size, const char *basename, const
 	}*/
 
 	snprintf(filepath, size, "%s/%s.%s", directory, basename, extension);
-    printf("%s_%s file: %s\n", type, extension, filepath);
+    frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"%s_%s file: %s\n", type, extension, filepath);
 }
 
 void save_srm(int slot){

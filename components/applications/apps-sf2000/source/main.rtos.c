@@ -1,34 +1,30 @@
 
 #include <generated/br2_autoconf.h>
 
+#include <fcntl.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdarg.h>
 #include <string.h>
 #include <_syslist.h>
-#include <sys/unistd.h>
-#include <fcntl.h>
-#include <kernel/elog.h>
 #include <sys/poll.h>
-#include <kernel/module.h>
+#include <sys/ioctl.h>
+#include <sys/unistd.h>
+#include <kernel/delay.h>
+#include <kernel/elog.h>
 #include <kernel/io.h>
+#include <kernel/module.h>
 #include <kernel/lib/console.h>
-#include <kernel/drivers/lcd_printf.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-#include <kernel/delay.h>
-
-#include <sys/ioctl.h>
-#include <hcuapi/pwm.h>
 
 #include <hcuapi/gpio.h>
 #include <hcuapi/pinpad.h>
+#include <hcuapi/pwm.h>
 
-#include "libs/libretro-common/include/libretro.h"
+#include <libretro.h>
 #include "drivers/sf2000_gfx.h"
 #include "menu/menu.h"
-
-char *temp_rom_path, *temp_core_path, *temp_audio_device, *temp_joypad_device;
 
 extern void frontend_config_load(void);
 
@@ -105,12 +101,12 @@ static void main_sf2000(void *pvParameters) {
 
 	frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"Init Frontend\n");
     frontend_config_load();
-    init_fb();
+    frontend_video_init();
 
     while (1) {
-	    bool ret = run_emulator(temp_rom_path, temp_core_path, 0);
+	    bool ret = run_emulator(rom_path, core_path, 0);
         if (!ret) {
-            dbg_show_noblock(0xffff, 0x0000, " Loading ROM Failed\n\n Check logs for more info\n\n");
+            show_loading_screen(false, true, 0xffff, 0x0000, " Loading ROM Failed\n\n Check logs for more info\n\n");
             safe_shutdown_flag = true;
         }
         if (safe_shutdown_flag) {
@@ -120,6 +116,7 @@ static void main_sf2000(void *pvParameters) {
     }
 
     show_loading_screen(true, false, loading_txt_color, loading_bg_color, " Safe Shutdown\n\n Turn off the console now.\n\n");
+    frontend_video_deinit();
     vTaskDelete(NULL);
 }
 

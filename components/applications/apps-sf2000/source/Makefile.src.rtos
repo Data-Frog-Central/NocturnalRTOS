@@ -1,7 +1,8 @@
 PROJECTOR_DIR ?= $(srctree)/src
 INC = -I$(STAGING_DIR)/usr/include/lvgl/ \
       -I$(STAGING_DIR)/usr/include/lvgl/lvgl \
-      -I$(PROJECTOR_DIR)/../libs/libretro-common/include 
+      -I$(PROJECTOR_DIR)/libs/libretro-common/include \
+      -I$(PROJECTOR_DIR)/libs/cores/include 
 
 cflags-y += -Wno-strict-prototypes -Wno-sign-compare -Wno-discarded-qualifiers -Wno-error=format=
 cflags-y += $(INC)

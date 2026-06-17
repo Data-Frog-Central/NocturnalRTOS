@@ -3,7 +3,8 @@
 #
 CC ?= gcc
 LVGL_DIR_NAME ?= lvgl
-LVGL_DIR ?= ${shell pwd}
+ORIGINAL_MAKEFILE_DIR := $(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
+LVGL_DIR ?= $(ORIGINAL_MAKEFILE_DIR)
 
 SYS_DIR = -I$(LVGL_DIR) \
 		-I$(STAGING_DIR)/usr/include \
@@ -11,7 +12,8 @@ SYS_DIR = -I$(LVGL_DIR) \
 
 LVGL_HEADERS = -I$(STAGING_DIR)/usr/include/lvgl/ \
 		-I$(STAGING_DIR)/usr/include/lvgl/lvgl \
-		-I$(LVGL_DIR)/../libs/libretro-common/include 
+		-I$(LVGL_DIR)/libs/libretro-common/include \
+		-I$(LVGL_DIR)/libs/cores/include 
 
 MY_DEF =
 

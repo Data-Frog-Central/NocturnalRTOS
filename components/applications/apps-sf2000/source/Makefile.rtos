@@ -7,6 +7,11 @@ include $(BR2_MKLINK)
 qstrip=$(strip $(subst ",,$(1)))
 #"))
 
+MAIN_INC = -Ilibs/libretro-common/include \
+           -Ilibs/cores/include
+
+CFLAGS_main.o += $(MAIN_INC)
+
 target-y := $(call qstrip,$(CONFIG_APPS_NAME))
 
 ifeq ($(BR2_PACKAGE_PREBUILTS_RTL8188EU),y)

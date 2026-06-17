@@ -13,7 +13,6 @@ APPS_SF2000_BUILD_CMDS = rsync -au --chmod=u=rwX,go=rX  --exclude .svn --exclude
 		     cp $(@D)/main.rtos.c $(@D)/main.c;\
 			 mkdir -p $(@D)/src;\
 			 ln -sf $(@D)/Makefile.src.rtos $(@D)/src/Makefile;\
-			 ln -sf $(@D)/cores $(@D)/src/;\
 			 ln -sf $(@D)/drivers $(@D)/src/;\
 			 ln -sf $(@D)/libs $(@D)/src/;\
 			 ln -sf $(@D)/menu $(@D)/src/;\

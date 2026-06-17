@@ -8,14 +8,14 @@
 #include <sys/types.h>
 #include <sys/unistd.h>
 
-#include <kernel/drivers/lcd_printf.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
 #include <libretro.h>
+#include <core_api.h>
+
 #include "sf2000_core_loading.h"
 #include "../menu/menu.h"
-#include "../cores/core_api.h"
 
 void *core_buffer = (void*)CORE_LOAD_ADDR;
 struct retro_header_t core_header;
@@ -41,7 +41,6 @@ bool load_core(const char *core) {
 	struct frontend_functions_t frontend_funcs = {
 		.printf = printf,
 		.frontend_log_cb = frontend_log_cb,
-		.lcd_bsod = lcd_bsod,
 		._exit = _exit,
 		.abort = abort,
 		.malloc = malloc,
@@ -55,7 +54,6 @@ bool load_core(const char *core) {
 		.getpid = getpid,
 		.gettimeofday = gettimeofday,
 		.xTaskGetTickCount = xTaskGetTickCount,
-		.close_emulator = close_emulator,
 		.open = open,
 		.close = close,
 		.write = write,
@@ -65,9 +63,7 @@ bool load_core(const char *core) {
 		.unlink = unlink,
 		.opendir = opendir,
 		.closedir = closedir,
-		.readdir = readdir, 
-		.temp_rom_path = temp_rom_path,
-		.temp_core_path = temp_core_path
+		.readdir = readdir 
 	};
 
 	core_entry_t core_entry = core_buffer;

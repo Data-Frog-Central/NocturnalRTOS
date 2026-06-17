@@ -11,17 +11,17 @@
 #include <freertos/task.h>
 
 #include <libretro.h>
+#include <core_api.h>
+#include <dartos.h>
 
 #include "../drivers/sf2000_audio.h"
 #include "../drivers/sf2000_gfx.h"
 #include "../drivers/sf2000_joypad.h"
 #include "../drivers/sf2000_core_loading.h"
-#include "../cores/core_api.h"
 #include "file_functions.h"
 #include "menu.h"
 
 static retro_audio_buffer_status_callback_t audio_buff_status_cb = NULL;
-
 void (*core_frameskip)(bool flag);
 
 struct retro_system_info sysinfo;
@@ -38,6 +38,7 @@ bool close_emulator_flag = false;
 bool safe_shutdown_flag = false;
 
 char rom_path[MAXPATH];
+char core_path[MAXPATH];
 char *dir = NULL;
 char *rom_filename = NULL;
 char *extension = NULL;
@@ -245,9 +246,44 @@ bool frontend_environment_cb(unsigned cmd, void *data) {
 		case RETRO_ENVIRONMENT_SHUTDOWN:
         {
 			frontend_log_cb(RETRO_LOG_INFO, "ENVIRON" ,"RETRO_ENVIRONMENT_SHUTDOWN\n");
-			close_emulator(NULL, 0);
+			close_emulator();
             return true;
         }
+
+// RETRO_ENVIRONMENT_PRIVATE
+		case RETRO_ENVIRONMENT_GET_ROMS_DIRECTORY:
+        {
+			const char *dir = ROMS_DIRECTORY;
+			*(const char**)data = dir;
+			frontend_log_cb(RETRO_LOG_INFO, "ENVIRON" ,"ROMS_DIRECTORY: \"%s\"\n", dir);
+			return true;
+        }
+
+        case RETRO_ENVIRONMENT_GET_CONFIG_DIRECTORY:
+        {
+			const char *dir = CONFIG_DIRECTORY;
+			*(const char**)data = dir;
+			frontend_log_cb(RETRO_LOG_INFO, "ENVIRON" ,"CONFIG_DIRECTORY: \"%s\"\n", dir);
+			return true;
+        }
+
+        case RETRO_ENVIRONMENT_RUN_EMULATOR:
+        {	
+			const struct retro_private_emulator_paths *paths = (const struct retro_private_emulator_paths*)data;
+            snprintf(core_path, sizeof(core_path), "%s", paths->core_path);
+            snprintf(rom_path, sizeof(rom_path), "%s", paths->rom_path);
+			close_emulator();
+            return true;
+        }
+
+		case RETRO_ENVIRONMENT_GET_HCGE_ACCEL_FUNCTIONS:
+		{
+			struct retro_private_accel_functions *accel_functions = (struct retro_private_accel_functions*)data;
+			accel_functions->hcge_fb_fill_rect = hcge_fb_fill_rect;
+			accel_functions->hcge_accel_blit = hcge_accel_blit;
+			accel_functions->hcge_accel_stretch_blit = hcge_accel_stretch_blit;
+			return true;
+		}
 
         default:
             // Unknown/unsupported command
@@ -366,9 +402,6 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
     frontend_log_cb(RETRO_LOG_DEBUG, "FRONTEND" ,"loading core\n", load_state);
 	ret = load_core(core_path);
 	if (!ret) return false;
-
-	strncpy(rom_path, game_path, MAXPATH - 1);
-	rom_path[MAXPATH - 1] = '\0';
 	
 	// Pass frontend functions to core
 	core_api.retro_set_video_refresh(frontend_video_cb);
@@ -406,7 +439,7 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
 	if (frame_ticks < 1) frame_ticks = 1;
     TickType_t last_wake = xTaskGetTickCount();
 	frontend_log_cb(RETRO_LOG_DEBUG, "FRONTEND", "frame_time_us=%f frame_ticks=%u emu_frame_rate=%f\n", frame_time_us, frame_ticks, emu_frame_rate);
-
+	
 	// TODO: Cache controller input and check for hotkeys
 	// TODO: Pause menu and ability to exit
 	draw_border(core_path); // Draw the border right before the main loop
@@ -444,9 +477,6 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
 	return true;
 }
 
-void close_emulator(const char *filename, int load_state) {
-	// Must match the format FrogUI uses for now
-	(void)filename;
-	(void)load_state;
+void close_emulator(void) {
 	close_emulator_flag = true;
 }
