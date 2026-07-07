@@ -39,6 +39,7 @@ bool safe_shutdown_flag = false;
 
 char rom_path[MAXPATH];
 char core_path[MAXPATH];
+char assets_dir[MAXPATH];
 char *dir = NULL;
 char *rom_filename = NULL;
 char *extension = NULL;
@@ -171,6 +172,14 @@ bool frontend_environment_cb(unsigned cmd, void *data) {
 			return true;
 		}
 
+		case RETRO_ENVIRONMENT_GET_CORE_ASSETS_DIRECTORY:
+		{
+			if (!assets_dir) return false;
+			*(const char**)data = assets_dir;
+			frontend_log_cb(RETRO_LOG_INFO, "ENVIRON" ,"ASSETS_DIRECTORY: \"%s\"\n", assets_dir);
+			return true;
+		}
+
 		case RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY:
 		{
 			const char *dir = SAVE_DIRECTORY;
@@ -189,7 +198,7 @@ bool frontend_environment_cb(unsigned cmd, void *data) {
 			struct retro_variable *var = (struct retro_variable*)data;
 			bool ret = config_get_var(var);
 			frontend_log_cb(RETRO_LOG_INFO, "ENVIRON" ,"GET_VARIABLE: %s=%s\n", var->key, ret ? var->value : "");
-			return false;
+			return true;
 		}
 
 		case RETRO_ENVIRONMENT_SET_MEMORY_MAPS:
@@ -249,6 +258,22 @@ bool frontend_environment_cb(unsigned cmd, void *data) {
 			close_emulator();
             return true;
         }
+
+		case RETRO_ENVIRONMENT_SET_CONTENT_INFO_OVERRIDE:
+		{
+    		const struct retro_system_content_info_override *overrides = (const struct retro_system_content_info_override *)data;
+    		content_info_override_count = 0;
+
+    		for (size_t i = 0; overrides[i].extensions; i++) {
+        		if (content_info_override_count >= MAX_CONTENT_INFO_OVERRIDES) {
+					frontend_log_cb(RETRO_LOG_WARN, "ENVIRON" ,"SET_CONTENT_INFO_OVERRIDE: too many overrides, truncating at %zu\n", (size_t)MAX_CONTENT_INFO_OVERRIDES);
+            		break;
+        		}
+        		content_info_overrides[content_info_override_count++] = &overrides[i];
+    		}
+
+    		return true;
+		}
 
 // RETRO_ENVIRONMENT_PRIVATE
 		case RETRO_ENVIRONMENT_GET_ROMS_DIRECTORY:
@@ -312,16 +337,15 @@ bool load_game(const char *file_path) {
 
     if (core_supports_rom_in_buffer || (is_zip && !sysinfo.need_fullpath && !sysinfo.block_extract)) {
 		if (is_zip) {
-			// TODO: Add zip support
-			// Set extension based on the extension of the filename of the file inside the zip
-			// Set filename_in_archive based on the filename of the file inside the zip
-			// Set rom_size based on the size of the file inside the zip
-			frontend_log_cb(RETRO_LOG_ERROR, "FRONTEND" ,"Currently no zip support!\n");
-			return false;
-			//if (!extract_zip_file(file_path, filename_in_archive, rom_size, &rom_buffer)) return;
-			//extract_extension(filename_in_archive, &extension);
-			//core_supports_rom_in_buffer = extension_supports_no_fullpath(extension);
-			//frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"Game loaded into temp buffer. size=%ld\n", rom_size);
+			if (!extract_zip_file(file_path, &rom_buffer, &rom_size, filename_in_archive, sizeof(filename_in_archive))) return false;
+			extract_extension(filename_in_archive, &extension);
+			core_supports_rom_in_buffer = false;
+			if (!sysinfo.block_extract && (!sysinfo.need_fullpath || extension_supports_no_fullpath(extension))) core_supports_rom_in_buffer = true;
+			if (!core_supports_rom_in_buffer) {
+				frontend_log_cb(RETRO_LOG_ERROR, "FRONTEND" ,"Core has no zip support!\n");
+				return false;
+			}
+			frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"Game loaded into temp buffer. size=%ld\n", rom_size);
 		} else {
 			FILE *hfile = fopen(file_path, "rb");
 			if (!hfile) {
@@ -374,28 +398,6 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
 	extract_path_components(game_path, &dir, &rom_filename, &extension);
 	bool ret = false;
 
-	frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"%s, %s, %s%s%s, State:%d\n",
-    	core_path ? core_path : "(null)",
-    	dir ? dir : "(null)",
-    	rom_filename ? rom_filename : "(null)",
-		extension ? "." : "",
-    	extension ? extension : "",
-    	load_state);
-	
-	show_loading_screen(
-		false,
-		true,
-    	loading_txt_color,
-    	loading_bg_color,
-    	" %s\n\n %s\n\n %s%s%s\n\n State:%d\n\n",
-    	core_path ? core_path : "(null)",
-    	dir ? dir : "(null)",
-    	rom_filename ? rom_filename : "(null)",
-		extension ? "." : "",
-    	extension ? extension : "",
-    	load_state
-	);
-
 	audio_buff_status_cb = NULL;
 	core_frameskip = NULL;
 
@@ -414,10 +416,40 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
 	// Begin retro init
 	frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"Retro Init\n");
 	core_api.retro_get_system_info(&sysinfo);
+	snprintf(assets_dir, sizeof(assets_dir), "%s/%s", ASSETS_DIRECTORY, sysinfo.library_name);
 	apply_backlight_brightness(brightness_percentage, 10000, 1);
 	core_config_load();
 	rom_config_load();
 	core_api.retro_init();
+
+	frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"%s, (%s%s), %s, %s, %s%s%s, State:%d\n",
+		sysinfo.library_name ? sysinfo.library_name : "(null)",
+    	core_path ? core_path : "null",
+		core_path ? ".hcrtos" : "",
+		sysinfo.library_version ? sysinfo.library_version : "(null)",
+    	dir ? dir : "(null)",
+    	rom_filename ? rom_filename : "(null)",
+		extension ? "." : "",
+    	extension ? extension : "",
+    	load_state
+	);
+	
+	show_loading_screen(
+		false,
+		true,
+    	loading_txt_color,
+    	loading_bg_color,
+    	" %s\n\n (%s%s)\n\n %s\n\n %s\n\n %s%s%s\n\n State:%d\n\n",
+		sysinfo.library_name ? sysinfo.library_name : "(null)",
+		core_path ? core_path : "null",
+		core_path ? ".hcrtos" : "",
+		sysinfo.library_version ? sysinfo.library_version : "(null)",
+    	dir ? dir : "(null)",
+    	rom_filename ? rom_filename : "(null)",
+		extension ? "." : "",
+    	extension ? extension : "",
+    	load_state
+	);
 
 	ret = load_game(game_path);
 	if (!ret) return false;

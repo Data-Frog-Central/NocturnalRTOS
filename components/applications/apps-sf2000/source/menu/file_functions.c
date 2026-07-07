@@ -8,13 +8,13 @@
 #include <sys/types.h>
 #include <sys/unistd.h>
 #include <unistd.h>
-//#include <kernel/lib/unzip.h>
 
 #include <libretro.h>
 #include <file/file_path.h>
 #include <file/config_file.h>
 
 #include <core_api.h>
+#include <zip.h>
 
 #include "../drivers/sf2000_gfx.h"
 #include "../drivers/sf2000_core_loading.h"
@@ -25,8 +25,8 @@ static config_file_t *frontend_config = NULL;
 static config_file_t *core_config = NULL;
 static config_file_t *rom_config = NULL;
 
-static const struct retro_system_content_info_override* content_info_overrides[MAX_CONTENT_INFO_OVERRIDES];
-static size_t content_info_override_count = 0;
+const struct retro_system_content_info_override* content_info_overrides[MAX_CONTENT_INFO_OVERRIDES];
+size_t content_info_override_count = 0;
 
 char *temp_rom_path, *temp_core_path, *temp_audio_device, *temp_joypad_device;
 
@@ -130,71 +130,42 @@ bool extension_supports_no_fullpath(const char *ext) {
     return false;
 }
 
-/*bool extract_zip_file(const char *file_path, char *filename, size_t size, void **rom_buffer) {
-    unz_file_info info;
+bool extract_zip_file(const char *file_path, void **rom_buffer, size_t *rom_size, char *out_name, size_t out_name_size) {
+    struct zip_t *zip = zip_open(file_path, 0, 'r');
+    if (!zip) return false;
 
-    unzFile zip = unzOpen(file_path);
-    if (!zip) {
-        printf("Failed to open zip: %s\n", file_path);
-        return false;
+    int n = zip_entries_total(zip);
+
+    for (int i = 0; i < n; i++) {
+
+        if (zip_entry_openbyindex(zip, i) < 0)
+            continue;
+
+        if (zip_entry_isdir(zip)) {
+            zip_entry_close(zip);
+            continue;
+        }
+
+        void *buf = NULL;
+        size_t sz = 0;
+
+        ssize_t ret = zip_entry_read(zip, &buf, &sz);
+        const char *name = zip_entry_name(zip);
+        if (out_name && out_name_size > 0) snprintf(out_name, out_name_size, "%s", name);
+
+        zip_entry_close(zip);
+
+        if (ret > 0 && buf && sz > 0) {
+            *rom_buffer = buf;
+            *rom_size = sz;
+            zip_close(zip);
+            return true;
+        }
     }
 
-    if (unzGoToFirstFile(zip) != UNZ_OK) {
-        printf("No files in zip\n");
-        unzClose(zip);
-        return false;
-    }
-
-    if (unzGetCurrentFileInfo(zip, &info, filename, MAXPATH, NULL, 0, NULL, 0) != UNZ_OK) {
-        printf("Failed to get file info\n");
-        unzClose(zip);
-        return false;
-    }
-
-    size_t len = strlen(filename);
-    if (len > 0 && filename[len - 1] == '/') {
-        printf("First entry is a directory, nothing to extract\n");
-        unzClose(zip);
-        return false;
-    }
-
-    printf("Extracting: %s\n", filename);
-
-    if (unzOpenCurrentFile(zip) != UNZ_OK) {
-        printf("Failed to open file in zip\n");
-        unzClose(zip);
-        return false;
-    }
-
-    size = info.uncompressed_size;
-    rom_buffer = malloc(info.uncompressed_size);
-    if (!rom_buffer) {
-        printf("Memory allocation failed\n");
-        unzCloseCurrentFile(zip);
-        unzClose(zip);
-        return false;
-    }
-
-    int total = 0;
-    int read_bytes;
-
-    while ((read_bytes = unzReadCurrentFile(zip, rom_buffer + total, info.uncompressed_size - total)) > 0) total += read_bytes;
-
-    if (read_bytes < 0) {
-        printf("Read error\n");
-        free(rom_buffer);
-        rom_buffer = NULL;
-        unzCloseCurrentFile(zip);
-        unzClose(zip);
-        return false;
-    }
-
-    printf("Read %d bytes into buffer\n", total);
-
-    unzCloseCurrentFile(zip);
-    unzClose(zip);
-    return true;
-}*/
+    zip_close(zip);
+    return false;
+}
 
 void config_free() {
 	config_file_free(frontend_config);
@@ -225,44 +196,51 @@ bool config_get_var(struct retro_variable *var) {
 	return ret;
 }
 
-void frontend_load_settings(config_file_t *config_file) {
-    if (config_file != NULL) {
-	    config_get_bool(config_file, "hcrtos_mono_audio_enabled", &mono_audio_enabled);
-        config_get_uint(config_file, "hcrtos_brightness_percentage", &brightness_percentage);
-        config_get_string(config_file, "hcrtos_rom_path", &temp_rom_path);
-        config_get_string(config_file, "hcrtos_core_path", &temp_core_path);
-        config_get_string(config_file, "hcrtos_audio_device", &temp_audio_device);
-        config_get_string(config_file, "hcrtos_joypad_device", &temp_joypad_device);
-        config_get_bool(config_file, "hcrtos_gfx_custom_x_enabled", &gfx_custom_x_enabled);
-        config_get_bool(config_file, "hcrtos_gfx_custom_y_enabled", &gfx_custom_y_enabled);
-        config_get_int(config_file, "hcrtos_gfx_custom_x", &gfx_custom_x);
-        config_get_int(config_file, "hcrtos_gfx_custom_y", &gfx_custom_y);
-        config_get_bool(config_file, "hcrtos_show_fps_counter", &show_fps_counter);
-        
-        const struct config_entry_list *e;
-        e = config_get_entry(config_file, "hcrtos_scaling_mode");
-	    if (e) {
-		    if (strcasecmp(e->value, "stretch") == 0)
-			    global_scaling_mode = SCALE_STRETCH;
-		    else if (strcasecmp(e->value, "aspect float") == 0)
-			    global_scaling_mode = SCALE_ASPECT_FLOAT;
-		    else if (strcasecmp(e->value, "aspect int") == 0)
-			    global_scaling_mode = SCALE_ASPECT_INT;
-		    else if (strcasecmp(e->value, "core float") == 0)
-			    global_scaling_mode = CORE_PROVIDED_FLOAT;
-		    else if (strcasecmp(e->value, "core int") == 0)
-			    global_scaling_mode = CORE_PROVIDED_INT;
-            else if (strcasecmp(e->value, "custom") == 0)
-			    global_scaling_mode = CUSTOM;
-	    }
+void frontend_load_settings(config_file_t *config_file, bool first_run) {
+    if (config_file == NULL) return;
 
+    if (first_run) {
+        // There is no reason to check these again
+        config_get_string(config_file, "hcrtos_rom_path", &temp_rom_path);
         if (temp_rom_path) {
             strncpy(rom_path, temp_rom_path, MAXPATH - 1);
 	        rom_path[MAXPATH - 1] = '\0';
-    	    strncpy(core_path, temp_core_path, MAXPATH - 1);
+        }
+
+        config_get_string(config_file, "hcrtos_core_path", &temp_core_path);
+        if (temp_core_path) {
+            strncpy(core_path, temp_core_path, MAXPATH - 1);
 	        core_path[MAXPATH - 1] = '\0';
         }
+
+        config_get_string(config_file, "hcrtos_audio_device", &temp_audio_device);
+        config_get_string(config_file, "hcrtos_joypad_device", &temp_joypad_device);
     }
+
+	config_get_bool(config_file, "hcrtos_mono_audio_enabled", &mono_audio_enabled);
+    config_get_uint(config_file, "hcrtos_brightness_percentage", &brightness_percentage);
+    config_get_bool(config_file, "hcrtos_gfx_custom_x_enabled", &gfx_custom_x_enabled);
+    config_get_bool(config_file, "hcrtos_gfx_custom_y_enabled", &gfx_custom_y_enabled);
+    config_get_int(config_file, "hcrtos_gfx_custom_x", &gfx_custom_x);
+    config_get_int(config_file, "hcrtos_gfx_custom_y", &gfx_custom_y);
+    config_get_bool(config_file, "hcrtos_show_fps_counter", &show_fps_counter);
+        
+    const struct config_entry_list *e;
+    e = config_get_entry(config_file, "hcrtos_scaling_mode");
+	if (e) {
+	    if (strcasecmp(e->value, "stretch") == 0)
+			global_scaling_mode = SCALE_STRETCH;
+		else if (strcasecmp(e->value, "aspect float") == 0)
+			global_scaling_mode = SCALE_ASPECT_FLOAT;
+		else if (strcasecmp(e->value, "aspect int") == 0)
+			global_scaling_mode = SCALE_ASPECT_INT;
+		else if (strcasecmp(e->value, "core float") == 0)
+			global_scaling_mode = CORE_PROVIDED_FLOAT;
+		else if (strcasecmp(e->value, "core int") == 0)
+			global_scaling_mode = CORE_PROVIDED_INT;
+        else if (strcasecmp(e->value, "custom") == 0)
+			global_scaling_mode = CUSTOM;
+	}
 }
 
 void frontend_config_load(void) {
@@ -274,7 +252,7 @@ void frontend_config_load(void) {
     if (access(config_frontend_filepath, F_OK) == 0) {
         frontend_config = config_file_new_alloc();
         ret = config_append_file(frontend_config, config_frontend_filepath);
-        frontend_load_settings(frontend_config);
+        frontend_load_settings(frontend_config, true);
     }
     frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"config_load: %s %s\n", config_frontend_filepath, ret ? "loaded" : "not found");
 }
@@ -288,7 +266,7 @@ void core_config_load(void) {
     if (access(config_core_filepath, F_OK) == 0) {
         core_config = config_file_new_alloc();
         ret = config_append_file(core_config, config_core_filepath);
-        frontend_load_settings(core_config);
+        frontend_load_settings(core_config, false);
     }
     frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"config_load: %s %s\n", config_core_filepath, ret ? "loaded" : "not found");
 }
@@ -302,7 +280,7 @@ void rom_config_load(void) {
     if (access(config_game_filepath, F_OK) == 0) {
         rom_config = config_file_new_alloc();
         ret = config_append_file(rom_config, config_game_filepath);
-        frontend_load_settings(rom_config);
+        frontend_load_settings(rom_config, false);
     }
     frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"config_load: %s %s\n", config_game_filepath, ret ? "loaded" : "not found");
 }

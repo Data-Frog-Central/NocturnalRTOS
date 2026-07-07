@@ -13,6 +13,7 @@ SYS_DIR = -I$(LVGL_DIR) \
 LVGL_HEADERS = -I$(STAGING_DIR)/usr/include/lvgl/ \
 		-I$(STAGING_DIR)/usr/include/lvgl/lvgl \
 		-I$(LVGL_DIR)/libs/libretro-common/include \
+		-I$(LVGL_DIR)/libs/zip/src \
 		-I$(LVGL_DIR)/libs/cores/include 
 
 MY_DEF =
@@ -28,6 +29,7 @@ DEMO_LIBS = -lffplayer -lpthread -lge -Wl,--start-group -lstdc++ $(CAST_LIBS) -W
 include $(LVGL_DIR)/drivers/sf2000_drivers.mk
 include $(LVGL_DIR)/menu/sf2000_menu.mk
 include $(LVGL_DIR)/libs/libretro-common/Makefile.hcrtos
+SF2000_SRC += $(LVGL_DIR)/libs/zip/src/zip.c
 DEMO_NAME = sf2000_demo
 
 OBJEXT ?= .o

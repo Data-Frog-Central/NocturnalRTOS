@@ -2,6 +2,7 @@ PROJECTOR_DIR ?= $(srctree)/src
 INC = -I$(STAGING_DIR)/usr/include/lvgl/ \
       -I$(STAGING_DIR)/usr/include/lvgl/lvgl \
       -I$(PROJECTOR_DIR)/libs/libretro-common/include \
+      -I$(PROJECTOR_DIR)/libs/zip/src \
       -I$(PROJECTOR_DIR)/libs/cores/include 
 
 cflags-y += -Wno-strict-prototypes -Wno-sign-compare -Wno-discarded-qualifiers -Wno-error=format=
@@ -10,10 +11,12 @@ cflags-y += $(INC)
 include $(PROJECTOR_DIR)/drivers/sf2000_drivers.rtos.mk
 include $(PROJECTOR_DIR)/menu/sf2000_menu.rtos.mk
 include $(PROJECTOR_DIR)/libs/libretro-common/Makefile.hcrtos
+CSRCS += $(LVGL_DIR)/libs/zip/src/zip.c
 
 COBJS := $(CSRCS:.c=.o)
 INC += $(INCLUDE)
 cflags-y += $(SF2000_CFLAGS)
+cflags-y += -DZIP_HAVE_SYMLINK=0 -DMINIZ_NO_TIME=1 -DZIP_ENABLE_DEFLATE=0
 cflags-y += -Wno-error
 
 OBJS := $(OBJS) $(patsubst $(PROJECTOR_DIR)/%,%,$(COBJS))
