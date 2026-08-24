@@ -1,69 +1,63 @@
-<h1>Welcome :-)</h1> 
+# NocturnalRTOS
 
-This is the repository for the Custom Firmware for the SF2000 from DataFrog. 
+This is a repository for CFW made for the DataFrog SF2000 (and GB300 along with other similar devices) using HiChip Semiconductor's HC-FreeRTOS SDK Platform.  
 
-<h2>Project Status:</h2>
-Currently we are in a very early stage. We found the SDK for the chip, and are currently preparing it to build the first booting firmware. There is still A LOT of work to be done.<br> 
-<h3>When will it be done?</h3>
-Short answer: It will be done, when it's done.<br>
-Slightly Longer Answer: At this point it's nearly impossible to say how long this will take. Anywhere from a few months, to a few years I guess.
+The DataFrog SF2000 (along with other similar devices) is a HCSEMI B210 with a st7789v2 clone lcd. It uses gpio for buttons (and basically everything else on the device).  
 
-<h2>FAQ:</h2>
+NocturnalRTOS is a fork of [AmphibiOS](https://git.maschath.de/ignatz/hcrtos) ([Backup by bnister](https://github.com/bnister/sf2000_hcrtos)) (Specifically the RetroArch branch).  
+AmphibiOS is also known as *the HCRTOS* but its kind of a misnomer as it itself is a fork of *the HCRTOS* by HiChip modified to support the SF2000.  
 
-- Do we need funding?
-    - No. Check the Donation part of this readme for more details. 
-- Does the Firmware have a name? 
-    - No, not yet. But we are collecting possible names, and are currently doing a community poll to find the best one. Once the project is mature enough, we will pick the most voted name. (Link to the poll: https://cloud.maschath.de/apps/polls/s/sFak08ki)
+### NocturnalRTOS Status:
+RetroArch was kinda ditched and instead I am replacing it with Phobos my own Libretro frontend based on sf2000_multicore's core_api. A lot of hardware has been implemented but not all of it (TV out still doesn't work for example).  
 
-<h2>Project Members:</h2>
+**When will it be done?**  
+Im working on this rather slowly in my free time and "done" is rather subjctive, as of right now *some* people might prefer to daily drive this but most wouldn't and as such I would consider this as an open alpha as it't not feature complete yet.
 
-<b>Ignatz:</b> Maintainer of this repository, main dev on the SF2000 Custom Firmware and Project Manager. Has ADHD, so might be unreliable at times, but always has the best intent.
-<br><b>Osaka:</b> A researcher of the original firmware, author of the bootloader fix and the sample custom code (BMP viewer).
-<br><b>xTxNinjaZx AKA Kev:</b> Researcher/tester of the current firmware on the SF2000 and Custom Firmware Dev support. Has OCD which can be a blessing and a curse, you decide. Also, a father and a husband so only working on this when he can :-)
+### FAQ:
+- Why not use the original name?
+    - There is already a lot of confusion surrounding the SF2000 project names (for example 4 sf2000_multicore forks all using the name sf2000_multicore) and I want to avoid any confusion. I will try to make it as explicitly clear as possible that "**this is a fork of HCRTOS by HiChip and AmphibiOS**" as this wouldn't exist without them.
 
-<h2>Links:</h2>
+### Attribution/Credit:
+These are people that contributed to AmphibiOS/HCRTOS/SF2000 Multicore and without their contributions NocturnalRTOS wouldn't be possible. Osaka, Kobil, and AxelGarciaK have all personally given me a ton of advice and help.
 
-Original SDK Dump and firmware files:<br>
-https://cloud.maschath.de/s/PKfPaHS4qsqewEk <br>
-General information about the device:<br>
-https://vonmillhausen.github.io/sf2000/ <br>
+- **Ignatz:** ([Ignatz Donations](https://www.paypal.com/paypalme/ignatzDraconis)) Maintainer (and main dev) of the [AmphibiOS](https://git.maschath.de/ignatz/hcrtos) repo.  
+- **xTxNinjaZx AKA Kev:** ([xTxNinjaZx Donations](https://www.paypal.com/paypalme/kkestner91)) Researcher/tester of the current firmware on the SF2000 and Custom Firmware Dev support. 
+- **Osaka:** A researcher of the original firmware, author of the bootloader fix and the sample custom code (BMP viewer) along with so much other stuff. 
+- **Kobil:** They have contributed a lot of code to sf2000_multicore and hcrtos, a lot of their work has been used as the basis of NocturnalRTOS.
+- **AxelGarciaK:** A lot of his and his AI assisted research has helped me learn more about the device I wouldn't have had enough time to learn on my own.
+- Every other [GB300 Multicore](https://github.com/tzubertowski/gb300_multicore/graphs/contributors?all=1) and [SF2000 Multicore](https://github.com/madcock/sf2000_multicore/graphs/contributors?all=1) Contributor: There has been so many contributors to the projects over the years and both GB300 and SF2000 Multicore are used as the basis for Phobos and NocturnalRTOS.
 
-<h2>Support:</h2>
+*(Donating to these people won't directly contribute to NocturnalRTOS but they are good people who have contributed a lot to the SF2000 community)*  
 
-If you want to help on the project, please contact Ignatz on the Retro Handheld Discord in the data_frog_sf2000/SF2000 Dev Channel, he is the current maintainer of the project. You can also check the Issues board for the current progress and open tickets. But please sync with Ignatz first before starting on something so we can avoid that something might be done out of order or double. Which would just waste effort.
+### Support:
+If you want to help with NocturnalRTOS you can reach out to me (Trademarked69) on the [Data Frog Central Discord server](https://trademarked69.github.io/sf2000/discord/) (or the Retro Handhelds Discord server). You can also just leave an issue on the [Issues page]() and/or submit a pull request.
 
-<h2>Donations:</h2>
+### Information:
+**Original SDK Dump and firmware files:**
+https://cloud.maschath.de/s/PKfPaHS4qsqewEk  
+**General information about the device:**  
+https://vonmillhausen.github.io/sf2000/  
 
-Please note that donations are not a guarantee for the project to continue, or to succeed. If you decide to donate anyway, we will be very grateful about that.<br>
-We also don't need any funding at the moment. We have the tools we need to work, we just need time. So Anything you might donate will be just out of kindness, and might heighten the spirit of the devs, but it will not increase production speed.
-<br>If you want to donate something for the project, you can do so with the following links.
-<br>Due to organizational limitations, it's only possible to donate to individual members of the project.
+### Other Projects:  
 
-<b>Ignatz:</b> <br>
-https://www.paypal.com/paypalme/ignatzDraconis
-<br><b>xTxNinjaZx AKA Kev:</b><br>
-https://www.paypal.com/paypalme/kkestner91
+**StockFW Patches:**  
 
-<h2>Possible Project Names:</h2>
-(Name voting can be found here: https://cloud.maschath.de/apps/polls/s/sFak08ki)
+- [SF2000 Multicore by Kobil](https://gitlab.com/kobily/sf2000_multicore)  
+    - The original SF2000 Multicore project that every other Multicore fork is based on.
+- [SF2000 Multicore Forked by Madcock](https://github.com/madcock/sf2000_multicore_cores/releases)
+    - Madcock's fork of SF2000 Multicore
+- [SF2000 Multicore Forked by Leonardo](https://github.com/leonardothehuman/sf2000_multicore/releases)
+    - Leonardo's fork of Madcock's SF2000 Multicore fork
+- [SF2000 Multicore Forked by Trademarked69](https://github.com/Trademarked69/sf2000_multicore)
+    - Trademarked69's fork of Leonardo's SF2000 Multicore fork
+    - Releases found [here](https://github.com/tzubertowski/gb300_multicore/releases) and [here](https://github.com/tzubertowski/FrogUI/releases) (SF2000 Files)
+- [GB300 Multicore](https://github.com/tzubertowski/gb300_multicore)
+    - fork of Madcock's SF2000 Multicore fork
+    - Releases found [here](https://github.com/tzubertowski/gb300_multicore/releases) and [here](https://github.com/tzubertowski/FrogUI/releases) (GB300 Files)  
 
-- AmphibiOS (By BL4Z3D247)
-- ZephOS (By BL4Z3D247)
-- FrogballsOs (By yessirballs2)
-- KerOS (By Zerter) 
-    - kero - is the sound frog makes in Japanese
-- MaschathOS (By Ignatz)
-    - Maschath is a made up combination from Maat, Seth and Seshat. For me they represent the following: Sachat is the goddess of writing and mathematics in old Egypt. Transferred to modern times, for me Seshat is goddess of informatics and information. Representing the code I write. Seth is the old Egypt god for chaos, and the dessert. I transferred him to be god of chaos, but also creativity and engagement. He represents my adhd side, and my creativity. Maat is the goddess of world order and rights. She represents the balance between chaos and order. The balance between trying to make everything perfect of Seshat, and the chaos and creativity of Seth.
-- MaschathIO (By akirawisnu)
-    -  I and O stands for Ignatz and Osaka
-- DataDragon or FrogDragon (By akirawisnu)
-- SlippyOS (By Kev)
-- FroggerOS (By Kev)
-- FrogfuciusOS (By Kev)
-    - from Super Mario RPG
-- AogaeruOS (By SidonCryerd)
-- MamuOS (By BL4Z3D247)
-- WartOS (By BL4Z3D247)
-- PondOS (By Cadence)
-- FrogOS (By Cadence)
-- YomamaOS (By yessirballs2)
+**Custom Firmware:**  
+
+- [Unifrog by AxelGarciaK](https://github.com/axgdev/UniFrog/releases)
+    - Another HCRTOS fork for SF2000
+- [frog2k-linux by AxelGarciaK](https://github.com/axgdev/frog2k-linux)
+    - Linux on the SF2000
