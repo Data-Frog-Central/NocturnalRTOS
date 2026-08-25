@@ -38,7 +38,7 @@
 #include <dartos.h>
 
 #include "sf2000_gfx.h"
-#include "../menu/menu.h"
+#include "../phobos/phobos.h"
 
 #define SCREEN_WIDTH  320
 #define SCREEN_HEIGHT 240

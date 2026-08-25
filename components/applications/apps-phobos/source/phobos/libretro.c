@@ -19,7 +19,7 @@
 #include "../drivers/sf2000_joypad.h"
 #include "../drivers/sf2000_core_loading.h"
 #include "file_functions.h"
-#include "menu.h"
+#include "phobos.h"
 
 static retro_audio_buffer_status_callback_t audio_buff_status_cb = NULL;
 void (*core_frameskip)(bool flag);

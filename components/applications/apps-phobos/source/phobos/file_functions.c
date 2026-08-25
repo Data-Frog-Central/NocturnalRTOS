@@ -19,7 +19,7 @@
 #include "../drivers/sf2000_gfx.h"
 #include "../drivers/sf2000_core_loading.h"
 #include "file_functions.h"
-#include "menu.h"
+#include "phobos.h"
 
 static config_file_t *frontend_config = NULL;
 static config_file_t *core_config = NULL;

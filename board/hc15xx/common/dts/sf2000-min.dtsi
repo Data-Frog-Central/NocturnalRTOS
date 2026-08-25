@@ -213,7 +213,7 @@ hcrtos {
 		status = "okay";
 	};
 
-	rgb {
+	RGB: rgb {
 		pinmux-active = <
 			// PINPAD_R08 PINMUX_R08_PRGB_R0
 			// PINPAD_T00 PINMUX_T00_PRGB_R1
@@ -318,7 +318,7 @@ hcrtos {
 		status = "okay";
 	};
 
-	lcd{
+	LCD: lcd{
 		lcd-map-name = "lcd-st7789v2";
 		status = "okay";
 	};
@@ -480,7 +480,7 @@ hcrtos {
 #define CONFIG_FB1_REG 0xb8808080
 #endif
 
-	fb0 {
+	FB0: fb0 {
 		bits_per_pixel = <16>;
 		xres = <320>;
 		yres = <240>;
@@ -566,68 +566,4 @@ hcrtos {
 	     status = "okay";
      	}; 
 };
-};
-
-&DE {
-	VPInitInfo {
-		rgb-cfg{
-			b-rgb-enable = <1>;
-			/*
-			* 0: MODE_PRGB
-			* 1: MODE_SRGB
-			*/
-			rgb-mode = <0>;
-			/*
-			* 0: MODE_PRGB_888_10bit 
-			* 1: MODE_PRGB_666
-			*/
-			prgb-mode = <0>;
-			lcd-width = <320>;
-			b-disable-ejtag = <1>;
-			b-dlpc-enale = <0>;
-			timing-para {
-				/* bool type, 0 or 1*/
-				b-enable = <1>;
-				/*
-				* VPO_RGB_CLOCK_27M = 1,
-				* VPO_RGB_CLOCK_33M = 2,
-				* VPO_RGB_CLOCK_49M = 3,
-				* VPO_RGB_CLOCK_66M = 4,
-				* VPO_RGB_CLOCK_74M = 5,
-				* VPO_RGB_CLOCK_85M = 6,
-				* VPO_RGB_CLOCK_108M = 7,//H1600
-				* VPO_RGB_CLOCK_6_6M = 8,
-				* VPO_RGB_CLOCK_9M = 9,
-				* VPO_RGB_CLOCK_39_6M = 10,
-				* VPO_RGB_CLOCK_74_25M = 11,//H1600
-				* VPO_RGB_CLOCK_148_5M = 12,//H1600
-				* VPO_RGB_CLOCK_54M = 13,//H1600
-				* VPO_RGB_CLOCK_132M = 14,//H1600
-				*/
-				output-clock = <9>; /* 9 MHz / 477 / 326 = 57.88 Hz */
-
-				h-total-len = <477>;
-				v-total-len = <326>;
-
-				h-active-len = <320>;
-				v-active-len = <240>;
-
-				h-front-len = <23>;
-				h-sync-len = <2>;
-				h-back-len = <5>;
-
-				v-front-len = <18>;
-				v-sync-len = <36>;
-				v-back-len = <10>;
-				/* bool type, 0 or 1*/
-				h-sync-level = <0>;
-				/* bool type, 0 or 1*/
-				v-sync-level = <0>;
-
-				/* bool type, 0 or 1*/
-				active-polarity = <0>;
-				frame-rate = <60000>;
-			};
-		};
-	};
 };

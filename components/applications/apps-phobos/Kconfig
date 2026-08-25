@@ -1,8 +1,8 @@
-menuconfig BR2_PACKAGE_APPS_SF2000
-	bool "sf2000"
+menuconfig BR2_PACKAGE_APPS_PHOBOS
+	bool "phobos"
 	select BR2_PACKAGE_PREBUILTS_LIBGE
 	#select BR2_PACKAGE_LIBLVGL
 
-if BR2_PACKAGE_APPS_SF2000
+if BR2_PACKAGE_APPS_PHOBOS
 source "source/Kconfig"
 endif

@@ -22,7 +22,7 @@
 #include <libretro.h>
 #include <retro_miscellaneous.h>
 #include "sf2000_joypad.h"
-#include "../menu/menu.h"
+#include "../phobos/phobos.h"
 
 #undef ARRAY_SIZE
 

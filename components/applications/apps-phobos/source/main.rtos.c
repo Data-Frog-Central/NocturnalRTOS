@@ -13,6 +13,7 @@
 #include <kernel/delay.h>
 #include <kernel/elog.h>
 #include <kernel/io.h>
+#include <kernel/ld.h>
 #include <kernel/module.h>
 #include <kernel/lib/console.h>
 #include <freertos/FreeRTOS.h>
@@ -24,7 +25,17 @@
 
 #include <libretro.h>
 #include "drivers/sf2000_gfx.h"
-#include "menu/menu.h"
+#include "phobos/phobos.h"
+
+#define SYSIO_BASE       ((volatile unsigned char *)&SYSIO0)
+#define NB_REG(offset)   (*(volatile uint32_t *)(SYSIO_BASE + (offset)))
+#define NB_LDCR          0x60
+#define NB_LDRCR         0x80
+
+#define VAL_LDCR    0x00000f88
+#define VAL_LDCR1   0x0bc04040
+#define VAL_LDRCR   0x000023c0
+#define VAL_LDRCR1  0xa00b4000
 
 extern void frontend_config_load(void);
 
@@ -70,6 +81,35 @@ int apply_backlight_brightness(int pwm_level, int pwm_frequency, int polarity) {
     }
 }
 
+static void check_nb_registers(bool first_run) {
+    uint32_t ldcr_before  = NB_REG(NB_LDCR);
+    uint32_t ldcr1_before = NB_REG(NB_LDCR + 4);
+    uint32_t ldrcr_before = NB_REG(NB_LDRCR);
+    uint32_t ldrcr1_before= NB_REG(NB_LDRCR + 4);
+
+    if (ldcr_before != VAL_LDCR || ldcr1_before != VAL_LDCR1 || 
+        ldrcr_before != VAL_LDRCR || ldrcr1_before != VAL_LDRCR1) {
+        
+        if (!first_run) printf("Overheating fix overridden, reapplying overheating fix...\n");
+        printf("Overheating Fix:\n");
+        printf("BEFORE -> LDCR: 0x%08x | LDCR1: 0x%08x | LDRCR: 0x%08x | LDRCR1: 0x%08x\n",
+               (unsigned int)ldcr_before, (unsigned int)ldcr1_before, (unsigned int)ldrcr_before, (unsigned int)ldrcr1_before);
+
+        NB_REG(NB_LDCR)     = VAL_LDCR;
+        NB_REG(NB_LDCR + 4) = VAL_LDCR1;
+        NB_REG(NB_LDRCR)    = VAL_LDRCR;
+        NB_REG(NB_LDRCR + 4)= VAL_LDRCR1;
+
+        uint32_t ldcr_after  = NB_REG(NB_LDCR);
+        uint32_t ldcr1_after = NB_REG(NB_LDCR + 4);
+        uint32_t ldrcr_after = NB_REG(NB_LDRCR);
+        uint32_t ldrcr1_after= NB_REG(NB_LDRCR + 4);
+
+        printf("AFTER  -> LDCR: 0x%08x | LDCR1: 0x%08x | LDRCR: 0x%08x | LDRCR1: 0x%08x\n",
+               (unsigned int)ldcr_after, (unsigned int)ldcr1_after, (unsigned int)ldrcr_after, (unsigned int)ldrcr1_after);
+    }
+}
+
 // TODO: what kind magic goes here?
 // without that the audio output is silent. can it be done in dts instead?
 // the i2so driver in "i2so_platform_init" function reads "pinmux-data" and
@@ -77,12 +117,7 @@ int apply_backlight_brightness(int pwm_level, int pwm_frequency, int polarity) {
 void setUpPins(void) {
     gpio_configure(PINPAD_L00, GPIO_DIR_OUTPUT); //Charging LED
     gpio_set_output(PINPAD_L00, false); // high = off, low = on;
-
-    // Overheating fix
-    *(volatile unsigned *)0xb8800060 = 0x00000f88; // NB_LDCR Local Device Clock Gating Control Register            
-    *(volatile unsigned *)0xb8800064 = 0x0bc04040; // Local Device Clock Gating Control Register1
-    *(volatile unsigned *)0xb8800080 = 0x000023c0; // NB_LDRCR NorthBridge Local Device Reset Control Register
-    *(volatile unsigned *)0xb8800084 = 0xa00b4000;
+    check_nb_registers(true);
 }
 
 static void main_sf2000(void *pvParameters) {
@@ -104,6 +139,7 @@ static void main_sf2000(void *pvParameters) {
     frontend_video_init();
 
     while (1) {
+        check_nb_registers(false);
 	    bool ret = run_emulator(rom_path, core_path, 0);
         if (!ret) {
             show_loading_screen(false, true, 0xffff, 0x0000, " Loading ROM Failed\n\n Check logs for more info\n\n");

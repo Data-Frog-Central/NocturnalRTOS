@@ -15,7 +15,7 @@
 #include <core_api.h>
 
 #include "sf2000_core_loading.h"
-#include "../menu/menu.h"
+#include "../phobos/phobos.h"
 
 void *core_buffer = (void*)CORE_LOAD_ADDR;
 struct retro_header_t core_header;

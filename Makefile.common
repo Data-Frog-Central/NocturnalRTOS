@@ -194,7 +194,7 @@ COMMON_CONFIG_ENV = \
 
 menuconfig: $(BUILD_DIR)/buildroot-config/mconf
 	@$(COMMON_CONFIG_ENV) $< $(CONFIG_KCONFIG)
-	make O=$(O) syncconfig
+	$(MAKE) -f Makefile.common O=$(O) syncconfig
 
 oldconfig syncconfig: $(BUILD_DIR)/buildroot-config/conf
 	@$(COMMON_CONFIG_ENV) $< --oldconfig $(CONFIG_KCONFIG)
@@ -208,19 +208,19 @@ syncconfig: $(BUILD_DIR)/buildroot-config/conf oldconfig
 	@rm -f $(CONFIG_DIR)/.*_defconfig
 	@touch $(CONFIG_DIR)/.$@
 	@$(COMMON_CONFIG_ENV) $< --defconfig=configs/$@ $(CONFIG_KCONFIG)
-	make O=$(O) syncconfig
+	$(MAKE) -f Makefile.common O=$(O) syncconfig
 
 defconfig-update:
 	$(Q)( \
 	for D in $(shell ls configs/*defconfig); do \
 	  $(call MESSAGE, "updating $${D}"); \
-	  make O=$(O) `basename $${D}` && cp -vf $(CONFIG_DIR)/.config $${D}; \
+	  $(MAKE) -f Makefile.common O=$(O) `basename $${D}` && cp -vf $(CONFIG_DIR)/.config $${D}; \
 	done; \
 	)
 
 %defconfig-update:
 	@$(call MESSAGE, "updating $(@:%-update=%)")
-	make O=$(O) $(@:%-update=%)
+	$(MAKE) -f Makefile.common O=$(O) $(@:%-update=%)
 	cp -vf $(CONFIG_DIR)/.config configs/$(@:%-update=%)
 
 LASTDEFCONFIG=$(shell ls $(CONFIG_DIR)/.*_defconfig 2>/dev/null | awk -F '.' '{print $$2}')
@@ -229,7 +229,7 @@ lastdefconfig: $(BUILD_DIR)/buildroot-config/conf
 		echo -e "#\n# No lastdefconfig\n#" && exit 1; \
 	fi
 	@echo -e "#\n# Using $(LASTDEFCONFIG)\n#"
-	make O=$(O) $(LASTDEFCONFIG)
+	$(MAKE) -f Makefile.common O=$(O) $(LASTDEFCONFIG)
 
 TARGETS_INFO:=$(patsubst %,%-info,$(PACKAGES))
 ALL_TARGETS_INFO:=$(patsubst %,%-info,$(ALLPACKAGES))

@@ -1,0 +1,6 @@
+/dts-v1/;
+
+#define ROTATED_SCREEN 0
+
+#include "sf2000-min.dtsi"
+#include "lcd_rgb_320_240.dtsi"

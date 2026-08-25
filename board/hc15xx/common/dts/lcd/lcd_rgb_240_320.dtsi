@@ -1,0 +1,76 @@
+&RGB {
+    rgb-clk-inv = <0>; // Need to look into this more
+};
+
+&FB0 {
+    xres = <240>;
+    yres = <320>;
+    xres_virtual = <240>;
+    yres_virtual = <320>;
+    scale = <240 320 240 320>;
+};
+
+&DE {
+	tvtype = <15>;
+	VPInitInfo {
+		rgb-cfg{
+			b-rgb-enable = <1>;
+			/*
+			* 0: MODE_PRGB
+			* 1: MODE_SRGB
+			*/
+			rgb-mode = <0>;
+			/*
+			* 0: MODE_PRGB_888_10bit 
+			* 1: MODE_PRGB_666
+			*/
+			prgb-mode = <0>;
+			lcd-width = <240>;
+			b-disable-ejtag = <1>;
+			b-dlpc-enale = <0>;
+			timing-para {
+				/* bool type, 0 or 1*/
+				b-enable = <1>;
+				/*
+				* VPO_RGB_CLOCK_27M = 1,
+				* VPO_RGB_CLOCK_33M = 2,
+				* VPO_RGB_CLOCK_49M = 3,
+				* VPO_RGB_CLOCK_66M = 4,
+				* VPO_RGB_CLOCK_74M = 5,
+				* VPO_RGB_CLOCK_85M = 6,
+				* VPO_RGB_CLOCK_108M = 7,//H1600
+				* VPO_RGB_CLOCK_6_6M = 8,
+				* VPO_RGB_CLOCK_9M = 9,
+				* VPO_RGB_CLOCK_39_6M = 10,
+				* VPO_RGB_CLOCK_74_25M = 11,//H1600
+				* VPO_RGB_CLOCK_148_5M = 12,//H1600
+				* VPO_RGB_CLOCK_54M = 13,//H1600
+				* VPO_RGB_CLOCK_132M = 14,//H1600
+				*/
+				output-clock = <9>; /* 9 MHz / 477 / 326 = 57.88 Hz */
+
+				h-total-len = <326>;
+				v-total-len = <477>;
+
+				h-active-len = <240>;
+				v-active-len = <320>;
+
+				h-front-len = <18>;
+				h-sync-len = <36>;
+				h-back-len = <10>;
+
+				v-front-len = <23>;
+				v-sync-len = <2>;
+				v-back-len = <5>;
+				/* bool type, 0 or 1*/
+				h-sync-level = <0>;
+				/* bool type, 0 or 1*/
+				v-sync-level = <0>;
+
+				/* bool type, 0 or 1*/
+				active-polarity = <0>;
+				frame-rate = <60000>;
+			};
+		};
+	};
+};
