@@ -1,0 +1,44 @@
+name: Compile NocturnalRTOS Nightly
+
+on:
+  push:
+    branches:
+      - Nocturnal
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install Repo Tool
+        run: |
+          sudo mkdir -p /usr/local/bin
+          sudo curl -s https://storage.googleapis.com/git-repo-downloads/repo > /usr/local/bin/repo
+          sudo chmod +x /usr/local/bin/repo
+
+      - name: Configure Git Identity
+        run: |
+          git config --global user.name "GitHub Actions Bot"
+          git config --global user.email "actions@github.com"
+
+      - name: Repo Init and Sync
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p NocturnalRTOS
+          cd NocturnalRTOS
+          repo init -u https://github.com/Data-Frog-Central/NocturnalRTOS-Manifest
+          repo sync -c --no-clone-bundle --optimized-fetch --prune -j$(nproc)
+
+      - name: Compile NocturnalRTOS
+        run: |
+          cd NocturnalRTOS
+          ./scripts/ci.sh
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: manifest-build-${{ github.sha }}
+          path: |
+            NocturnalRTOS/nightly.zip
