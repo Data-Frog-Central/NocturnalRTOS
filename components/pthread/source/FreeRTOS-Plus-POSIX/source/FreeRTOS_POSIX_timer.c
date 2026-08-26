@@ -90,7 +90,7 @@ void prvTimerCallback( TimerHandle_t xTimerHandle )
         {
             ( void ) pthread_create( &xTimerNotificationThread,
                                      pxTimer->xTimerEvent.sigev_notify_attributes,
-                                     ( void * ( * )( void * ) )pxTimer->xTimerEvent.sigev_notify_function,
+                                     ( void * ( * )( void * ) )( void * )pxTimer->xTimerEvent.sigev_notify_function,
                                      pxTimer->xTimerEvent.sigev_value.sival_ptr );
         }
     }

@@ -48,11 +48,11 @@ BR2_STATIC_LIBS=y
 #
 # Toolchain
 #
-BR2_TARGET_CROSS="/opt/mips32-mti-elf/2019.09-03-2/bin/mips-mti-elf-"
+BR2_TARGET_CROSS="/opt/frog-toolchain/mipsel-mti-elf_stable/bin/mipsel-mti-elf-"
 BR2_JLEVEL=0
-BR2_TARGET_CFLAGS="-g -EL -mips2 -Os -msoft-float -fsigned-char -W -ffunction-sections -Wformat=2 -D_FORTIFY_SOURCE=0 -fdata-sections -G0"
-BR2_TARGET_CXXFLAGS="-g -EL -mips2 -Os -msoft-float -fsigned-char -W -ffunction-sections -Wformat=2 -D_FORTIFY_SOURCE=0 -fdata-sections -G0"
-BR2_TARGET_LDFLAGS="-g -EL -Os --static"
+BR2_TARGET_CFLAGS="-g -EL -mips32 -Os -msoft-float -fsigned-char -W -ffunction-sections -Wformat=2 -D_FORTIFY_SOURCE=0 -fdata-sections -G0"
+BR2_TARGET_CXXFLAGS="-g -EL -mips32 -Os -msoft-float -fsigned-char -W -ffunction-sections -Wformat=2 -D_FORTIFY_SOURCE=0 -fdata-sections -G0"
+BR2_TARGET_LDFLAGS="-g -EL --static"
 
 #
 # System configuration

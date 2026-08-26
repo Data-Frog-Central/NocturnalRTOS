@@ -1,3 +1,2 @@
-cd ../
 make clean
 make

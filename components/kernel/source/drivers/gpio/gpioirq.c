@@ -99,7 +99,7 @@ void gpio_interrupt(uint32_t param)
 			proc = (typeof(proc))p->callback;
 			proc(p->param);
 		} else {
-			proc2 = (typeof(proc2))p->callback;
+			proc2 = (typeof(proc2))(void *)p->callback;
 			proc2((int)p->padctl + 256, (void *)p->param);
 		}
 
@@ -143,7 +143,7 @@ static int __gpio_irq_request(pinpad_e padctl, void (*callback)(uint32_t), uint3
 
 int gpio_irq_request2(pinpad_e padctl, void (*callback)(int, uint32_t), uint32_t param)
 {
-	return __gpio_irq_request(padctl, (void (*)(uint32_t))callback, param, 1);
+	return __gpio_irq_request(padctl, (void (*)(uint32_t))(void *)callback, param, 1);
 }
 
 int gpio_irq_request(pinpad_e padctl, void (*callback)(uint32_t), uint32_t param)

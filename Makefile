@@ -11,7 +11,7 @@ phobos-rotate:
 	cp output/images/phobos.asd phobos-rotate.asd
 
 clean:
-	rm -rf bl output dl
+	rm -rf bl output/* dl
 	rm -f *.asd
 	rm -f board/hc15xx/common/crc
 	rm -f build/tools/genpersistentmem/genpersistentmem

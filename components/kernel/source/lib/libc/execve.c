@@ -1,7 +1,6 @@
 #include <errno.h>
 
-int execve(char *name, char **argv, char **env)
-{
+int execve(const char *name, char * const *argv, char * const *env) {
 	name = name;
 	argv = argv;
 	env = env;

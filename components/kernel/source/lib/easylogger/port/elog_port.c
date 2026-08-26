@@ -119,7 +119,7 @@ void elog_port_output_unlock(void) {
  */
 const char *elog_port_get_time(void) {
 
-    static char cur_system_time[25] = { 0 };
+    static char cur_system_time[64] = { 0 };
     struct tm *p;
     struct timeval tv;
 
@@ -128,7 +128,7 @@ const char *elog_port_get_time(void) {
     if (p == NULL) {
         return "";
     }
-    snprintf(cur_system_time, 24, "%02d-%02d %02d:%02d:%02d.%03ld", p->tm_mon + 1, p->tm_mday,
+    snprintf(cur_system_time, sizeof(cur_system_time), "%02d-%02d %02d:%02d:%02d.%03ld", p->tm_mon + 1, p->tm_mday,
             p->tm_hour, p->tm_min, p->tm_sec, tv.tv_usec / 1000);
 
     return cur_system_time;
