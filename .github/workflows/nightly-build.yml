@@ -10,6 +10,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    permissions:
+        contents: write
+
     steps:
       - name: Install Repo Tool
         run: |
@@ -36,9 +39,23 @@ jobs:
           cd NocturnalRTOS
           ./scripts/ci.sh
 
-      - name: Upload Build Artifacts
+      - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: manifest-build-${{ github.sha }}
-          path: |
+          name: nocturnal-rtos-nightly-${{ github.sha }}
+          path: NocturnalRTOS/nightly.zip
+
+      - name: Update Nightly Pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          name: "NocturnalRTOS Nightly Build"
+          body: |
+            Automated nightly build for NocturnalRTOS.
+            - Commit: ${{ github.sha }}
+            - Branch: Nocturnal
+          prerelease: true
+          files: |
             NocturnalRTOS/nightly.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
