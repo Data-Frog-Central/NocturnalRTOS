@@ -42,7 +42,7 @@ jobs:
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: nocturnal-rtos-nightly-${{ github.sha }}
+          name: NocturnalRTOS-nightly-${{ github.sha }}
           path: NocturnalRTOS/nightly.zip
 
       - name: Update Nightly Pre-release

@@ -2,4 +2,4 @@
 ./scripts/install-dependencies.sh
 ./scripts/install-toolchain.sh
 ./scripts/buildSfClean.sh
-find . -name "*.asd" -print0 | xargs -0 zip nightly.zip
+find . -maxdepth 1 -name "*.asd" -print0 | xargs -0 zip nightly.zip
