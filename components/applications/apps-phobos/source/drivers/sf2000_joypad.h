@@ -15,7 +15,7 @@ typedef enum {
     DEVICE_DY19,
 } joypad_device_t;
 
-typedef void (*hotkey_action_t)(void);
+typedef bool (*hotkey_action_t)(void);
 
 typedef struct {
     uint16_t mask;

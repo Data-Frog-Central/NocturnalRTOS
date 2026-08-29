@@ -23,6 +23,7 @@
 #include <nuttx/wqueue.h>
 
 #define CONFIG_FILEUART_TX_BUF_SIZE 1024
+#define LOGS_DIRECTORY		"/system/logs"
 
 volatile int fileuart_ready;
 
@@ -48,7 +49,7 @@ static int fileuart_fs_mount_notify(struct notifier_block *self, unsigned long a
 	case USB_MSC_NOTIFY_MOUNT: {
 		xSemaphoreTake(g_dev.sem, portMAX_DELAY);
 		if (g_dev.fd < 0) {
-			snprintf(log_file_path, sizeof(log_file_path), "/media/%s/HCRTOS/fileuart.log", (char *)dev);
+			snprintf(log_file_path, sizeof(log_file_path), "/media/%s/%s/NocturnalRTOS.log", (char *)dev, LOGS_DIRECTORY);
 			g_dev.fd = open(log_file_path, O_CREAT | O_WRONLY);
 			if (g_dev.fd >= 0) {
 				lseek(g_dev.fd, 0, SEEK_END);
@@ -77,7 +78,7 @@ static int fileuart_fs_mount_notify(struct notifier_block *self, unsigned long a
 	case SDMMC_NOTIFY_MOUNT: {
 		xSemaphoreTake(g_dev.sem, portMAX_DELAY);
 		if (g_dev.fd < 0) {
-			snprintf(log_file_path, sizeof(log_file_path), "/media/%s/HCRTOS/fileuart.log", (char *)dev);
+			snprintf(log_file_path, sizeof(log_file_path), "/media/%s/%s/NocturnalRTOS.log", (char *)dev, LOGS_DIRECTORY);
 			g_dev.fd = open(log_file_path, O_CREAT | O_WRONLY);
 			if (g_dev.fd >= 0) {
 				lseek(g_dev.fd, 0, SEEK_END);
@@ -211,4 +212,30 @@ static int fileuart_driver_init(void)
 	return rc;
 }
 
-module_arch(fileuart, fileuart_driver_init, NULL, 0)
+static int fileuart_driver_exit(void) {
+    if (g_dev.sem) {
+        xSemaphoreTake(g_dev.sem, portMAX_DELAY);
+    }
+
+    if (g_dev.fd >= 0) {
+        fsync(g_dev.fd);
+        close(g_dev.fd);
+        g_dev.fd = -1;
+        fileuart_ready = 0;
+    }
+
+    if (g_dev.sem) {
+        xSemaphoreGive(g_dev.sem);
+    }
+
+    sys_unregister_notify(&fileuart_fs_mount);
+
+    if (g_dev.sem) {
+        vSemaphoreDelete(g_dev.sem);
+        g_dev.sem = NULL;
+    }
+
+    return 0;
+}
+
+module_arch(fileuart, fileuart_driver_init, fileuart_driver_exit, 0)

@@ -165,7 +165,7 @@ void show_loading_screen(bool block_loading, bool loading_dots, unsigned short t
 
     memset(text_fb, ' ', rows * cols);
 
-	loading_printf("\n DartOS - HC-RTOS\n\n");
+	loading_printf("\n Phobos - NocturnalRTOS\n\n");
 
 	va_list ap;
 	va_start(ap, fmt);
@@ -188,6 +188,7 @@ void show_loading_screen(bool block_loading, bool loading_dots, unsigned short t
     } else {
         loading_flush(loading_fb, SCREEN_WIDTH, SCREEN_HEIGHT, text_color, background_color);
         blit_to_screen(loading_fb, SCREEN_WIDTH, SCREEN_HEIGHT, pitch, false, SCALE_STRETCH);
+        vTaskDelay(75);
     }
 
     vPortFree(text_fb);
@@ -195,12 +196,5 @@ void show_loading_screen(bool block_loading, bool loading_dots, unsigned short t
     vPortFree(loading_fb);
     loading_fb = NULL;
 
-    if(block_loading) {
-        // Stops anything else from happening for safe shutdown
-        // Basically 100% the cpu so maybe not the best idea...
-        taskENTER_CRITICAL();
-        do {
-	    } while (1);
-    }
-
+    if(block_loading) vTaskSuspend(NULL);
 }

@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <_syslist.h>
+#include <sys/mount.h>
 #include <sys/poll.h>
 #include <sys/ioctl.h>
 #include <sys/unistd.h>
@@ -16,6 +17,7 @@
 #include <kernel/ld.h>
 #include <kernel/module.h>
 #include <kernel/lib/console.h>
+#include <kernel/lib/fdt_api.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
@@ -120,17 +122,39 @@ void setUpPins(void) {
     check_nb_registers(true);
 }
 
+static bool is_fileuart_enabled(void) {
+    int np = 0;
+    const char *status = NULL;
+    int ret;
+
+    np = fdt_node_probe_by_path("/hcrtos/fileuart");
+    if (np < 0) {
+        //frontend_log_cb(RETRO_LOG_ERROR, "FRONTEND" ,"Fileuart node not present in DTB.\n");
+        return false;
+    }
+
+    ret = fdt_get_property_string_index(np, "status", 0, &status);
+    if (ret == 0 && status != NULL) {
+        //frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"Fileuart status = %s\n", status);
+        if (strcmp(status, "okay") == 0 || strcmp(status, "ok") == 0) return true;
+        else return false;
+    }
+    return false;
+}
+
 static void main_sf2000(void *pvParameters) {
     assert(module_init("all") == 0);
-	
+
 	// Waits for fileuart to be ready
-	int fd = open("/dev/fileuart", O_WRONLY);
-	struct pollfd pfd = {
-    	.fd = fd,
-    	.events = POLLOUT
-	};
-	poll(&pfd, 1, -1);
-    close(fd);
+    if (is_fileuart_enabled()) {
+	    int fd = open("/dev/fileuart", O_WRONLY);
+	    struct pollfd pfd = {
+    	    .fd = fd,
+    	    .events = POLLOUT
+	    };
+	    poll(&pfd, 1, -1);
+        close(fd);
+    }
 
     setUpPins();
 
@@ -150,10 +174,11 @@ static void main_sf2000(void *pvParameters) {
 			break;
 		}
     }
-
-    show_loading_screen(true, false, loading_txt_color, loading_bg_color, " Safe Shutdown\n\n Turn off the console now.\n\n");
-    frontend_video_deinit();
-    vTaskDelete(NULL);
+    
+    // Clean up fileuart and unmount the sd card to stop corruption
+    module_exit("fileuart");
+    if (umount(SDCARD_DIRECTORY) < 0) show_loading_screen(true, false, loading_txt_color, loading_bg_color, " Failed to unmount SD card cleanly\n\n Turn off the console now.\n\n");
+    show_loading_screen(true, false, loading_txt_color, loading_bg_color, " Safe Shutdown Complete.\n\n It is now safe to power off your console.");
 }
 
 int main(void) {

@@ -15,6 +15,7 @@
  */
 
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -75,7 +76,15 @@ static uint8_t sf2000_joypad_map[] = {
 	RETRO_DEVICE_ID_JOYPAD_RIGHT
 };
 
-void hotkey_exit(void)    { safe_shutdown_flag = true; }
+bool hotkey_exit(void) {
+	if (sysinfo.library_name && strcmp(sysinfo.library_name, "FrogUI") == 0) safe_shutdown_flag = true;
+	else {
+		snprintf(core_path, sizeof(core_path), "FrogUI");
+    	snprintf(rom_path, sizeof(rom_path), "/media/mmcblk0p2/ROMS/menu/p");
+		close_emulator();
+	}
+	return false; // Needed because a bool is expected
+}
 
 static const hotkey_entry_t hotkeys[] = {
     { HOTKEY_EXIT_MASK, hotkey_exit },
@@ -130,11 +139,13 @@ void joypad_get_buttons(unsigned port, input_bits_t *state)
 }
 
 void frontend_check_hotkeys(void) {
-    uint16_t state = btn_state;
+	uint16_t state = btn_state;
 
     for (size_t i = 0; i < sizeof(hotkeys)/sizeof(hotkeys[0]); ++i) {
-        if ((state & hotkeys[i].mask) == hotkeys[i].mask) {
-            hotkeys[i].action();
+        if (state == hotkeys[i].mask) {
+			btn_state = 0;
+            bool ret = hotkeys[i].action();
+            //if (ret) show_osd_message(osd_message); //TODO: ADD OSD
         }
     }
 }
@@ -187,4 +198,5 @@ void frontend_input_poll_cb(void) {
 #endif
 
     btn_state = new_state;
+	frontend_check_hotkeys();
 }

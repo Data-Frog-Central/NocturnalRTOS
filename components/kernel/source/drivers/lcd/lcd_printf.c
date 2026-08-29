@@ -132,7 +132,7 @@ void lcd_flush(unsigned short text_color, unsigned short background_color) {
 void dbg_show_noblock(unsigned short text_color, unsigned short background_color, const char *fmt, ...) {
     taskENTER_CRITICAL();
 	lcd_init();
-	lcd_printf("\n DartOS - HC-RTOS\n\n");
+	lcd_printf("\n Phobos - NocturnalRTOS\n\n");
 
 	va_list ap;
 	va_start(ap, fmt);
@@ -153,7 +153,7 @@ void dbg_show_noblock(unsigned short text_color, unsigned short background_color
 void lcd_bsod(const char *fmt, ...) {
     taskENTER_CRITICAL();
 	lcd_init();
-	lcd_printf("\n DartOS - HC-RTOS\n\n");
+	lcd_printf("\n Phobos - NocturnalRTOS\n\n");
 
 	va_list ap;
 	va_start(ap, fmt);

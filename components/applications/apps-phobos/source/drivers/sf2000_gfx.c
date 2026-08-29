@@ -373,7 +373,7 @@ void draw_border(const char *core_path) {
     unsigned pitch = 0;
 
     char file_path[MAXPATH];
-    snprintf(file_path, sizeof(file_path), "%s/HCRTOS/borders/%s/%s.bmp", SDCARD_DIRECTORY, core_path, core_path);
+    snprintf(file_path, sizeof(file_path), "%s/%s/%s.bmp", BORDERS_DIRECTORY, core_path, core_path);
 
     uint16_t *rgb565_buffer = load_bmp_image(file_path, &width, &height, &pitch);
 

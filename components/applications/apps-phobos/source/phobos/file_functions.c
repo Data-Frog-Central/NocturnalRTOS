@@ -40,6 +40,13 @@ void extract_extension(const char *filename, char **extension) {
 }
 
 void extract_path_components(const char *filepath, char **dir, char **filename, char **extension) {
+    if (filepath == NULL || filepath[0] == '\0') {
+        if (dir) *dir = NULL;
+        if (filename) *filename = NULL;
+        if (extension) *extension = NULL;
+        return;
+    }
+
     // Copy filepath to avoid modifying the original string
     char *path_copy = strdup(filepath);
 
@@ -199,8 +206,11 @@ bool config_get_var(struct retro_variable *var) {
 void frontend_load_settings(config_file_t *config_file, bool first_run) {
     if (config_file == NULL) return;
 
-    if (first_run) {
-        // There is no reason to check these again
+    if (first_run) { // There is no reason to check these again
+        // Initialize these in case no config
+        snprintf(core_path, sizeof(core_path), "FrogUI");
+    	snprintf(rom_path, sizeof(rom_path), "/media/mmcblk0p2/ROMS/menu/p");
+
         config_get_string(config_file, "hcrtos_rom_path", &temp_rom_path);
         if (temp_rom_path) {
             strncpy(rom_path, temp_rom_path, MAXPATH - 1);
@@ -246,7 +256,7 @@ void frontend_load_settings(config_file_t *config_file, bool first_run) {
 void frontend_config_load(void) {
     bool ret = false;
     char config_frontend_filepath[MAXPATH];
-	snprintf(config_frontend_filepath, sizeof(config_frontend_filepath), "%s/%s.opt", CONFIG_DIRECTORY, "dartos");
+	snprintf(config_frontend_filepath, sizeof(config_frontend_filepath), "%s/%s.opt", CONFIG_DIRECTORY, "Phobos");
 
     // load global hcrtos options
     if (access(config_frontend_filepath, F_OK) == 0) {
@@ -272,6 +282,8 @@ void core_config_load(void) {
 }
 
 void rom_config_load(void) {
+    if (!rom_filename || rom_filename[0] == '\0' || !sysinfo.library_name) return;
+    
     bool ret = false;
     char config_game_filepath[MAXPATH];
 	snprintf(config_game_filepath, sizeof(config_game_filepath), "%s/%s/options/%s.opt", CONFIG_DIRECTORY, sysinfo.library_name, rom_filename);

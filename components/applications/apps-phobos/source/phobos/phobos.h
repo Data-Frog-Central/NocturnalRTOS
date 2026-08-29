@@ -1,12 +1,17 @@
 #ifndef MENU_H__
 #define MENU_H__
 
-#define SDCARD_DIRECTORY    "/media/mmcblk0p2"
-#define SYSTEM_DIRECTORY SDCARD_DIRECTORY "/HCRTOS/bios"
-#define ASSETS_DIRECTORY SDCARD_DIRECTORY "/HCRTOS/assets"
-#define SAVE_DIRECTORY   SDCARD_DIRECTORY "/saves"
-#define CONFIG_DIRECTORY SDCARD_DIRECTORY "/configs"
-#define ROMS_DIRECTORY   SDCARD_DIRECTORY "/ROMS"
+#define SDCARD_DIRECTORY      "/media/mmcblk0p2"
+#define SYSTEM_DIRECTORY      SDCARD_DIRECTORY "/system/bios"
+#define ASSETS_DIRECTORY      SDCARD_DIRECTORY "/system/assets"
+#define LOGS_DIRECTORY        SDCARD_DIRECTORY "/system/logs"
+#define LOG_FILENAME          LOGS_DIRECTORY   "/Phobos.log"
+#define SAVE_DIRECTORY        SDCARD_DIRECTORY "/system/saves"
+#define CONFIG_DIRECTORY      SDCARD_DIRECTORY "/system/configs"
+#define CORES_DIRECTORY       SDCARD_DIRECTORY "/system/Phobos/cores"
+#define SAVESTATE_DIRECTORY   SDCARD_DIRECTORY "/system/Phobos/savestates"
+#define BORDERS_DIRECTORY     SDCARD_DIRECTORY "/system/Phobos/borders"
+#define ROMS_DIRECTORY        SDCARD_DIRECTORY "/ROMS"
 #define MAXPATH 512
 
 extern struct retro_system_info sysinfo;

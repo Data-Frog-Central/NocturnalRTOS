@@ -349,8 +349,9 @@ bool load_game(const char *file_path) {
 		} else {
 			FILE *hfile = fopen(file_path, "rb");
 			if (!hfile) {
-				frontend_log_cb(RETRO_LOG_ERROR, "FRONTEND" ,"Error opening rom file=%s\n", file_path);
-				return false;
+				frontend_log_cb(RETRO_LOG_ERROR, "FRONTEND" ,"Error opening rom file=%s\n", file_path ? file_path : "(null)");
+				core_supports_rom_in_buffer = false;
+				goto skip_file_load; // Maybe should detect if the core needs a file
 			}
 
 	    	fseeko(hfile, 0, SEEK_END);
@@ -366,32 +367,37 @@ bool load_game(const char *file_path) {
 		}
     }
 
-	// Game Info
-	gameinfo.path = rom_path;
-	gameinfo.data = core_supports_rom_in_buffer ? rom_buffer : NULL;
-	gameinfo.size = core_supports_rom_in_buffer ? rom_size : 0;
-	gameinfo.meta = NULL; // TODO: What's this for?
+	skip_file_load:
+		// Game Info
+		gameinfo.path = rom_path;
+		gameinfo.data = core_supports_rom_in_buffer ? rom_buffer : NULL;
+		gameinfo.size = core_supports_rom_in_buffer ? rom_size : 0;
+		gameinfo.meta = NULL; // TODO: What's this for?
 
-	// Extended Game Info
-	game_info_ext.full_path = rom_path;
-	game_info_ext.archive_path = is_zip ? rom_path : NULL;
-	game_info_ext.archive_file = is_zip ? filename_in_archive : NULL;
-	game_info_ext.dir = dir;
-	game_info_ext.name = rom_filename; // Going with method 1 unless we decide to support multiple files in a zip
-	game_info_ext.ext = extension;
-	game_info_ext.meta = NULL; // TODO: What's this for?
-	game_info_ext.data = core_supports_rom_in_buffer ? rom_buffer : NULL;
-	game_info_ext.size = core_supports_rom_in_buffer ? rom_size : 0;
-	game_info_ext.file_in_archive = is_zip;
-	game_info_ext.persistent_data = false; // TODO: Does anything need this?
+		// Extended Game Info
+		game_info_ext.full_path = rom_path;
+		game_info_ext.archive_path = is_zip ? rom_path : NULL;
+		game_info_ext.archive_file = is_zip ? filename_in_archive : NULL;
+		game_info_ext.dir = dir;
+		game_info_ext.name = rom_filename; // Going with method 1 unless we decide to support multiple files in a zip
+		game_info_ext.ext = extension;
+		game_info_ext.meta = NULL; // TODO: What's this for?
+		game_info_ext.data = core_supports_rom_in_buffer ? rom_buffer : NULL;
+		game_info_ext.size = core_supports_rom_in_buffer ? rom_size : 0;
+		game_info_ext.file_in_archive = is_zip;
+		game_info_ext.persistent_data = false; // TODO: Does anything need this?
 
-	bool ret = core_api.retro_load_game(&gameinfo);
-	if (!ret) { 
-		frontend_log_cb(RETRO_LOG_ERROR, "FRONTEND" ,"retro_load_game failed\n");
-        return false;
-    }
-	frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"retro_load_game ok\n");
-	return true;
+		bool ret = core_api.retro_load_game(&gameinfo);
+		if (!ret) { 
+			frontend_log_cb(RETRO_LOG_ERROR, "FRONTEND" ,"retro_load_game failed\n");
+        	return false;
+    	}
+		frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"retro_load_game ok\n");
+		return true;
+}
+
+static inline int64_t get_time_us(void) {
+    return (int64_t)uxPortTimerHrTickGet();
 }
 
 bool run_emulator(const char *game_path, const char *core_path, int load_state) {
@@ -403,7 +409,7 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
 
     frontend_log_cb(RETRO_LOG_DEBUG, "FRONTEND" ,"loading core\n", load_state);
 	ret = load_core(core_path);
-	if (!ret) return false;
+	if (!ret) goto cleanup_fail;
 	
 	// Pass frontend functions to core
 	core_api.retro_set_video_refresh(frontend_video_cb);
@@ -452,7 +458,7 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
 	);
 
 	ret = load_game(game_path);
-	if (!ret) return false;
+	if (!ret) goto cleanup_retro;
 	load_srm(0);
 
 	core_api.retro_get_system_av_info(&av_info);
@@ -466,47 +472,61 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
 
     double emu_frame_rate = 0;
 	get_emu_framerate(av_info.timing.fps, &emu_frame_rate);
-    double frame_time_us = 1000000.0 / emu_frame_rate;
-	TickType_t frame_ticks = pdMS_TO_TICKS((uint32_t)(frame_time_us / 1000.0 + 0.5));
-	if (frame_ticks < 1) frame_ticks = 1;
-    TickType_t last_wake = xTaskGetTickCount();
-	frontend_log_cb(RETRO_LOG_DEBUG, "FRONTEND", "frame_time_us=%f frame_ticks=%u emu_frame_rate=%f\n", frame_time_us, frame_ticks, emu_frame_rate);
+	double frame_time_us = 1000000.0 / emu_frame_rate;
+    int64_t frame_time_us_int = (int64_t)(frame_time_us + 0.5);
+	int64_t next_frame_us = get_time_us();
+    frontend_log_cb(RETRO_LOG_DEBUG, "FRONTEND", "frame_time_us=%f frame_time_us_int=%lld emu_frame_rate=%f\n", frame_time_us, (long long)frame_time_us_int, emu_frame_rate);
 	
 	// TODO: Cache controller input and check for hotkeys
 	// TODO: Pause menu and ability to exit
 	draw_border(core_path); // Draw the border right before the main loop
-	while (1) {
-		frontend_input_poll_cb();
-		frontend_check_hotkeys();
-		if (close_emulator_flag || safe_shutdown_flag) {
-			if (close_emulator_flag) close_emulator_flag = false;
-			break;
-		}
-		if (core_frameskip) {
-    		TickType_t now = xTaskGetTickCount();
-    		TickType_t lag = now - last_wake;
-    		int frames_behind = lag / frame_ticks;
+    while (1) {
+        if (close_emulator_flag || safe_shutdown_flag) {
+            if (close_emulator_flag) close_emulator_flag = false;
+            break;
+        }
 
-    		if (frames_behind > 5) frames_behind = 5;  // clamp lag
+        int64_t now_us = get_time_us();
+        
+        // If we've fallen behind by more than 1 full frame, auto-resync cleanly
+        if (now_us > next_frame_us + frame_time_us_int) next_frame_us = now_us;
 
-    		int steps = 1 + frames_behind;
+        int64_t lag_us = now_us - next_frame_us;
 
-    		int occupancy = get_audio_occupancy();
-    		core_frameskip(should_frameskip(frames_behind, occupancy));
+        if (core_frameskip) {
+            int frames_behind = (int)(lag_us / frame_time_us_int);
+            if (frames_behind < 0) frames_behind = 0;
+            if (frames_behind > 5) frames_behind = 5; // clamp lag
 
-    		for (int i = 0; i < steps; i++) core_api.retro_run();
-		} else core_api.retro_run();
+            int steps = 1 + frames_behind;
+            int occupancy = get_audio_occupancy();
+            core_frameskip(should_frameskip(frames_behind, occupancy));
 
-    	vTaskDelayUntil(&last_wake, frame_ticks);
-	}
+            for (int i = 0; i < steps; i++) core_api.retro_run();
+        } else core_api.retro_run();
+
+        next_frame_us += frame_time_us_int;
+        now_us = get_time_us();
+        int64_t sleep_us = next_frame_us - now_us;
+
+        if (sleep_us > 2000) usleep(sleep_us - 1000); // If we have more than 2ms to spare, yield CPU (won't 100% the cpu?)
+        while (get_time_us() < next_frame_us) {} // Spin-wait for the remaining sub-millisecond precision
+    }
 
 	frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"Retro Deinit\n");
-	// TODO: Proper deinit
-	save_srm(0);
-	core_api.retro_unload_game();
-	core_api.retro_deinit();
-	audio_deinit();
-	return true;
+
+	cleanup:
+   		save_srm(0);
+    	core_api.retro_unload_game();
+		audio_deinit();
+
+	cleanup_retro:
+		core_api.retro_deinit();
+    	//unload_core(); // TODO: add core deinit
+    	if (rom_buffer) { free(rom_buffer); rom_buffer = NULL; }
+
+	cleanup_fail:
+    	return ret;
 }
 
 void close_emulator(void) {
