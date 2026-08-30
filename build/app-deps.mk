@@ -41,3 +41,5 @@ apps_deps-$(BR2_PACKAGE_MEMTESTER) += memtester
 apps_deps-$(BR2_PACKAGE_FREETYPE) += freetype
 apps_deps-$(BR2_PACKAGE_PCRE) += pcre
 apps_deps-$(BR2_PACKAGE_LIBACODEC) += libacodec
+apps_deps-$(BR2_PACKAGE_LIBRETRO_COMMON) += libretro_common
+apps_deps-$(BR2_PACKAGE_ARGENT_LOADER) += argent_loader

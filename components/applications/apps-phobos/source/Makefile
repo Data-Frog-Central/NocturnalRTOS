@@ -12,9 +12,7 @@ SYS_DIR = -I$(LVGL_DIR) \
 
 LVGL_HEADERS = -I$(STAGING_DIR)/usr/include/lvgl/ \
 		-I$(STAGING_DIR)/usr/include/lvgl/lvgl \
-		-I$(LVGL_DIR)/libs/libretro-common/include \
-		-I$(LVGL_DIR)/libs/zip/src \
-		-I$(LVGL_DIR)/libs/cores/include 
+		-I$(LVGL_DIR)/libs/zip/src 
 
 MY_DEF =
 
@@ -22,13 +20,12 @@ SCREEN_APP_SUPPORT := $(shell echo $(PHOBOSAPP_DEF) | grep -o SCREEN_APP_SUPPORT
 
 CFLAGS ?= -O3 $(SYS_DIR) -Wall -Wshadow -Wundef -Wmissing-prototypes -Wno-discarded-qualifiers -Wall -Wextra -Wno-unused-function -Wno-error=strict-prototypes -Wpointer-arith -fno-strict-aliasing -Wno-error=cpp -Wuninitialized -Wmaybe-uninitialized -Wno-unused-parameter -Wno-missing-field-initializers -Wtype-limits -Wsizeof-pointer-memaccess -Wno-format-nonliteral -Wno-cast-qual -Wunreachable-code -Wno-switch-default -Wreturn-type -Wmultichar -Wformat-security -Wno-ignored-qualifiers -Wno-error=pedantic -Wno-sign-compare -Wno-error=missing-prototypes -Wdouble-promotion -Wclobbered -Wdeprecated -Wempty-body -Wtype-limits -Wshift-negative-value -Wstack-usage=2048 -Wno-unused-value -Wno-unused-parameter -Wno-missing-field-initializers -Wuninitialized -Wmaybe-uninitialized -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -Wtype-limits -Wsizeof-pointer-memaccess -Wno-format-nonliteral -Wpointer-arith -Wno-cast-qual -Wmissing-prototypes -Wunreachable-code -Wno-switch-default -Wreturn-type -Wmultichar -Wno-discarded-qualifiers -Wformat-security -Wno-ignored-qualifiers -Wno-sign-compare
 CFLAGS += $(LVGL_HEADERS)
-LDFLAGS ?= -lm -llvgl
+LDFLAGS ?= -lm
 
 DEMO_LIBS = -lffplayer -lpthread -lge -Wl,--start-group -lstdc++ $(CAST_LIBS) -Wl,--end-group
 
 include $(LVGL_DIR)/drivers/sf2000_drivers.mk
 include $(LVGL_DIR)/phobos/phobos.mk
-include $(LVGL_DIR)/libs/libretro-common/Makefile.hcrtos
 PHOBOS_SRC += $(LVGL_DIR)/libs/zip/src/zip.c
 DEMO_NAME = phobos_demo
 

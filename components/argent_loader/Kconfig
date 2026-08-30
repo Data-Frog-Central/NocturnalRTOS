@@ -1,0 +1,5 @@
+config BR2_PACKAGE_ARGENT_LOADER
+    bool "argent_loader"
+    default n
+    help
+        External app/Libretro core loading library.

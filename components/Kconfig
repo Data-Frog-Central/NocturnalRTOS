@@ -5,6 +5,8 @@ config CONFIG_PREBUILT_SUBDIR
 source "prebuilts/Kconfig"
 
 source "applications/Kconfig"
+source "argent_loader/Kconfig"
+source "libretro_common/Kconfig"
 source "newlib/Kconfig"
 source "kernel/Kconfig"
 source "cmds/Kconfig"

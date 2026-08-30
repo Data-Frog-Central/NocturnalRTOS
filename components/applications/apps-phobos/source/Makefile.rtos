@@ -7,8 +7,7 @@ include $(BR2_MKLINK)
 qstrip=$(strip $(subst ",,$(1)))
 #"))
 
-MAIN_INC = -Ilibs/libretro-common/include \
-           -Ilibs/cores/include
+MAIN_INC = -I$(STAGING_DIR)/usr/include
 
 CFLAGS_main.o += $(MAIN_INC)
 

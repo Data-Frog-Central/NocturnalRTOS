@@ -14,10 +14,10 @@
 #include <file/config_file.h>
 
 #include <core_api.h>
+#include <argent_loader.h>
 #include <zip.h>
 
 #include "../drivers/sf2000_gfx.h"
-#include "../drivers/sf2000_core_loading.h"
 #include "file_functions.h"
 #include "phobos.h"
 

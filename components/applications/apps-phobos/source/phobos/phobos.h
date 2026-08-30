@@ -8,7 +8,6 @@
 #define LOG_FILENAME          LOGS_DIRECTORY   "/Phobos.log"
 #define SAVE_DIRECTORY        SDCARD_DIRECTORY "/system/saves"
 #define CONFIG_DIRECTORY      SDCARD_DIRECTORY "/system/configs"
-#define CORES_DIRECTORY       SDCARD_DIRECTORY "/system/Phobos/cores"
 #define SAVESTATE_DIRECTORY   SDCARD_DIRECTORY "/system/Phobos/savestates"
 #define BORDERS_DIRECTORY     SDCARD_DIRECTORY "/system/Phobos/borders"
 #define ROMS_DIRECTORY        SDCARD_DIRECTORY "/ROMS"

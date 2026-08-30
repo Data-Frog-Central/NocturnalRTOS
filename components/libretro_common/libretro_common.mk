@@ -1,0 +1,5 @@
+LIBRETRO_COMMON_SUPPORT_SEPARATE_OUTPUT = YES
+
+LIBRETRO_COMMON_DEPENDENCIES += kernel zlib
+
+$(eval $(generic-package))

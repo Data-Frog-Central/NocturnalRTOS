@@ -12,12 +12,12 @@
 
 #include <libretro.h>
 #include <core_api.h>
+#include <argent_loader.h>
 #include <dartos.h>
 
 #include "../drivers/sf2000_audio.h"
 #include "../drivers/sf2000_gfx.h"
 #include "../drivers/sf2000_joypad.h"
-#include "../drivers/sf2000_core_loading.h"
 #include "file_functions.h"
 #include "phobos.h"
 
