@@ -59,3 +59,13 @@ jobs:
             NocturnalRTOS/nightly.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Discord Webhook Notification
+        uses: tsickert/discord-webhook@v7.0.0
+        with:
+          webhook-url: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          filename: NocturnalRTOS/nightly.zip
+          content: |
+            <@&1499949902661419028> **NocturnalRTOS Nightly Build is Ready!**
+            **Commit:** [`${{ github.sha }}`](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
+            **Release:** <https://github.com/${{ github.repository }}/releases/tag/nightly>
