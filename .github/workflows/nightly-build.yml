@@ -34,6 +34,15 @@ jobs:
           repo init -u https://github.com/Data-Frog-Central/NocturnalRTOS-Manifest
           repo sync -c --no-clone-bundle --optimized-fetch --prune -j$(nproc)
 
+      - name: Extract Commit Details
+        id: commit_info
+        run: |
+          cd NocturnalRTOS
+          echo "TITLE=$(git log -1 --pretty=format:\%s)" >> $GITHUB_OUTPUT
+          echo "BODY<<EOF" >> $GITHUB_OUTPUT
+          git log -1 --pretty=format:%b >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      
       - name: Compile NocturnalRTOS
         run: |
           cd NocturnalRTOS
@@ -66,6 +75,8 @@ jobs:
           webhook-url: ${{ secrets.DISCORD_WEBHOOK_URL }}
           filename: NocturnalRTOS/nightly.zip
           content: |
-            <@&1499949902661419028> **NocturnalRTOS Nightly Build is Ready!**
-            **Commit:** [`${{ github.sha }}`](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
-            **Release:** <https://github.com/${{ github.repository }}/releases/tag/nightly>
+            **NocturnalRTOS Nightly Build is Ready!**
+            [**Release**](<https://github.com/${{ github.repository }}/releases/tag/nightly>)
+            **Commit:** [`${{ github.sha }}`](<https://github.com/${{ github.repository }}/commit/${{ github.sha }}>)
+            > ${{ steps.commit_info.outputs.TITLE }}
+            >>> ${{ steps.commit_info.outputs.TITLE }}${{ steps.commit_info.outputs.BODY != '' && format('\n{0}', steps.commit_info.outputs.BODY) || '' }}
