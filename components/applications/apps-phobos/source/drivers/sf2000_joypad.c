@@ -109,10 +109,8 @@ void joypad_init(const char *device_name) {
 	}
 }
 
-static int32_t sf2000_joypad_button(unsigned port, uint16_t joykey)
-{
-	if (port != 0)
-		return 0;
+int32_t sf2000_joypad_button(unsigned port, uint16_t joykey) { // TODO: What to do with this?
+	if (port != 0) return 0;
 
 	if ((joykey == RETRO_DEVICE_ID_JOYPAD_MASK) || (joykey == 65535)) {
 		//frontend_log_cb(RETRO_LOG_DEBUG, "JOYPAD_DRIVER" ,"btn_state=%u joykey=%u\n", btn_state, joykey);
@@ -124,14 +122,10 @@ static int32_t sf2000_joypad_button(unsigned port, uint16_t joykey)
 	return (btn_state & (1 << joykey));
 }
 
-void joypad_get_buttons(unsigned port, input_bits_t *state)
-{
-	if (port == 0)
-	{
+void joypad_get_buttons(unsigned port, input_bits_t *state) { // TODO: Add player 2
+	if (port == 0) {
 		BITS_COPY16_PTR(state, btn_state);
-	}
-	else
-	{
+	} else {
 		BIT256_CLEAR_ALL_PTR(state);
 	}
 
@@ -153,39 +147,50 @@ void frontend_check_hotkeys(void) {
 void frontend_input_poll_cb(void) {
     uint16_t new_state = 0;
 
+	if (current_device == DEVICE_GB300) { // TODO: Make this more universal
+		pinmux_configure(key_shifter_clk_pin, PINMUX_L26_GPIO);
+		pinmux_configure(key_shifter_pl1_pin, PINMUX_L27_GPIO);
+		pinmux_configure(key_shifter_pl2_pin, PINMUX_L25_GPIO);
+	}
+
     // Configure pins
     gpio_configure(key_shifter_clk_pin, GPIO_DIR_OUTPUT);
-    gpio_set_output(key_shifter_clk_pin, 1);
+	gpio_set_output(key_shifter_clk_pin, (current_device == DEVICE_GB300) ? 0 : 1); // TODO: Make this more universal
 
     gpio_configure(key_shifter_pl1_pin, GPIO_DIR_OUTPUT);
     gpio_configure(key_shifter_pl2_pin, GPIO_DIR_OUTPUT);
-	if (current_device == DEVICE_DY19) gpio_configure(key_shifter_pl3_pin, GPIO_DIR_OUTPUT);
+	if (key_shifter_pl3_pin != PINPAD_INVALID) gpio_configure(key_shifter_pl3_pin, GPIO_DIR_OUTPUT);
+
+	gpio_set_output(key_shifter_pl1_pin, 0);
+	gpio_set_output(key_shifter_pl2_pin, 0);
+	if (key_shifter_pl3_pin != PINPAD_INVALID) gpio_set_output(key_shifter_pl3_pin, 0);
 
     gpio_set_output(key_shifter_clk_pin, 0);
-    usleep(4); // KEY_SHIFTER_LOAD_US
+    usleep(4); // KEY_SHIFTER_LOAD
 
     // Set D0/D1 as inputs for serial reading
     gpio_configure(key_shifter_pl1_pin, GPIO_DIR_INPUT);
     gpio_configure(key_shifter_pl2_pin, GPIO_DIR_INPUT);
-	if (current_device == DEVICE_DY19) gpio_configure(key_shifter_pl3_pin, GPIO_DIR_INPUT);
+	if (key_shifter_pl3_pin != PINPAD_INVALID) gpio_configure(key_shifter_pl3_pin, GPIO_DIR_INPUT);
+	usleep(4); // KEY_SHIFTER_SETTLE
 
     // Read 16-bit shift register
     for (int i = 0; i < current_shift_map_size; i++) {
         int raw0 = 1 ^ gpio_get_input(key_shifter_pl1_pin); // 0=release, 1=press
         int raw1 = 1 ^ gpio_get_input(key_shifter_pl2_pin);
 		int raw2 = 0;
-		if (current_device == DEVICE_DY19) raw2 = 1 ^ gpio_get_input(key_shifter_pl3_pin);
+		if (key_shifter_pl3_pin != PINPAD_INVALID) raw2 = 1 ^ gpio_get_input(key_shifter_pl3_pin);
 
         // Combine into mask if either P1 or P2 is active
         uint8_t button = current_shift_map[i];
-		if (current_device == DEVICE_DY19) new_state |= (raw0 || raw1 || raw2) << button;
+		if (key_shifter_pl3_pin != PINPAD_INVALID) new_state |= (raw0 || raw1 || raw2) << button;
 		else new_state |= (raw0 || raw1) << button;
 
         // Pulse clock
         gpio_set_output(key_shifter_clk_pin, 0);
-        usleep(2); // KEY_SHIFTER_CLOCK_LOW_US
+        usleep(3); // KEY_SHIFTER_CLOCK_LOW
         gpio_set_output(key_shifter_clk_pin, 1);
-        usleep(2); // KEY_SHIFTER_CLOCK_HIGH_US
+        usleep(3); // KEY_SHIFTER_CLOCK_HIGH
     }
 
 #ifdef LOG_BTN_PRESS
