@@ -76,7 +76,6 @@ jobs:
           filename: NocturnalRTOS/nightly.zip
           content: |
             **NocturnalRTOS Nightly Build is Ready!**
-            [**Release**](<https://github.com/${{ github.repository }}/releases/tag/nightly>)
+            [**GitHub Download Link**](<https://github.com/${{ github.repository }}/releases/download/nightly/nightly.zip>)
             **Commit:** [`${{ github.sha }}`](<https://github.com/${{ github.repository }}/commit/${{ github.sha }}>)
-            > ${{ steps.commit_info.outputs.TITLE }}
             >>> ${{ steps.commit_info.outputs.TITLE }}${{ steps.commit_info.outputs.BODY != '' && format('\n{0}', steps.commit_info.outputs.BODY) || '' }}
