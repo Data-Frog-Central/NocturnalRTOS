@@ -31,6 +31,7 @@
 #include <kernel/io.h>
 #include <kernel/fb.h>
 #include <hcuapi/fb.h>
+#include <kernel/lib/fdt_api.h>
 #include <hcge/ge_api.h>
 #include <cpu_func.h>
 
@@ -69,7 +70,17 @@ bool gfx_custom_y_enabled = false;
 int gfx_custom_x = 0;
 int gfx_custom_y = 0;
 
+bool must_rotate_fb = false;
+uint16_t *rotate_framebuffer = NULL;
+
 static int init_fb_device(void) {
+    // TODO: Maybe guard this better, rotated_screen is not a good name
+	u32 rotated_screen = 1;
+	int de = fdt_node_probe_by_path("/hcrtos/de-engine");
+	if (de >= 0) fdt_get_property_u_32_index(de, "rotated-screen", 0, &rotated_screen);
+    if (rotated_screen == 0) must_rotate_fb = true;
+    else must_rotate_fb = false;
+
     int ret;
     if(hcge_open(&hcge_ctx) != 0) {
         frontend_log_cb(RETRO_LOG_ERROR, "DISPLAY_DRIVER" ,"Init hcge error.\n");
@@ -135,6 +146,11 @@ static void deinit_fb_device(void) {
         }
         close(sf2000_ctx.fbdev);
         sf2000_ctx.fbdev = -1;
+    }
+
+    if (rotate_framebuffer) {
+        free(rotate_framebuffer);
+        rotate_framebuffer = NULL;
     }
 }
 
@@ -443,23 +459,52 @@ void blit_to_screen(const void *frame, unsigned width, unsigned height, unsigned
     static FrameInfo src_info;
     static FrameInfo dst_info;
     static ScalingMode last_mode = (ScalingMode)-1;
+    static size_t current_allocated_size = 0;
 
-    if (width == sf2000_ctx.var.xres && height == sf2000_ctx.var.yres) {
+    uint32_t tmp_rot_width = 0;
+    uint32_t tmp_rot_height = 0;
+    uint32_t tmp_rot_pitch = 0;
+    
+    if ((!must_rotate_fb && (width == sf2000_ctx.var.xres && height == sf2000_ctx.var.yres)) || (must_rotate_fb && (width == sf2000_ctx.var.yres && height == sf2000_ctx.var.xres))) {
         src_info = (FrameInfo){ frame, width, height, width, height, pitch, 0, 0, rgb32 };
         dst_info = (FrameInfo){ sf2000_ctx.fb_base, sf2000_ctx.var.xres, sf2000_ctx.var.yres, sf2000_ctx.var.xres, sf2000_ctx.var.yres, sf2000_ctx.line_width, 0, 0, false };
-        hcge_accel_blit(src_info, dst_info, ROTATE_0);
+        if (must_rotate_fb) hcge_accel_blit(src_info, dst_info, ROTATE_270);
+        else hcge_accel_blit(src_info, dst_info, ROTATE_0);
         return;
     }
 
-    if (width != src_info.full_width || height != src_info.full_height || pitch != src_info.pitch || rgb32 != src_info.rgb32|| scale_mode != last_mode) {
-        src_info = (FrameInfo){ frame, width, height, width, height, pitch, 0, 0, rgb32 };
+    if (must_rotate_fb) {
+        tmp_rot_width = height;
+        tmp_rot_height = width;
+        tmp_rot_pitch = tmp_rot_width * (rgb32 ? sizeof(uint32_t) : sizeof(uint16_t));
+        size_t required_size = tmp_rot_pitch * tmp_rot_height;
+
+        if (!rotate_framebuffer || current_allocated_size < required_size) {
+            if (rotate_framebuffer) free(rotate_framebuffer);
+            rotate_framebuffer = malloc(required_size);
+            current_allocated_size = required_size;
+        }
+
+        FrameInfo rot_src = (FrameInfo){ frame, width, height, width, height, pitch, 0, 0, rgb32 };
+        FrameInfo rot_dst = (FrameInfo){ rotate_framebuffer, tmp_rot_width, tmp_rot_height, tmp_rot_width, tmp_rot_height, tmp_rot_pitch, 0, 0, rgb32 };
+        hcge_accel_blit(rot_src, rot_dst, ROTATE_270);
+    } else {
+        tmp_rot_width = width;
+        tmp_rot_height = height;
+        tmp_rot_pitch = pitch;
+    }
+
+    if (tmp_rot_width != src_info.full_width || tmp_rot_height != src_info.full_height || tmp_rot_pitch != src_info.pitch || rgb32 != src_info.rgb32|| scale_mode != last_mode) {
+        if (must_rotate_fb) src_info = (FrameInfo){ rotate_framebuffer, tmp_rot_width, tmp_rot_height, tmp_rot_width, tmp_rot_height, tmp_rot_pitch, 0, 0, rgb32 };
+        else src_info = (FrameInfo){ frame, width, height, width, height, pitch, 0, 0, rgb32 };
         dst_info = (FrameInfo){ sf2000_ctx.fb_base, sf2000_ctx.var.xres, sf2000_ctx.var.yres, sf2000_ctx.var.xres, sf2000_ctx.var.yres, sf2000_ctx.line_width, 0, 0, false };
         last_mode = scale_mode;
         calculate_scale(&src_info, &dst_info, scale_mode);
+    } else {
+        if (must_rotate_fb) src_info.frame = rotate_framebuffer;
+        else src_info.frame = frame;
+        dst_info.frame = sf2000_ctx.fb_base;
     }
-
-    src_info.frame = frame;
-    dst_info.frame = sf2000_ctx.fb_base;
 
     hcge_accel_stretch_blit(src_info, dst_info);
 }

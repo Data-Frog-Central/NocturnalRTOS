@@ -260,22 +260,21 @@ enum st7789v2_command { // some common ones
 	COLMOD	= 0x3a  // Interface Pixel Format
 };
 
-// TODO these should come from the device tree
-#define COLUMN_COUNT	320
-#define ROW_COUNT	240
+u32 column_count = 0;
+u32 row_count = 0;
 
 static void st7789v2_restart_frame(void) {
 	st7789v2_write_command(CASET);
 	st7789v2_write_data(0);
 	st7789v2_write_data(0);
-	st7789v2_write_data((COLUMN_COUNT - 1) >> 8);
-	st7789v2_write_data((COLUMN_COUNT - 1) & 255);
+	st7789v2_write_data((column_count - 1) >> 8);
+	st7789v2_write_data((column_count - 1) & 255);
 
 	st7789v2_write_command(RASET);
 	st7789v2_write_data(0);
 	st7789v2_write_data(0);
-	st7789v2_write_data((ROW_COUNT - 1) >> 8);
-	st7789v2_write_data((ROW_COUNT - 1) & 255);
+	st7789v2_write_data((row_count - 1) >> 8);
+	st7789v2_write_data((row_count - 1) & 255);
 
 	st7789v2_write_command(RAMWR);
 }
@@ -609,6 +608,13 @@ static int st7789v2_select_init_from_panel(void) {
 }
 
 static int st7789v2_display_init(void) {
+
+	int np_timing = fdt_node_probe_by_path("/hcrtos/de-engine/VPInitInfo/rgb-cfg/timing-para");
+	if (np_timing >= 0) {
+        fdt_get_property_u_32_index(np_timing, "h-active-len", 0, &column_count);
+        fdt_get_property_u_32_index(np_timing, "v-active-len", 0, &row_count);
+    }
+
     lcd_pinmux_rgb(0);
     printf("%s %d\n", __FUNCTION__,__LINE__);
 
@@ -646,18 +652,29 @@ static int st7789v2_display_init(void) {
 		ms = *pinit++;
 		if (ms) msleep(ms);
 	}
+
+	// TODO: Maybe guard this better, rotated_screen is not a good name
+	u32 rotated_screen = 1;
+	int de = fdt_node_probe_by_path("/hcrtos/de-engine");
+	if (de >= 0) fdt_get_property_u_32_index(de, "rotated-screen", 0, &rotated_screen);
+
+	if (rotated_screen == 0) {
+		st7789v2_write_command(0x36);
+		st7789v2_write_data(0x00);
+	}
+
 	st7789v2_write_command(DISPON);
 	st7789v2_restart_frame();
 
 #if SHOW_TESTIMAGE
     //TestImage
-    for(int y = 0; y < ROW_COUNT; y++)
+    for(int y = 0; y < row_count; y++)
     {
-        for(int x = 0; x < COLUMN_COUNT; x++)
+        for(int x = 0; x < column_count; x++)
         {
             int r = x;
             int g = y;
-            int b = COLUMN_COUNT - x;
+            int b = column_count - x;
             int data = ((r&0b11111000) << 8)
                     | ((g&0b11111100) << 3)
                     | ((b&0b11111000) >> 3);
@@ -669,12 +686,20 @@ static int st7789v2_display_init(void) {
 #endif
 
 #if SHOW_BOOTIMAGE
-    int total_pixels = BOOT_IMAGE_WIDTH * BOOT_IMAGE_HEIGHT;
-    for (int i = 0; i < total_pixels; i++) {
-        uint16_t pixel = boot_logo_data[i]; 
-        st7789v2_write_data(pixel); 
+	for (u32 r = 0; r < row_count; r++) {
+        for (u32 c = 0; c < column_count; c++) {
+            int orig_index;
+            
+            if (row_count > column_count) {
+                int orig_x = r;
+                int orig_y = BOOT_IMAGE_HEIGHT - 1 - c;
+                orig_index = orig_y * BOOT_IMAGE_WIDTH + orig_x;
+            } else orig_index = r * BOOT_IMAGE_WIDTH + c;
+            
+            uint16_t pixel = boot_logo_data[orig_index]; 
+            st7789v2_write_data(pixel); 
+        }
     }
-
     usleep(SHOW_BOOTIMAGE * 1000 * 1000);
 #endif
 
