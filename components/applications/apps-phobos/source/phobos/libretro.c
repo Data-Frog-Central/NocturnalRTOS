@@ -407,7 +407,10 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
 	core_frameskip = NULL;
 
     frontend_log_cb(RETRO_LOG_DEBUG, "FRONTEND" ,"loading core\n", load_state);
-	ret = load_core(core_path);
+
+	char core_file_path[MAXPATH];
+	snprintf(core_file_path, sizeof(core_file_path), "%s/%s.mars", CORES_DIRECTORY, core_path);
+	ret = load_core(core_file_path);
 	if (!ret) goto cleanup_fail;
 	
 	// Pass frontend functions to core
@@ -447,7 +450,7 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
     	" %s\n\n (%s%s)\n\n %s\n\n %s\n\n %s%s%s\n\n State:%d\n\n",
 		sysinfo.library_name ? sysinfo.library_name : "(null)",
 		core_path ? core_path : "null",
-		core_path ? ".hcrtos" : "",
+		core_path ? ".mars" : "",
 		sysinfo.library_version ? sysinfo.library_version : "(null)",
     	dir ? dir : "(null)",
     	rom_filename ? rom_filename : "(null)",
