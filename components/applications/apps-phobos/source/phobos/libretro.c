@@ -11,9 +11,8 @@
 #include <freertos/task.h>
 
 #include <libretro.h>
-#include <core_api.h>
 #include <argent_loader.h>
-#include <dartos.h>
+#include <gateway.h>
 
 #include "../drivers/sf2000_audio.h"
 #include "../drivers/sf2000_gfx.h"
@@ -128,7 +127,7 @@ static void get_emu_framerate(double core_fps, double *emu_frame_rate) {
     /* clamp safety */
 	*emu_frame_rate = core_fps;
     if (*emu_frame_rate < 10.0f || *emu_frame_rate > 200.0f) {
-		int region = core_api.retro_get_region();
+		int region = retro_get_region();
 		if (region == RETRO_REGION_PAL) *emu_frame_rate = 50;
 		else *emu_frame_rate = 60;
 	}
@@ -387,7 +386,7 @@ bool load_game(const char *file_path) {
 		game_info_ext.file_in_archive = is_zip;
 		game_info_ext.persistent_data = false; // TODO: Does anything need this?
 
-		bool ret = core_api.retro_load_game(&gameinfo);
+		bool ret = retro_load_game(&gameinfo);
 		if (!ret) { 
 			frontend_log_cb(RETRO_LOG_ERROR, "FRONTEND" ,"retro_load_game failed\n");
         	return false;
@@ -412,21 +411,21 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
 	if (!ret) goto cleanup_fail;
 	
 	// Pass frontend functions to core
-	core_api.retro_set_video_refresh(frontend_video_cb);
-	core_api.retro_set_audio_sample_batch(frontend_audio_batch_cb);
-	core_api.retro_set_audio_sample_batch(mono_audio_enabled ? frontend_mono_audio_batch_cb : frontend_audio_batch_cb);
-	core_api.retro_set_input_poll(frontend_input_poll_cb);
-	core_api.retro_set_input_state(frontend_input_state_cb);
-	core_api.retro_set_environment(frontend_environment_cb);
+	retro_set_video_refresh(frontend_video_cb);
+	retro_set_audio_sample_batch(frontend_audio_batch_cb);
+	retro_set_audio_sample_batch(mono_audio_enabled ? frontend_mono_audio_batch_cb : frontend_audio_batch_cb);
+	retro_set_input_poll(frontend_input_poll_cb);
+	retro_set_input_state(frontend_input_state_cb);
+	retro_set_environment(frontend_environment_cb);
 
 	// Begin retro init
 	frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"Retro Init\n");
-	core_api.retro_get_system_info(&sysinfo);
+	retro_get_system_info(&sysinfo);
 	snprintf(assets_dir, sizeof(assets_dir), "%s/%s", ASSETS_DIRECTORY, sysinfo.library_name);
 	apply_backlight_brightness(brightness_percentage, 10000, 1);
 	core_config_load();
 	rom_config_load();
-	core_api.retro_init();
+	retro_init();
 
 	frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"%s, (%s%s), %s, %s, %s%s%s, State:%d\n",
 		sysinfo.library_name ? sysinfo.library_name : "(null)",
@@ -461,7 +460,7 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
 	if (!ret) goto cleanup_retro;
 	load_srm(0);
 
-	core_api.retro_get_system_av_info(&av_info);
+	retro_get_system_av_info(&av_info);
     audio_init(temp_audio_device, av_info.timing.sample_rate);
 	joypad_init(temp_joypad_device);
 	
@@ -502,8 +501,8 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
             int occupancy = get_audio_occupancy();
             core_frameskip(should_frameskip(frames_behind, occupancy));
 
-            for (int i = 0; i < steps; i++) core_api.retro_run();
-        } else core_api.retro_run();
+            for (int i = 0; i < steps; i++) retro_run();
+        } else retro_run();
 
         next_frame_us += frame_time_us_int;
         now_us = get_time_us();
@@ -517,11 +516,11 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
 
 	cleanup:
    		save_srm(0);
-    	core_api.retro_unload_game();
+    	retro_unload_game();
 		audio_deinit();
 
 	cleanup_retro:
-		core_api.retro_deinit();
+		retro_deinit();
     	//unload_core(); // TODO: add core deinit
     	if (rom_buffer) { free(rom_buffer); rom_buffer = NULL; }
 

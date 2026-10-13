@@ -1,7 +1,7 @@
 #ifndef SF2000_GFX_H__
 #define SF2000_GFX_H__
 
-#include <dartos.h>
+#include <gateway.h>
 
 #define RGB565(r,g,b) ( ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | ((b & 0xF8) >> 3) )
 #define RGB32(r, g, b) ( (0xFF << 24) | ((r & 0xFF) << 16) | ((g & 0xFF) << 8) | (b & 0xFF) ) // Automatically opaque 

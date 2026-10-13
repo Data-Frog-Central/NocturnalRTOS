@@ -83,6 +83,10 @@ int apply_backlight_brightness(int pwm_level, int pwm_frequency, int polarity) {
     }
 }
 
+uint32_t get_time_ms(void) {
+    return (uint32_t)xTaskGetTickCount();
+}
+
 static void check_nb_registers(bool first_run) {
     uint32_t ldcr_before  = NB_REG(NB_LDCR);
     uint32_t ldcr1_before = NB_REG(NB_LDCR + 4);

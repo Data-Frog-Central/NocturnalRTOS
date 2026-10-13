@@ -36,7 +36,7 @@
 #include <cpu_func.h>
 
 #include <libretro.h>
-#include <dartos.h>
+#include <gateway.h>
 
 #include "sf2000_gfx.h"
 #include "../phobos/phobos.h"

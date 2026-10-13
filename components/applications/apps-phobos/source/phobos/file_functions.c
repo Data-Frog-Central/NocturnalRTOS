@@ -13,7 +13,6 @@
 #include <file/file_path.h>
 #include <file/config_file.h>
 
-#include <core_api.h>
 #include <argent_loader.h>
 #include <zip.h>
 
@@ -336,21 +335,21 @@ void save_srm(int slot){
 
     // Save SRM
     build_srm_filepath(ram_filepath, sizeof(ram_filepath), rom_filename, "srm", slot, "Save");
-    size_t save_size = core_api.retro_get_memory_size(RETRO_MEMORY_SAVE_RAM);	
+    size_t save_size = retro_get_memory_size(RETRO_MEMORY_SAVE_RAM);	
 	if(save_size == 0) return;
 	FILE *ram_file = fopen(ram_filepath, "wb");
 	if (!ram_file) return;
-	fwrite(core_api.retro_get_memory_data(RETRO_MEMORY_SAVE_RAM), save_size, 1, ram_file);
+	fwrite(retro_get_memory_data(RETRO_MEMORY_SAVE_RAM), save_size, 1, ram_file);
     fsync(fileno(ram_file));
 	fclose(ram_file);
 
 	// Save RTC
     build_srm_filepath(ram_filepath, sizeof(ram_filepath), rom_filename, "rtc", slot, "Save");
-    size_t rtc_size = core_api.retro_get_memory_size(RETRO_MEMORY_RTC);
+    size_t rtc_size = retro_get_memory_size(RETRO_MEMORY_RTC);
     if (rtc_size == 0) return;
     FILE *rtc_file = fopen(ram_filepath, "wb");
     if (!rtc_file) return;
-    fwrite(core_api.retro_get_memory_data(RETRO_MEMORY_RTC), rtc_size, 1, rtc_file);
+    fwrite(retro_get_memory_data(RETRO_MEMORY_RTC), rtc_size, 1, rtc_file);
     fsync(fileno(rtc_file));
     fclose(rtc_file);
 }
@@ -360,7 +359,7 @@ void load_srm(int slot){
 
     // Load SRM
     build_srm_filepath(ram_filepath, sizeof(ram_filepath), rom_filename, "srm", slot, "Load");
-	size_t save_size = core_api.retro_get_memory_size(RETRO_MEMORY_SAVE_RAM);
+	size_t save_size = retro_get_memory_size(RETRO_MEMORY_SAVE_RAM);
     FILE *ram_file = fopen(ram_filepath, "rb");
 	if (!ram_file) return;
 	fseeko(ram_file, 0, SEEK_END);
@@ -376,12 +375,12 @@ void load_srm(int slot){
 		return;
 	}
 
-	fread(core_api.retro_get_memory_data(RETRO_MEMORY_SAVE_RAM), 1, save_size, ram_file);
+	fread(retro_get_memory_data(RETRO_MEMORY_SAVE_RAM), 1, save_size, ram_file);
 	fclose(ram_file);
 
 	// Load RTC
     build_srm_filepath(ram_filepath, sizeof(ram_filepath), rom_filename, "rtc", slot, "Load");
-    size_t rtc_size = core_api.retro_get_memory_size(RETRO_MEMORY_RTC);
+    size_t rtc_size = retro_get_memory_size(RETRO_MEMORY_RTC);
     FILE *rtc_file = fopen(ram_filepath, "rb");
     if (!rtc_file) return;
     fseeko(rtc_file, 0, SEEK_END);
@@ -397,6 +396,6 @@ void load_srm(int slot){
         return;
     }
 
-    fread(core_api.retro_get_memory_data(RETRO_MEMORY_RTC), 1, rtc_size, rtc_file);
+    fread(retro_get_memory_data(RETRO_MEMORY_RTC), 1, rtc_size, rtc_file);
     fclose(rtc_file);
 }
