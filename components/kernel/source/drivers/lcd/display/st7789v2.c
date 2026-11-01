@@ -658,9 +658,12 @@ static int st7789v2_display_init(void) {
 	int de = fdt_node_probe_by_path("/hcrtos/de-engine");
 	if (de >= 0) fdt_get_property_u_32_index(de, "rotated-screen", 0, &rotated_screen);
 
+	unsigned short madctl_data = 0x00;
+	if (init_index == INIT_GB300) madctl_data = 0xC8;
+
 	if (rotated_screen == 0) {
 		st7789v2_write_command(0x36);
-		st7789v2_write_data(0x00);
+		st7789v2_write_data(madctl_data);
 	}
 
 	st7789v2_write_command(DISPON);

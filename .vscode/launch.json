@@ -7,7 +7,7 @@
             "request": "launch",
             "program": "/bin/bash",
             "args": [
-                "${workspaceFolder}/buildSfClean.sh"
+                "${workspaceFolder}/scripts/buildSfClean.sh"
             ],
             "cwd": "${workspaceFolder}",
             "stopAtEntry": false
@@ -18,7 +18,7 @@
             "request": "launch",
             "program": "/bin/bash",
             "args": [
-                "${workspaceFolder}/buildSf.sh"
+                "${workspaceFolder}/scripts/buildSf.sh"
             ],
             "cwd": "${workspaceFolder}",
             "stopAtEntry": false

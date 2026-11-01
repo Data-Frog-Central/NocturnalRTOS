@@ -4,7 +4,7 @@
         {
             "label": "Build SF2000 App",
             "type": "shell",
-            "command": "${workspaceFolder}/buildSf.sh",
+            "command": "${workspaceFolder}/scripts/buildSf.sh",
             "group": "none",
             "presentation": {
                 "echo": true,
@@ -17,7 +17,7 @@
         {
             "label": "Clean Build SF2000 App",
             "type": "shell",
-            "command": "${workspaceFolder}/buildSfClean.sh",
+            "command": "${workspaceFolder}/scripts/buildSfClean.sh",
             "group": "none",
             "presentation": {
                 "echo": true,
