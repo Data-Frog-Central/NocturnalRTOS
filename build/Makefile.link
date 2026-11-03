@@ -122,6 +122,7 @@ LIBUSBMIRROR_FILES=$(patsubst lib%.a, -l%, $(notdir $(wildcard $(PREBUILT_DIR)/u
 
 ldlibs-$(BR2_PACKAGE_LIBRETRO_COMMON) += -lretro-common
 ldlibs-$(BR2_PACKAGE_ARGENT_LOADER) += -largent_loader
+ldlibs-$(BR2_PACKAGE_LUA) += -llua
 ldlibs-$(BR2_PACKAGE_LIBUSB) += -lusb
 ldlibs-$(BR2_PACKAGE_LIBOPENSSL) += -lssl -lcrypto
 ldlibs-$(BR2_PACKAGE_HCCAST) += -lhccast-com
