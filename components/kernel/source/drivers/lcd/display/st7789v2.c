@@ -653,16 +653,14 @@ static int st7789v2_display_init(void) {
 		if (ms) msleep(ms);
 	}
 
-	// TODO: Maybe guard this better, rotated_screen is not a good name
-	u32 rotated_screen = 1;
+	u32 landscape_screen = 1;
 	int de = fdt_node_probe_by_path("/hcrtos/de-engine");
-	if (de >= 0) fdt_get_property_u_32_index(de, "rotated-screen", 0, &rotated_screen);
+	if (de >= 0) fdt_get_property_u_32_index(de, "landscape-screen", 0, &landscape_screen);
 
-	unsigned short madctl_data = 0x00;
-	if (init_index == INIT_GB300) madctl_data = 0xC8;
-
-	if (rotated_screen == 0) {
-		st7789v2_write_command(0x36);
+	if (landscape_screen == 0) {
+		unsigned short madctl_data = 0x00; // For SF2000 screen
+		if (init_index == INIT_GB300) madctl_data = 0xC8;
+		st7789v2_write_command(MADCTL);
 		st7789v2_write_data(madctl_data);
 	}
 

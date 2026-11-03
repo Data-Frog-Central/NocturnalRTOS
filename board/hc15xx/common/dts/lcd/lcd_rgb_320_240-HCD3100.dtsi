@@ -12,7 +12,7 @@
 
 &DE {
     tvtype = <15>;
-	rotated-screen = <1>;
+	landscape-screen = <1>;
 	VPInitInfo {
 		rgb-cfg{
 			b-rgb-enable = <1>;

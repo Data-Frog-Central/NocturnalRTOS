@@ -57,11 +57,10 @@ bool must_rotate_fb = false;
 uint16_t *rotate_framebuffer = NULL;
 
 static int init_fb_device(void) {
-    // TODO: Maybe guard this better, rotated_screen is not a good name
-	u32 rotated_screen = 1;
+	u32 landscape_screen = 1;
 	int de = fdt_node_probe_by_path("/hcrtos/de-engine");
-	if (de >= 0) fdt_get_property_u_32_index(de, "rotated-screen", 0, &rotated_screen);
-    if (rotated_screen == 0) must_rotate_fb = true;
+	if (de >= 0) fdt_get_property_u_32_index(de, "landscape-screen", 0, &landscape_screen);
+    if (landscape_screen == 0) must_rotate_fb = true;
     else must_rotate_fb = false;
 
     int ret;
