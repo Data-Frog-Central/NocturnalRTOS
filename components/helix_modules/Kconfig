@@ -1,0 +1,5 @@
+config BR2_PACKAGE_HELIX_MODULES
+    bool "helix_modules"
+    default n
+    help
+        Modular libs ideally designed to work with both Phobos and Deimos.
