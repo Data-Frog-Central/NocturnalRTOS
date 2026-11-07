@@ -659,7 +659,7 @@ static int st7789v2_display_init(void) {
 
 	if (landscape_screen == 0) {
 		unsigned short madctl_data = 0x00; // For SF2000 screen
-		if (init_index == INIT_GB300) madctl_data = 0xC8;
+		if (init_index == INIT_GB300) madctl_data = 0x48;
 		st7789v2_write_command(MADCTL);
 		st7789v2_write_data(madctl_data);
 	}
