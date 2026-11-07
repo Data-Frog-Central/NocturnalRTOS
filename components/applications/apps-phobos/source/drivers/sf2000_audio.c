@@ -18,8 +18,7 @@
 #include <hcuapi/pinpad.h>
 
 #include <libretro.h>
-
-extern void frontend_log_cb(enum retro_log_level level, const char *tag, const char *fmt, ...);
+#include <helix/helix_logging.h>
 
 static void *audio_ctx = NULL;
 

@@ -13,8 +13,9 @@
 #include <file/file_path.h>
 #include <file/config_file.h>
 
-#include <argent_loader.h>
 #include <zip.h>
+#include <helix/helix_logging.h>
+#include <helix/nocturnal_paths.h>
 
 #include "../drivers/sf2000_gfx.h"
 #include "file_functions.h"

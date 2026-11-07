@@ -13,6 +13,8 @@
 #include <libretro.h>
 #include <argent_loader.h>
 #include <gateway.h>
+#include <helix/helix_logging.h>
+#include <helix/nocturnal_paths.h>
 
 #include "../drivers/sf2000_audio.h"
 #include "../drivers/sf2000_gfx.h"
@@ -47,56 +49,6 @@ size_t rom_size;
 
 unsigned short loading_txt_color = RGB565(255,255,255);  // white
 unsigned short loading_bg_color = RGB565(0,0,0);   // black
-
-void frontend_log_cb(enum retro_log_level level, const char *tag, const char *fmt, ...) {
-    char buffer[500];
-
-    va_list args;
-    va_start(args, fmt);
-    vsnprintf(buffer, sizeof(buffer), fmt, args);
-    va_end(args);
-
-    // Determine the log level string
-	// TODO: Add a setting to block logs as a whole and specific log levels
-	// Users will probably only want WARN and ERROR logs
-    const char *level_str = "";
-    switch (level) {
-        case RETRO_LOG_DEBUG: level_str = "DEBUG"; break;
-        case RETRO_LOG_INFO: level_str = "INFO"; break;
-        case RETRO_LOG_WARN: level_str = "WARN"; break;
-        case RETRO_LOG_ERROR: level_str = "ERROR"; break;
-        default: break;
-    }
-	// TODO: Right now we just print logs and rely on fileuart
-    // While fileuart is useful for debugging, logging ALL print functions might be a bad idea
-    // So maybe a new xlog function would be desirable
-    printf("[%s][%s] %s", tag, level_str, buffer);
-}
-
-void core_log_cb(enum retro_log_level level, const char *fmt, ...) {
-    char buffer[500];
-
-    va_list args;
-    va_start(args, fmt);
-    vsnprintf(buffer, sizeof(buffer), fmt, args);
-    va_end(args);
-
-    // Determine the log level string
-	// TODO: Add a setting to block logs as a whole and specific log levels
-	// Users will probably only want WARN and ERROR logs
-    const char *level_str = "";
-    switch (level) {
-        case RETRO_LOG_DEBUG: level_str = "DEBUG"; break;
-        case RETRO_LOG_INFO: level_str = "INFO"; break;
-        case RETRO_LOG_WARN: level_str = "WARN"; break;
-        case RETRO_LOG_ERROR: level_str = "ERROR"; break;
-        default: break;
-    }
-	// TODO: Right now we just print logs and rely on fileuart
-    // While fileuart is useful for debugging, logging ALL print functions might be a bad idea
-    // So maybe a new xlog function would be desirable
-    printf("[CORE][%s] %s", level_str, buffer);
-}
 
 static void frameskip_cb(bool skipping) {
     if (!audio_buff_status_cb)
@@ -348,7 +300,7 @@ bool load_game(const char *file_path) {
 		} else {
 			FILE *hfile = fopen(file_path, "rb");
 			if (!hfile) {
-				frontend_log_cb(RETRO_LOG_ERROR, "FRONTEND" ,"Error opening rom file=%s\n", file_path ? file_path : "(null)");
+				frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"Failed opening rom file=%s\n", file_path ? file_path : "(null)");
 				core_supports_rom_in_buffer = false;
 				goto skip_file_load; // Maybe should detect if the core needs a file
 			}
@@ -479,8 +431,6 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
 	int64_t next_frame_us = get_time_us();
     frontend_log_cb(RETRO_LOG_DEBUG, "FRONTEND", "frame_time_us=%f frame_time_us_int=%lld emu_frame_rate=%f\n", frame_time_us, (long long)frame_time_us_int, emu_frame_rate);
 	
-	// TODO: Cache controller input and check for hotkeys
-	// TODO: Pause menu and ability to exit
 	draw_border(core_path); // Draw the border right before the main loop
     while (1) {
         if (close_emulator_flag || safe_shutdown_flag) {
@@ -528,6 +478,7 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
     	if (rom_buffer) { free(rom_buffer); rom_buffer = NULL; }
 
 	cleanup_fail:
+		if (!ret) show_loading_screen(false, true, loading_txt_color, loading_bg_color, " Loading ROM Failed\n\n Check logs for more info\n\n");
     	return ret;
 }
 

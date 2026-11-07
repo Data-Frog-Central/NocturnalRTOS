@@ -23,7 +23,7 @@
 #include <nuttx/wqueue.h>
 
 #define CONFIG_FILEUART_TX_BUF_SIZE 1024
-#define LOGS_DIRECTORY		"/system/logs"
+#define LOGS_DIRECTORY		"cfw/logs"
 
 volatile int fileuart_ready;
 

@@ -6,6 +6,9 @@
 
 #include <libretro.h>
 #include <retro_miscellaneous.h>
+#include <helix/helix_logging.h>
+#include <helix/nocturnal_paths.h>
+
 #include "sf2000_joypad.h"
 #include "../phobos/phobos.h"
 
@@ -13,8 +16,6 @@
 
 #include <hcuapi/gpio.h>
 #include <hcuapi/pinpad.h>
-
-extern void frontend_log_cb(enum retro_log_level level, const char *tag, const char *fmt, ...);
 
 //#define LOG_BTN_PRESS = true;
 #define IGNORE_BTN 255

@@ -20,6 +20,9 @@
 
 #include <libretro.h>
 #include <gateway.h>
+#include <helix/helix_logging.h>
+#include <helix/helix_images.h>
+#include <helix/nocturnal_paths.h>
 
 #include "sf2000_gfx.h"
 #include "../phobos/phobos.h"
@@ -39,7 +42,6 @@ typedef struct sf2000_gfx_data {
 static sf2000_gfx_data_t sf2000_ctx = {0};
 static hcge_context *hcge_ctx = NULL;
 
-extern void frontend_log_cb(enum retro_log_level level, const char *tag, const char *fmt, ...);
 extern bool enable_xrgb8888_support;
 
 ScalingMode global_scaling_mode = SCALE_STRETCH;
@@ -281,82 +283,6 @@ void hcge_fb_fill_rect(FrameInfo fill_frame, uint32_t color) {
     hcge_engine_sync(hcge_ctx);
 
     cache_invalidate(fill_frame.frame, fill_frame.pitch * fill_frame.full_height);
-}
-
-uint16_t* load_bmp_image(const char *file_path, unsigned *out_width, unsigned *out_height, unsigned *out_pitch) {
-    if (out_width)  *out_width = 0;
-    if (out_height) *out_height = 0;
-    if (out_pitch)  *out_pitch = 0;
-
-    FILE *file = fopen(file_path, "rb");
-    if (!file) {
-        frontend_log_cb(RETRO_LOG_INFO, "DISPLAY_DRIVER" ,"Failed to open BMP: %s\n", file_path);
-        return NULL;
-    }
-
-    BMPFileHeader file_header;
-    BMPInfoHeader info_header;
-
-    if (fread(&file_header, sizeof(BMPFileHeader), 1, file) != 1 ||
-        fread(&info_header, sizeof(BMPInfoHeader), 1, file) != 1) {
-        frontend_log_cb(RETRO_LOG_ERROR, "DISPLAY_DRIVER" ,"Failed to read BMP headers.\n");
-        fclose(file);
-        return NULL;
-    }
-
-    if (file_header.type != 0x4D42 || info_header.bits_per_pixel != 24 || info_header.compression != 0) {
-        frontend_log_cb(RETRO_LOG_ERROR, "DISPLAY_DRIVER" ,"Unsupported BMP format. Must be uncompressed 24-bit.\n");
-        fclose(file);
-        return NULL;
-    }
-
-    unsigned width = info_header.width;
-    unsigned height = abs(info_header.height);
-    bool flip_vertical = (info_header.height > 0);
-    unsigned pitch = width * sizeof(uint16_t);
-
-    uint16_t *rgb565_buffer = (uint16_t *)malloc(width * height * sizeof(uint16_t));
-    if (!rgb565_buffer) {
-        frontend_log_cb(RETRO_LOG_ERROR, "DISPLAY_DRIVER" ,"Memory allocation failed for RGB565 buffer.\n");
-        fclose(file);
-        return NULL;
-    }
-
-    if (fseek(file, file_header.offset, SEEK_SET) != 0) {
-        frontend_log_cb(RETRO_LOG_ERROR, "DISPLAY_DRIVER" ,"Failed to seek to pixel data.\n");
-        free(rgb565_buffer);
-        fclose(file);
-        return NULL;
-    }
-
-    int row_padding = (4 - (width * 3) % 4) % 4;
-    uint8_t bgr_pixel[3];
-
-    for (int y = 0; y < height; y++) {
-        int target_y = flip_vertical ? (height - 1 - y) : y;
-        uint16_t *row_ptr = rgb565_buffer + (target_y * width);
-
-        for (int x = 0; x < width; x++) {
-            if (fread(bgr_pixel, 3, 1, file) != 1) {
-                break;
-            }
-
-            uint16_t r = (bgr_pixel[2] & 0xF8) << 8;
-            uint16_t g = (bgr_pixel[1] & 0xFC) << 3;
-            uint16_t b = (bgr_pixel[0] & 0xF8) >> 3;
-
-            row_ptr[x] = r | g | b;
-        }
-        fseek(file, row_padding, SEEK_CUR);
-    }
-
-    fclose(file);
-
-    if (out_width)  *out_width = width;
-    if (out_height) *out_height = height;
-    if (out_pitch)  *out_pitch = pitch;
-
-    return rgb565_buffer;
 }
 
 void draw_black_screen(void) {

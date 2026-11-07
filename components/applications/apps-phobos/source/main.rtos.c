@@ -26,6 +26,10 @@
 #include <hcuapi/pwm.h>
 
 #include <libretro.h>
+#include <helix/helix_logging.h>
+#include <helix/nocturnal_paths.h>
+#include <helix/helix_fake_rtc.h>
+
 #include "drivers/sf2000_gfx.h"
 #include "phobos/phobos.h"
 
@@ -42,51 +46,34 @@
 extern void frontend_config_load(void);
 
 int apply_backlight_brightness(int pwm_level, int pwm_frequency, int polarity) {
-    int fd;
-    uint32_t period_ns;
-    struct pwm_info_s info = { 0 };
-    int ret_set, ret_start;
+    if (pwm_level < 0) pwm_level = 0;
+    if (pwm_level > 100) pwm_level = 100;
 
-    // Ensure backlight_pwm_level is within valid range (0-100)
-    if (pwm_level < 0)
-        pwm_level = 0;
-    if (pwm_level > 100)
-        pwm_level = 100;
-
-    // Set the PWM period in nanoseconds based on the given frequency
-    period_ns = 1000000000u / pwm_frequency;
-
-    // Set PWM characteristics
-    info.period_ns = period_ns;
-    info.duty_ns = (period_ns * (uint32_t)pwm_level) / 100u;  // Calculate duty cycle based on the level
-    info.polarity = polarity;
-
-    // Open the PWM device (/dev/pwm2)
-    fd = open("/dev/pwm2", O_RDWR);
+    int fd = open("/dev/pwm2", O_RDWR);
     if (fd < 0) {
         frontend_log_cb(RETRO_LOG_ERROR, "FRONTEND" ,"Failed to open PWM device /dev/pwm2\n");
         return -1;
     }
 
     // Set PWM characteristics and start the PWM signal
-    ret_set = ioctl(fd, PWMIOC_SETCHARACTERISTICS, &info);
-    ret_start = ioctl(fd, PWMIOC_START, 0);
+    struct pwm_info_s info = { 0 };
+    info.period_ns = 1000000000u / pwm_frequency; // Set the PWM period in nanoseconds based on the given frequency
+    info.duty_ns = (info.period_ns * (uint32_t)pwm_level) / 100u;  // Calculate duty cycle based on the level
+    info.polarity = polarity;
+
+    int ret_set = ioctl(fd, PWMIOC_SETCHARACTERISTICS, &info);
+    int ret_start = ioctl(fd, PWMIOC_START, 0);
     close(fd);
 
-    // Check if the PWM setup was successful
-    if (ret_set == 0 && ret_start == 0) {
-        frontend_log_cb(RETRO_LOG_DEBUG, "FRONTEND" ,"PWM: pwm_level=%d freq=%d period_ns=%u duty_ns=%u polarity=%d\n", pwm_level, pwm_frequency, (unsigned)info.period_ns, (unsigned)info.duty_ns, info.polarity);
-        return 0;
-    } else {
-        frontend_log_cb(RETRO_LOG_ERROR, "FRONTEND" ,"PWM setup failed: ret_set=%d ret_start=%d\n", ret_set, ret_start);
-        return -1;
-    }
+    if (ret_set == 0 && ret_start == 0) return 0;        
+    else return -1;
 }
 
 uint32_t get_time_ms(void) {
     return (uint32_t)xTaskGetTickCount();
 }
 
+// TODO: clean this up and turn off other stuff
 static void check_nb_registers(bool first_run) {
     uint32_t ldcr_before  = NB_REG(NB_LDCR);
     uint32_t ldcr1_before = NB_REG(NB_LDCR + 4);
@@ -150,7 +137,8 @@ static void main_sf2000(void *pvParameters) {
     assert(module_init("all") == 0);
 
 	// Waits for fileuart to be ready
-    if (is_fileuart_enabled()) {
+    bool fileuart = is_fileuart_enabled();
+    if (fileuart) {
 	    int fd = open("/dev/fileuart", O_WRONLY);
 	    struct pollfd pfd = {
     	    .fd = fd,
@@ -163,24 +151,19 @@ static void main_sf2000(void *pvParameters) {
     setUpPins();
 
 	frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"Init Frontend\n");
+    fake_rtc_init();
     frontend_config_load();
     frontend_video_init();
 
-    while (1) {
+    while (1) { // TODO: Guard this to FrogUI only, lua frontend will handle this itself
         check_nb_registers(false);
-	    bool ret = run_emulator(rom_path, core_path, 0);
-        if (!ret) {
-            show_loading_screen(false, true, 0xffff, 0x0000, " Loading ROM Failed\n\n Check logs for more info\n\n");
-            safe_shutdown_flag = true;
-        }
-        if (safe_shutdown_flag) {
-		    safe_shutdown_flag = false;
-			break;
-		}
+        if (!run_emulator(rom_path, core_path, 0)) safe_shutdown_flag = true;
+        if (safe_shutdown_flag) break;
     }
-    
-    // Clean up fileuart and unmount the sd card to stop corruption
-    module_exit("fileuart");
+
+    fake_rtc_deinit();
+    if (fileuart) module_exit("fileuart");
+    // Unmount the sd card to stop corruption
     if (umount(SDCARD_DIRECTORY) < 0) show_loading_screen(true, false, loading_txt_color, loading_bg_color, " Failed to unmount SD card cleanly\n\n Turn off the console now.\n\n");
     show_loading_screen(true, false, loading_txt_color, loading_bg_color, " Safe Shutdown Complete.\n\n It is now safe to power off your console.");
 }
