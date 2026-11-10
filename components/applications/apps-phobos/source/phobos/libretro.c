@@ -285,6 +285,7 @@ bool load_game(const char *file_path) {
 
 	is_zip = is_zip_wqw_file(file_path, &is_wqw);
 	if (!sysinfo.block_extract && (!sysinfo.need_fullpath || extension_supports_no_fullpath(extension))) core_supports_rom_in_buffer = true;
+	else core_supports_rom_in_buffer = false;
 
     if (core_supports_rom_in_buffer || (is_zip && !sysinfo.need_fullpath && !sysinfo.block_extract)) {
 		if (is_zip) {
@@ -385,7 +386,7 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
 	frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"%s, (%s%s), %s, %s, %s%s%s, State:%d\n",
 		sysinfo.library_name ? sysinfo.library_name : "(null)",
     	core_path ? core_path : "null",
-		core_path ? ".hcrtos" : "",
+		core_path ? ".mars" : "",
 		sysinfo.library_version ? sysinfo.library_version : "(null)",
     	dir ? dir : "(null)",
     	rom_filename ? rom_filename : "(null)",

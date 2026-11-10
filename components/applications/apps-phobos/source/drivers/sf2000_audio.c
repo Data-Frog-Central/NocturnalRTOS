@@ -69,7 +69,7 @@ static void *sf2000_audio_init(const char *device_name, unsigned rate, float lat
 	uint32_t bytes = frames_in_latency * frame_size;
 	bytes = (bytes + 31) & ~31;
 
-	params.period_size = bytes / frame_size;
+	params.period_size = bytes;
 	snd_pcm_uframes_t poll_size = bytes / frame_size;
 	frontend_log_cb(RETRO_LOG_DEBUG, "AUDIO_DRIVER" ,"period_size=%u\n", params.period_size);
 	params.periods = 4;
