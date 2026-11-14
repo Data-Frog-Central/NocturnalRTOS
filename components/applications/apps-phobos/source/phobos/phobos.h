@@ -23,7 +23,6 @@ extern unsigned short loading_bg_color;
 bool run_emulator(const char *game_path, const char *core_path, int load_state);
 void close_emulator(void);
 int apply_backlight_brightness(int pwm_level, int pwm_frequency, int polarity);
-void show_loading_screen(bool block_loading, bool loading_dots, unsigned short text_color, unsigned short background_color, const char *fmt, ...);
 void update_fps_counter(const void *data, unsigned width, unsigned height, size_t pitch, bool rgb32);
 
 #endif // MENU_H__

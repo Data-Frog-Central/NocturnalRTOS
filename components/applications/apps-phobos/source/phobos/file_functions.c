@@ -264,7 +264,7 @@ void frontend_config_load(void) {
         ret = config_append_file(frontend_config, config_frontend_filepath);
         frontend_load_settings(frontend_config, true);
     }
-    frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"config_load: %s %s\n", config_frontend_filepath, ret ? "loaded" : "not found");
+    xlog("[FRONTEND][%s] config_load: %s %s\n", ret ? "INFO" : "ERROR", config_frontend_filepath, ret ? "loaded" : "not found"); // xlog this so it logs no matter what
 }
 
 void core_config_load(void) {

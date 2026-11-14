@@ -20,6 +20,7 @@
 #include "../drivers/sf2000_gfx.h"
 #include "../drivers/sf2000_joypad.h"
 #include "file_functions.h"
+#include "loading_screen.h"
 #include "phobos.h"
 
 static retro_audio_buffer_status_callback_t audio_buff_status_cb = NULL;
@@ -400,7 +401,7 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
 		true,
     	loading_txt_color,
     	loading_bg_color,
-    	" %s\n\n (%s%s)\n\n %s\n\n %s\n\n %s%s%s\n\n State:%d\n\n",
+    	"%s\n(%s%s)\n%s\n%s\n%s%s%s\nState:%d\n",
 		sysinfo.library_name ? sysinfo.library_name : "(null)",
 		core_path ? core_path : "null",
 		core_path ? ".mars" : "",
@@ -413,6 +414,7 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
 	);
 
 	ret = load_game(game_path);
+	finish_loading();
 	if (!ret) goto cleanup_retro;
 	load_srm(0);
 
@@ -479,7 +481,10 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
     	if (rom_buffer) { free(rom_buffer); rom_buffer = NULL; }
 
 	cleanup_fail:
-		if (!ret) show_loading_screen(false, true, loading_txt_color, loading_bg_color, " Loading ROM Failed\n\n Check logs for more info\n\n");
+		if (!ret) {
+			show_loading_screen(false, true, loading_txt_color, loading_bg_color, "Loading ROM Failed\nCheck logs for more info\n");
+			finish_loading();
+		}
     	return ret;
 }
 

@@ -20,6 +20,7 @@
 #include <kernel/lib/fdt_api.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <freertos/semphr.h>
 
 #include <hcuapi/gpio.h>
 #include <hcuapi/pinpad.h>
@@ -32,6 +33,7 @@
 
 #include "drivers/sf2000_gfx.h"
 #include "phobos/phobos.h"
+#include "phobos/loading_screen.h"
 
 #define SYSIO_BASE       ((volatile unsigned char *)&SYSIO0)
 #define NB_REG(offset)   (*(volatile uint32_t *)(SYSIO_BASE + (offset)))
@@ -119,14 +121,10 @@ static bool is_fileuart_enabled(void) {
     int ret;
 
     np = fdt_node_probe_by_path("/hcrtos/fileuart");
-    if (np < 0) {
-        //frontend_log_cb(RETRO_LOG_ERROR, "FRONTEND" ,"Fileuart node not present in DTB.\n");
-        return false;
-    }
+    if (np < 0) return false;
 
     ret = fdt_get_property_string_index(np, "status", 0, &status);
     if (ret == 0 && status != NULL) {
-        //frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"Fileuart status = %s\n", status);
         if (strcmp(status, "okay") == 0 || strcmp(status, "ok") == 0) return true;
         else return false;
     }
@@ -150,28 +148,47 @@ static void main_sf2000(void *pvParameters) {
 
     setUpPins();
 
-	frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"Init Frontend\n");
+    // Every boot clear the logs if fileuart isn't enabled
+    // otherwise assume it's a debug build and keep them
+    init_xlog(LOG_PATH, !fileuart, fileuart);
+    xlog("[FRONTEND][INFO] Init Frontend\n"); // xlog these so they log no matter what
+    xlog("[FRONTEND][INFO] Fileuart status = %s\n", fileuart ? "enabled" : "disabled");
+
     fake_rtc_init();
     frontend_config_load();
+    set_min_log_level(0); // TODO: let the user set this
     frontend_video_init();
+
+    xSemaphoreTake(xLoadingInitSemaphore, portMAX_DELAY);
 
     while (1) { // TODO: Guard this to FrogUI only, lua frontend will handle this itself
         check_nb_registers(false);
         if (!run_emulator(rom_path, core_path, 0)) safe_shutdown_flag = true;
+        sync_xlog();
         if (safe_shutdown_flag) break;
     }
 
     fake_rtc_deinit();
+    close_xlog();
     if (fileuart) module_exit("fileuart");
     // Unmount the sd card to stop corruption
-    if (umount(SDCARD_DIRECTORY) < 0) show_loading_screen(true, false, loading_txt_color, loading_bg_color, " Failed to unmount SD card cleanly\n\n Turn off the console now.\n\n");
-    show_loading_screen(true, false, loading_txt_color, loading_bg_color, " Safe Shutdown Complete.\n\n It is now safe to power off your console.");
+    if (umount(SDCARD_DIRECTORY) < 0) show_loading_screen(true, false, loading_txt_color, loading_bg_color, "Failed to unmount SD card cleanly.\nTurn off the console now.");
+    show_loading_screen(true, false, loading_txt_color, loading_bg_color, "Safe Shutdown Complete.\nIt is now safe to power off your console.");
 }
 
 int main(void) {
     size_t stackSize = 0x20000 / sizeof(StackType_t);  // 64 KB stack size in words (FreeRTOS uses words, not bytes)
+
+    xLoadingQueue = xQueueCreate(5, sizeof(loading_msg_t));
+    configASSERT(xLoadingQueue);
+
+    xLoadingInitSemaphore = xSemaphoreCreateBinary();
+    configASSERT(xLoadingInitSemaphore);
+
+    xTaskCreate(loading_screen_task, (const char *)"loading_task", 2048, NULL, portPRI_TASK_NORMAL + 1, NULL);
     xTaskCreate(main_sf2000, (const char *)"main_sf2000", stackSize, NULL, portPRI_TASK_NORMAL, NULL);
     vTaskStartScheduler();
+
     abort(); // Should never reach here
     return 0;
 }
