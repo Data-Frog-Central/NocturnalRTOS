@@ -14,7 +14,6 @@ APPS_PHOBOS_BUILD_CMDS = rsync -au --chmod=u=rwX,go=rX  --exclude .svn --exclude
 			 mkdir -p $(@D)/src;\
 			 ln -sf $(@D)/Makefile.src.rtos $(@D)/src/Makefile;\
 			 ln -sf $(@D)/drivers $(@D)/src/;\
-			 ln -sf $(@D)/libs $(@D)/src/;\
 			 ln -sf $(@D)/phobos $(@D)/src/;\
 		     $(TARGET_MAKE_ENV) $(APPS_PHOBOS_MAKE_ENV) $(MAKE) $(APPS_PHOBOS_MAKE_FLAGS) -C $(@D) all
 

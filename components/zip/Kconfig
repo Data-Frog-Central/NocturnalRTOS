@@ -1,0 +1,5 @@
+config BR2_PACKAGE_ZIP
+    bool "zip"
+    default n
+    help
+        A portable, simple zip library written in C.

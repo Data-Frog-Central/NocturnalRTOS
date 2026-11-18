@@ -15,6 +15,7 @@
 #include <gateway.h>
 #include <helix/helix_logging.h>
 #include <helix/nocturnal_paths.h>
+#include <helix/helix_saves.h>
 
 #include "../drivers/sf2000_audio.h"
 #include "../drivers/sf2000_gfx.h"
@@ -38,6 +39,8 @@ int brightness_percentage = 100;
 
 bool close_emulator_flag = false;
 bool safe_shutdown_flag = false;
+
+static SaveInfo save_info;
 
 char rom_path[MAXPATH];
 char core_path[MAXPATH];
@@ -339,6 +342,12 @@ bool load_game(const char *file_path) {
 		game_info_ext.size = core_supports_rom_in_buffer ? rom_size : 0;
 		game_info_ext.file_in_archive = is_zip;
 		game_info_ext.persistent_data = false; // TODO: Does anything need this?
+		
+		snprintf(save_info.save_folder, sizeof(save_info.save_folder), "%s", SAVE_DIRECTORY);
+		snprintf(save_info.savestate_folder, sizeof(save_info.savestate_folder), "%s", SAVESTATE_DIRECTORY);
+    	snprintf(save_info.core_name, sizeof(save_info.core_name), "%s", sysinfo.library_name);
+		snprintf(save_info.rom_name, sizeof(save_info.rom_name), "%s", rom_filename);
+		save_info.slot = 0;
 
 		bool ret = retro_load_game(&gameinfo);
 		if (!ret) { 
@@ -416,7 +425,8 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
 	ret = load_game(game_path);
 	finish_loading();
 	if (!ret) goto cleanup_retro;
-	load_srm(0);
+	helix_load_srm(save_info, false);
+	helix_state_load(save_info, false);
 
 	retro_get_system_av_info(&av_info);
     audio_init(temp_audio_device, av_info.timing.sample_rate);
@@ -471,7 +481,8 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
 	frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"Retro Deinit\n");
 
 	cleanup:
-   		save_srm(0);
+		helix_save_srm(save_info, false);
+		helix_state_save(save_info);
     	retro_unload_game();
 		audio_deinit();
 

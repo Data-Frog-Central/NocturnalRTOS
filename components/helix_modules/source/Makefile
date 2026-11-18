@@ -8,7 +8,7 @@ target-y += libhelix_modules.a
 cflags-y += -DNOCTURNALRTOS -I$(srctree)/$(INC_DIR)
 
 HELIX_MODULES_OBJS = \
-	helix_fake_rtc.o helix_images.o helix_logging.o
+	helix_fake_rtc.o helix_images.o helix_logging.o helix_saves.o
 
 obj-$(BR2_PACKAGE_HELIX_MODULES) += $(HELIX_MODULES_OBJS)
 

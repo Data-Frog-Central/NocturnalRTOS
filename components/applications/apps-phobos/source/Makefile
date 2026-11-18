@@ -11,8 +11,7 @@ SYS_DIR = -I$(LVGL_DIR) \
 		-I$(STAGING_DIR)/usr/include/hcuapi
 
 LVGL_HEADERS = -I$(STAGING_DIR)/usr/include/lvgl/ \
-		-I$(STAGING_DIR)/usr/include/lvgl/lvgl \
-		-I$(LVGL_DIR)/libs/zip/src 
+		-I$(STAGING_DIR)/usr/include/lvgl/lvgl
 
 MY_DEF =
 
@@ -26,7 +25,6 @@ DEMO_LIBS = -lffplayer -lpthread -lge -Wl,--start-group -lstdc++ $(CAST_LIBS) -W
 
 include $(LVGL_DIR)/drivers/sf2000_drivers.mk
 include $(LVGL_DIR)/phobos/phobos.mk
-PHOBOS_SRC += $(LVGL_DIR)/libs/zip/src/zip.c
 DEMO_NAME = phobos_demo
 
 OBJEXT ?= .o
