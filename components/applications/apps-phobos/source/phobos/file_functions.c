@@ -14,11 +14,13 @@
 #include <file/config_file.h>
 
 #include <zip.h>
+#include <nocturnal_joypad.h>
 #include <helix/helix_logging.h>
 #include <helix/nocturnal_paths.h>
 
 #include "../drivers/sf2000_gfx.h"
 #include "file_functions.h"
+#include "hotkeys.h"
 #include "phobos.h"
 
 static config_file_t *frontend_config = NULL;
@@ -181,7 +183,6 @@ void config_free() {
     frontend_config = NULL;
     core_config = NULL;
     rom_config = NULL;
-
 }
 
 static bool config_get_var_helper(config_file_t *config_file, struct retro_variable *var) {
@@ -205,39 +206,58 @@ bool config_get_var(struct retro_variable *var) {
 
 void frontend_load_settings(config_file_t *config_file, bool first_run) {
     if (config_file == NULL) return;
+    const struct config_entry_list *e;
 
     if (first_run) { // There is no reason to check these again
         // Initialize these in case no config
         snprintf(core_path, sizeof(core_path), "FrogUI");
     	snprintf(rom_path, sizeof(rom_path), "/media/mmcblk0p2/ROMS/menu/p");
 
-        config_get_string(config_file, "hcrtos_rom_path", &temp_rom_path);
+        config_get_string(config_file, "phobos_rom_path", &temp_rom_path);
         if (temp_rom_path) {
             strncpy(rom_path, temp_rom_path, MAXPATH - 1);
 	        rom_path[MAXPATH - 1] = '\0';
         }
 
-        config_get_string(config_file, "hcrtos_core_path", &temp_core_path);
+        config_get_string(config_file, "phobos_core_path", &temp_core_path);
         if (temp_core_path) {
             strncpy(core_path, temp_core_path, MAXPATH - 1);
 	        core_path[MAXPATH - 1] = '\0';
         }
 
-        config_get_string(config_file, "hcrtos_audio_device", &temp_audio_device);
-        config_get_string(config_file, "hcrtos_joypad_device", &temp_joypad_device);
+        config_get_bool(config_file,   "phobos_log_btn_press", &log_btn_press);
+        config_get_string(config_file, "phobos_audio_device", &temp_audio_device);
+        config_get_string(config_file, "phobos_joypad_device", &temp_joypad_device);
+
+        e = config_get_entry(config_file, "phobos_log_level");
+        if (e && e->value) {
+	        if (strcasecmp(e->value, "DEBUG") == 0)
+                set_min_log_level(RETRO_LOG_DEBUG);
+		    else if (strcasecmp(e->value, "INFO") == 0)
+			    set_min_log_level(RETRO_LOG_INFO);
+		    else if (strcasecmp(e->value, "WARN") == 0)
+			    set_min_log_level(RETRO_LOG_WARN);
+		    else if (strcasecmp(e->value, "ERROR") == 0)
+			    set_min_log_level(RETRO_LOG_ERROR);
+		    else if (strcasecmp(e->value, "DISABLED") == 0)
+			    set_min_log_level(4);
+	    }
     }
 
-	config_get_bool(config_file, "hcrtos_mono_audio_enabled", &mono_audio_enabled);
-    config_get_uint(config_file, "hcrtos_brightness_percentage", &brightness_percentage);
-    config_get_bool(config_file, "hcrtos_gfx_custom_x_enabled", &gfx_custom_x_enabled);
-    config_get_bool(config_file, "hcrtos_gfx_custom_y_enabled", &gfx_custom_y_enabled);
-    config_get_int(config_file, "hcrtos_gfx_custom_x", &gfx_custom_x);
-    config_get_int(config_file, "hcrtos_gfx_custom_y", &gfx_custom_y);
-    config_get_bool(config_file, "hcrtos_show_fps_counter", &show_fps_counter);
-        
-    const struct config_entry_list *e;
-    e = config_get_entry(config_file, "hcrtos_scaling_mode");
-	if (e) {
+	config_get_bool(config_file, "phobos_mono_audio_enabled", &mono_audio_enabled);
+    config_get_uint(config_file, "phobos_brightness_percentage", &brightness_percentage);
+    config_get_bool(config_file, "phobos_gfx_custom_x_enabled", &gfx_custom_x_enabled);
+    config_get_bool(config_file, "phobos_gfx_custom_y_enabled", &gfx_custom_y_enabled);
+    config_get_int(config_file,  "phobos_gfx_custom_x", &gfx_custom_x);
+    config_get_int(config_file,  "phobos_gfx_custom_y", &gfx_custom_y);
+    config_get_bool(config_file, "phobos_show_fps_counter", &show_fps_counter);
+    
+    config_get_bool(config_file, "phobos_dont_overwrite_saveram", &dont_overwrite_saveram);
+    config_get_bool(config_file, "phobos_per_core_srm", &per_core_srm);
+    config_get_bool(config_file, "phobos_auto_savestate", &auto_savestate);
+
+    e = config_get_entry(config_file, "phobos_scaling_mode");
+	if (e && e->value) {
 	    if (strcasecmp(e->value, "stretch") == 0)
 			global_scaling_mode = SCALE_STRETCH;
 		else if (strcasecmp(e->value, "aspect float") == 0)
@@ -251,6 +271,8 @@ void frontend_load_settings(config_file_t *config_file, bool first_run) {
         else if (strcasecmp(e->value, "custom") == 0)
 			global_scaling_mode = CUSTOM;
 	}
+
+    set_hotkeys(config_file);
 }
 
 void frontend_config_load(void) {
@@ -278,7 +300,7 @@ void core_config_load(void) {
         ret = config_append_file(core_config, config_core_filepath);
         frontend_load_settings(core_config, false);
     }
-    frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"config_load: %s %s\n", config_core_filepath, ret ? "loaded" : "not found");
+    frontend_log_cb(ret ? RETRO_LOG_INFO : RETRO_LOG_WARN, "FRONTEND" ,"config_load: %s %s\n", config_core_filepath, ret ? "loaded" : "not found");
 }
 
 void rom_config_load(void) {

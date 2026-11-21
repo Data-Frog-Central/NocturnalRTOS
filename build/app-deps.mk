@@ -45,4 +45,5 @@ apps_deps-$(BR2_PACKAGE_LIBRETRO_COMMON) += libretro_common
 apps_deps-$(BR2_PACKAGE_ARGENT_LOADER) += argent_loader
 apps_deps-$(BR2_PACKAGE_ZIP) += zip
 apps_deps-$(BR2_PACKAGE_HELIX_MODULES) += helix_modules
+apps_deps-$(BR2_PACKAGE_NOCTURNAL_DRIVERS) += nocturnal_drivers
 apps_deps-$(BR2_PACKAGE_LUA) += lua

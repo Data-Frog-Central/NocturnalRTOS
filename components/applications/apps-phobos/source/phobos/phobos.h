@@ -12,6 +12,10 @@ extern int brightness_percentage;
 extern bool close_emulator_flag;
 extern bool safe_shutdown_flag;
 
+extern bool dont_overwrite_saveram;
+extern bool per_core_srm;
+extern bool auto_savestate;
+
 extern char rom_path[MAXPATH];
 extern char core_path[MAXPATH];
 extern char *dir, *rom_filename, *extension;

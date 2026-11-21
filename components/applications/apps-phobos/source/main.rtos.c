@@ -156,7 +156,6 @@ static void main_sf2000(void *pvParameters) {
 
     fake_rtc_init();
     frontend_config_load();
-    set_min_log_level(0); // TODO: let the user set this
     frontend_video_init();
 
     xSemaphoreTake(xLoadingInitSemaphore, portMAX_DELAY);

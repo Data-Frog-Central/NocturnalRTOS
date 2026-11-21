@@ -1,0 +1,5 @@
+config BR2_PACKAGE_NOCTURNAL_DRIVERS
+    bool "nocturnal_drivers"
+    default n
+    help
+        Audio GFX and Input drivers for NocturnalRTOS.

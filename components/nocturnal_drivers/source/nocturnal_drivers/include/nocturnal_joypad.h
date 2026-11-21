@@ -1,7 +1,7 @@
-#ifndef SF2000_JOYPAD_H__
-#define SF2000_JOYPAD_H__
+#ifndef NOCTURNAL_JOYPAD_H__
+#define NOCTURNAL_JOYPAD_H__
 
-#define HOTKEY_EXIT_MASK  ((1 << RETRO_DEVICE_ID_JOYPAD_SELECT) | (1 << RETRO_DEVICE_ID_JOYPAD_START))
+#define IGNORE_BTN 255
 
 typedef struct {
    uint32_t data[8];
@@ -15,16 +15,11 @@ typedef enum {
     DEVICE_DY19,
 } joypad_device_t;
 
-typedef bool (*hotkey_action_t)(void);
-
-typedef struct {
-    uint16_t mask;
-    hotkey_action_t action;
-} hotkey_entry_t;
+extern uint16_t joypad_btn_state;
+extern bool log_btn_press;
 
 void joypad_init(const char *device_name);
 void joypad_get_buttons(unsigned port, input_bits_t *state);
-void frontend_check_hotkeys(void);
 void frontend_input_poll_cb(void);
 
-#endif // SF2000_JOYPAD_H__
+#endif // NOCTURNAL_JOYPAD_H__

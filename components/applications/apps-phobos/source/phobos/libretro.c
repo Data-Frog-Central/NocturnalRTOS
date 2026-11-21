@@ -13,15 +13,16 @@
 #include <libretro.h>
 #include <argent_loader.h>
 #include <gateway.h>
+#include <nocturnal_joypad.h>
 #include <helix/helix_logging.h>
 #include <helix/nocturnal_paths.h>
 #include <helix/helix_saves.h>
 
 #include "../drivers/sf2000_audio.h"
 #include "../drivers/sf2000_gfx.h"
-#include "../drivers/sf2000_joypad.h"
 #include "file_functions.h"
 #include "loading_screen.h"
+#include "hotkeys.h"
 #include "phobos.h"
 
 static retro_audio_buffer_status_callback_t audio_buff_status_cb = NULL;
@@ -39,6 +40,10 @@ int brightness_percentage = 100;
 
 bool close_emulator_flag = false;
 bool safe_shutdown_flag = false;
+
+bool dont_overwrite_saveram = false;
+bool per_core_srm = false;
+bool auto_savestate = false;
 
 static SaveInfo save_info;
 
@@ -425,8 +430,8 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
 	ret = load_game(game_path);
 	finish_loading();
 	if (!ret) goto cleanup_retro;
-	helix_load_srm(save_info, false);
-	helix_state_load(save_info, false);
+	helix_load_srm(save_info, per_core_srm);
+	if (auto_savestate) helix_state_load(save_info, dont_overwrite_saveram);
 
 	retro_get_system_av_info(&av_info);
     audio_init(temp_audio_device, av_info.timing.sample_rate);
@@ -446,6 +451,7 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
 	
 	draw_border(core_path); // Draw the border right before the main loop
     while (1) {
+		frontend_check_hotkeys();
         if (close_emulator_flag || safe_shutdown_flag) {
             if (close_emulator_flag) close_emulator_flag = false;
             break;
@@ -481,8 +487,8 @@ bool run_emulator(const char *game_path, const char *core_path, int load_state) 
 	frontend_log_cb(RETRO_LOG_INFO, "FRONTEND" ,"Retro Deinit\n");
 
 	cleanup:
-		helix_save_srm(save_info, false);
-		helix_state_save(save_info);
+		helix_save_srm(save_info, per_core_srm);
+		if (auto_savestate) helix_state_save(save_info);
     	retro_unload_game();
 		audio_deinit();
 

@@ -124,6 +124,7 @@ ldlibs-$(BR2_PACKAGE_LIBRETRO_COMMON) += -lretro-common
 ldlibs-$(BR2_PACKAGE_ARGENT_LOADER) += -largent_loader
 ldlibs-$(BR2_PACKAGE_ZIP) += -lzip
 ldlibs-$(BR2_PACKAGE_HELIX_MODULES) += -lhelix_modules
+ldlibs-$(BR2_PACKAGE_NOCTURNAL_DRIVERS) += -lnocturnal_drivers
 ldlibs-$(BR2_PACKAGE_LUA) += -llua
 ldlibs-$(BR2_PACKAGE_LIBUSB) += -lusb
 ldlibs-$(BR2_PACKAGE_LIBOPENSSL) += -lssl -lcrypto
